@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 class Database {
-    private $host = "localhost";
+    private $host = "162.141.0.9";
     private $db_name = "raj communication";
     private $username = "root";
     private $password = "";

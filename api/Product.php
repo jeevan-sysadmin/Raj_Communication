@@ -95,7 +95,7 @@ function normalizeProductPayloadAliases($row) {
 
 // Database class
 class Database {
-    private $host = "localhost";
+    private $host = "162.141.0.9";
     private $db_name = "sun_computers";
     private $username = "root";
     private $password = "";

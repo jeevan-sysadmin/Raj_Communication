@@ -78,7 +78,7 @@ interface StaffDetailModalProps {
   onViewOrders?: (staff: StaffRecord) => void;
 }
 
-const API_BASE_URL = "http://localhost/sun_computers/api";
+const API_BASE_URL = "http://162.141.0.9/sun_computers/api";
 const serviceTypes = ["general", "repair", "sales", "water", "inverter"];
 const expenseTypes = ["petrol", "travel", "food", "tools", "stationery", "others"];
 

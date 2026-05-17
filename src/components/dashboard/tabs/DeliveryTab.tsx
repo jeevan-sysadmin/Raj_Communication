@@ -34,8 +34,8 @@ interface DeliveryTabProps {
 }
 
 const ITEMS_PER_PAGE = 20;
-const DELIVERY_API_URL = "http://localhost/raj_communication/api/deliveries.php";
-const ORDERS_API_URL = "http://localhost/raj_communication/api/Order.php";
+const DELIVERY_API_URL = "http://162.141.0.9/raj_communication/api/deliveries.php";
+const ORDERS_API_URL = "http://162.141.0.9/raj_communication/api/Order.php";
 
 interface DeliveryOrderMeta {
   id: number;
