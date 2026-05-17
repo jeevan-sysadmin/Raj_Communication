@@ -88,7 +88,7 @@ interface RevenueResponse {
   message?: string;
 }
 
-const API_BASE_URL = "http://162.141.0.9/sun_computers/api";
+const API_BASE_URL = "http://162.141.0.9/raj_communication/api";
 const serviceTypeOptions = ["all", "general", "repair", "sales", "water", "inverter"];
 
 const todayString = () => new Date().toISOString().split("T")[0];
