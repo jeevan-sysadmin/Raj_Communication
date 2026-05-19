@@ -1689,7 +1689,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [newProduct, setNewProduct] = useState(getDefaultNewProduct);
   
   // API Configuration
-  const API_BASE_URL = "http://localhost/raj_communication/api";
+  const API_BASE_URL = "http://162.141.0.9/raj_communication/api";
   
   // Check authentication and role
   useEffect(() => {

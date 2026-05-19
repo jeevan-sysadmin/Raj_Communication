@@ -210,10 +210,10 @@ async function apiLogin(email: string, password: string): Promise<LoginResponse>
     password: password
   };
 
-  console.log(`Trying endpoint: http://localhost/raj_communication/api/login.php`);
+  console.log(`Trying endpoint: http://162.141.0.9/raj_communication/api/login.php`);
   
   try {
-    const response = await fetch("http://localhost/raj_communication/api/login.php", {
+    const response = await fetch("http://162.141.0.9/raj_communication/api/login.php", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

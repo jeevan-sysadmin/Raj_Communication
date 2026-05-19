@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 class Database {
-    private $host = "localhost";
+    private $host = "162.141.0.9";
     private $db_name = "raj communication";
     private $username = "root";
     private $password = "";
@@ -26,7 +26,7 @@ class Database {
         $candidates = [
             $this->db_name,
             'raj_communication',
-            'sun_computers'
+            'raj_communication'
         ];
 
         foreach ($candidates as $dbName) {
