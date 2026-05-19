@@ -463,7 +463,7 @@ const ProductFormModal = ({
                           <FiCheckSquare />
                         </span>
                         <span className="product-checkbox-copy">
-                          <strong>Mark as Spare Product</strong>
+                          <strong>Mark as Replacement Product</strong>
                           <small>Use this for spare parts, stock items, and replacement components.</small>
                         </span>
                       </label>
@@ -542,9 +542,7 @@ const ProductFormModal = ({
                       </label>
                       <select id="status" name="status" value={safeProductForm.status || "active"} onChange={onChange} className="product-input">
                         <option value="active">Active</option>
-                        <option value="inactive">Inactive</option>
-                        <option value="discontinued">Discontinued</option>
-                        <option value="out_of_stock">Out of Stock</option>
+                        <option value="handover">Handover</option>
                       </select>
                     </div>
                   </div>
@@ -600,15 +598,20 @@ const ProductFormModal = ({
                       </label>
                       <div className="product-input-wrap">
                         <FiCpu className="product-input-icon" />
-                        <input
-                          type="text"
+                        <select
                           id="warranty_period"
                           name="warranty_period"
                           value={safeProductForm.warranty_period}
                           onChange={onChange}
-                          placeholder="e.g. 6 months, 1 year"
                           className="product-input has-icon"
-                        />
+                        >
+                          <option value="">Select Warranty Period</option>
+                          <option value="1 year">1 Year</option>
+                          <option value="2 years">2 Years</option>
+                          <option value="3 years">3 Years</option>
+                          <option value="4 years">4 Years</option>
+                          <option value="5 years">5 Years</option>
+                        </select>
                       </div>
                     </div>
 

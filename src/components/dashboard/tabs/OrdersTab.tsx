@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   FiChevronLeft,
@@ -787,23 +787,35 @@ const OrdersTab = (props: OrdersTabProps) => {
 
     const rows = printScopeOrders
       .map((order) => {
-        const replacementEntries = getOrderReplacementEntries(order, products);
+        const productEntries = getOrderProductEntries(order, products);
         const companyLines = getCompanyProductLines(order, products);
         const companySummary = companyLines.length > 0 ? companyLines.join("\n") : getCompanyNames(order).join("\n");
-        const finalAmount = Number(order.final_cost || order.estimated_cost || 0);
-        const deposit = Number(order.deposit_amount || 0);
-        const balanceDue = Math.max(finalAmount - deposit, 0);
+        const companyHtml = companySummary
+          ? companySummary
+              .split("\n")
+              .filter((line) => line.trim().length > 0)
+              .map((line) => `<div class="print-company-line">${escapeHtml(line)}</div>`)
+              .join("")
+          : `<div class="print-muted">No companies</div>`;
+        const issueHtml = order.issue_description
+          ? `<div class="print-issue-main">${escapeHtml(order.issue_description)}</div>`
+          : `<div class="print-muted">N/A</div>`;
+        const notesHtml = order.notes
+          ? `<div class="print-issue-note"><strong>Note:</strong> ${escapeHtml(order.notes)}</div>`
+          : "";
+        const serialSummary = productEntries
+          .map((entry) => entry.serialNumber)
+          .filter((serial) => serial && serial.trim().length > 0)
+          .join(", ");
 
         return `
           <tr>
             <td>${escapeHtml(order.order_code)}<br /><small>${escapeHtml(formatDisplayDate(order.created_at))}</small></td>
             <td>${escapeHtml(order.client_name)}<br /><small>${escapeHtml(order.client_phone)}</small><br /><small>${escapeHtml(order.client_email || "N/A")}</small></td>
-            <td>${escapeHtml(formatProductEntryList(replacementEntries, "No replacement"))}</td>
-            <td>${escapeHtml(companySummary || "No companies")}</td>
-            <td>${escapeHtml(order.issue_description || "N/A")}<br /><small>${escapeHtml(order.notes || "")}</small></td>
-            <td>${escapeHtml(order.priority)}<br /><small>${escapeHtml(order.warranty_status || "N/A")}</small><br /><small>${escapeHtml(order.service_type || "general")}</small></td>
-            <td>Est: ${escapeHtml(formatDisplayDate(order.estimated_delivery_date))}<br /><small>Act: ${escapeHtml(formatDisplayDate(order.actual_delivery_date || ""))}</small></td>
-            <td>Estimated: Rs. ${escapeHtml(formatCurrency(order.estimated_cost))}<br />Final: Rs. ${escapeHtml(formatCurrency(order.final_cost || order.estimated_cost))}<br />Deposit: Rs. ${escapeHtml(formatCurrency(order.deposit_amount))}<br /><strong>Balance: Rs. ${escapeHtml(formatCurrency(balanceDue))}</strong><br /><small>${escapeHtml(order.payment_status)}</small></td>
+            <td>${escapeHtml(String(getRepairingStatusSummary(order, products) || "N/A"))}</td>
+            <td>${companyHtml}</td>
+            <td>${issueHtml}${notesHtml}</td>
+            <td>${escapeHtml(serialSummary || "N/A")}</td>
           </tr>`;
       })
       .join("");
@@ -823,12 +835,17 @@ const OrdersTab = (props: OrdersTabProps) => {
             th { background: #eff6ff; color: #1e3a8a; }
             tr:nth-child(even) { background: #f8fafc; }
             small { color: #64748b; }
+            .print-company-line { margin: 0 0 4px 0; line-height: 1.45; }
+            .print-company-line:last-child { margin-bottom: 0; }
+            .print-issue-main { line-height: 1.55; margin-bottom: 6px; }
+            .print-issue-note { color: #334155; line-height: 1.5; }
+            .print-muted { color: #64748b; }
             @media print { body { padding: 0; } }
           </style>
         </head>
         <body>
           <div class="header">
-            <h1>Sun Computers ${escapeHtml(title)}</h1>
+            <h1>Raj Communication ${escapeHtml(title)}</h1>
             <p>${escapeHtml(
               selectedOrders.length > 0
                 ? `${selectedOrders.length} selected orders`
@@ -841,12 +858,10 @@ const OrdersTab = (props: OrdersTabProps) => {
               <tr>
                 <th>Order</th>
                 <th>Client</th>
-                <th>Replacement</th>
+                <th>Repairing Status</th>
                 <th>Companies & Products</th>
                 <th>Issue / Notes</th>
-                <th>Priority / Warranty</th>
-                <th>Timeline</th>
-                <th>Payment</th>
+                <th>Serial Number</th>
               </tr>
             </thead>
             <tbody>${rows}</tbody>
@@ -916,6 +931,7 @@ const OrdersTab = (props: OrdersTabProps) => {
             type="text"
             placeholder="Search orders by client, product, order code..."
             className="search-filter-input"
+            style={{ height: "48px", fontSize: "15px", paddingLeft: "44px" }}
             value={searchTerm}
             onChange={(e) => onSearchChange(e.target.value)}
           />
@@ -1175,3 +1191,4 @@ const OrdersTab = (props: OrdersTabProps) => {
 };
 
 export default OrdersTab;
+

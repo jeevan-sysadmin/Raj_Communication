@@ -46,6 +46,7 @@ const ProductDetailModal = ({ product, relatedOrders, onClose, onEdit }: Product
     >
       <motion.div
         className="modal-content order-detail-modal product-detail-modal"
+        style={{ maxHeight: "90vh", overflowY: "auto" }}
         initial={{ opacity: 0, scale: 0.94, y: 36 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 24 }}
@@ -89,7 +90,7 @@ const ProductDetailModal = ({ product, relatedOrders, onClose, onEdit }: Product
               <div>
                 <span className="order-detail-hero-label">Serial</span>
                 <strong>{product.serial_number || "Not added"}</strong>
-                <p>{isSpareProduct ? "Spare Product" : "Standard Product"}</p>
+                <p>{isSpareProduct ? "Replacement Product" : "Standard Product"}</p>
               </div>
             </div>
             <div className="order-detail-hero-card">
@@ -131,7 +132,7 @@ const ProductDetailModal = ({ product, relatedOrders, onClose, onEdit }: Product
                 <FiCheckSquare /> Inventory
               </h3>
               <div className="detail-item"><span className="detail-label">Status</span><span className="detail-value">{formatLabel(product.status)}</span></div>
-              <div className="detail-item"><span className="detail-label">Spare Product</span><span className="detail-value">{isSpareProduct ? "Yes" : "No"}</span></div>
+              <div className="detail-item"><span className="detail-label">Replacement Product</span><span className="detail-value">{isSpareProduct ? "Yes" : "No"}</span></div>
               <div className="detail-item"><span className="detail-label">Warranty</span><span className="detail-value">{product.warranty_period || "Not specified"}</span></div>
               <div className="detail-item"><span className="detail-label">Purchase Date</span><span className="detail-value">{product.purchase_date ? formatDisplayDate(product.purchase_date) : "N/A"}</span></div>
             </div>

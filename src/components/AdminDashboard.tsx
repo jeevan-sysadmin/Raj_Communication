@@ -4,7 +4,7 @@ import type { ChangeEvent, FormEvent } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import {
   FiUsers, FiPackage, FiDollarSign, FiTrendingUp, FiBarChart2,
-  FiLogOut, FiBell, FiSearch, FiMenu, FiHome,
+  FiLogOut, FiBell, FiMenu, FiHome,
   FiShield, FiAlertCircle, FiCheckCircle,
   FiClock, FiRefreshCw,
   FiEdit, FiTrash2, FiChevronLeft, FiChevronRight,
@@ -224,7 +224,7 @@ interface Delivery {
   address: string;
   contact_person: string;
   contact_phone: string;
-  delivery_type: 'home_delivery' | 'pickup';
+  delivery_type: 'inhand' | 'courier' | 'parcelservice';
   scheduled_date: string;
   scheduled_time: string;
   delivery_person: string;
@@ -1622,8 +1622,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   ];
 
   const deliveryTypeOptions = [
-    { value: 'home_delivery', label: 'Home Delivery' },
-    { value: 'pickup', label: 'Pickup' }
+    { value: 'inhand', label: 'In Hand' },
+    { value: 'courier', label: 'Courier' },
+    { value: 'parcelservice', label: 'Parcel Service' }
   ];
   void deliveryTypeOptions;
   
@@ -1688,7 +1689,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [newProduct, setNewProduct] = useState(getDefaultNewProduct);
   
   // API Configuration
-  const API_BASE_URL = "http://162.141.0.9/raj_communication/api";
+  const API_BASE_URL = "http://localhost/raj_communication/api";
   
   // Check authentication and role
   useEffect(() => {
@@ -2435,7 +2436,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           address: delivery.address || '',
           contact_person: delivery.contact_person || '',
           contact_phone: delivery.contact_phone || '',
-          delivery_type: delivery.delivery_type === 'delivery' ? 'home_delivery' : 'pickup',
+          delivery_type:
+            delivery.delivery_type === 'in_hand' || delivery.delivery_type === 'pickup'
+              ? 'inhand'
+              : delivery.delivery_type === 'parcel_service' || delivery.delivery_type === 'delivery'
+                ? 'parcelservice'
+                : delivery.delivery_type === 'courier'
+                  ? 'courier'
+                  : 'inhand',
           scheduled_date: delivery.scheduled_date || '',
           scheduled_time: delivery.scheduled_time || '',
           delivery_person: delivery.delivery_person || '',
@@ -3462,8 +3470,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         warranty_period: data.warranty_period || '',
         specifications: data.specifications || '',
         price: String(data.price ?? '0'),
-        stock_quantity: String(data.stock_quantity ?? '0'),
-        min_stock_level: String(data.min_stock_level ?? '5'),
         status: data.status || 'active',
       });
       setShowCreateProduct(false);
@@ -3574,8 +3580,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             warranty_period: editData.warranty_period || '',
             specifications: editData.specifications,
             price: parseFloat(editData.price || '0') || 0,
-            stock_quantity: parseInt(editData.stock_quantity || '0', 10) || 0,
-            min_stock_level: parseInt(editData.min_stock_level || '5', 10) || 5,
             status: editData.status
           };
           break;
@@ -3702,15 +3706,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       handleDeleteOrder(selectedOrderDetails);
       setShowOrderDetailsModal(false);
     }
-  };
-  
-  // Handle search
-  const handleSearch = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchTerm(e.target.value);
-  };
-  
-  const clearSearch = () => {
-    setSearchTerm('');
   };
   
   // Handle sort
@@ -5015,7 +5010,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     { id: 'replacementorders', label: 'Replacement Orders', icon: <FiPackage />, color: 'green' },
     { id: 'clients', label: 'Clients', icon: <FiUsers />, color: 'teal' },
     { id: 'products', label: 'Products', icon: <FiShoppingBag />, color: 'orange' },
-    { id: 'spareproducts', label: 'Spare Products', icon: <FiPackage />, color: 'orange' },
+    { id: 'spareproducts', label: 'Replacement Products', icon: <FiPackage />, color: 'orange' },
     { id: 'companys', label: 'Companys', icon: <FiUsers />, color: 'teal' },
     { id: 'suntocompany', label: 'RajTo Company', icon: <FiShoppingBag />, color: 'indigo' },
     { id: 'companytosun', label: 'Company To Raj', icon: <FiShoppingBag />, color: 'teal' },
@@ -5264,7 +5259,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               <FiShield />
             </div>
             <div className="brand-text">
-              <h2>Sun Computers</h2>
+              <h2>Raj Communication</h2>
               <p>Admin Dashboard</p>
             </div>
           </div>
@@ -5296,7 +5291,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <div className="role-badge">
               <FiShield /> {user.role || 'Admin'}
             </div>
-            <span className="user-email">{user.email || 'admin@suncomputers.com'}</span>
+            <span className="user-email">{user.email || 'admin@rajcommunication.com'}</span>
           </div>
         </div>
         
@@ -5335,22 +5330,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             <button className="toggle-sidebar-btn" onClick={() => setSidebarOpen(!sidebarOpen)}>
               {sidebarOpen ? <FiChevronLeft /> : <FiMenu />}
             </button>
-            
-            <div className="search-container">
-              <FiSearch className="search-icon" />
-              <input
-                type="text"
-                className="search-input"
-                placeholder={`Search ${activeTab}...`}
-                value={searchTerm}
-                onChange={handleSearch}
-              />
-              {searchTerm && (
-                <button className="clear-search-btn" onClick={clearSearch}>
-                  <FiX />
-                </button>
-              )}
-            </div>
           </div>
           
           <div className="header-right-section">
@@ -5434,7 +5413,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                   <span className="greeting-name"> {user.name?.split(' ')[0] || 'Admin'}!</span>
                 </h1>
                 <p className="greeting-subtitle">
-                  Monitor and manage your entire Sun Computers ecosystem
+                  Monitor and manage your entire Raj Communication ecosystem
                 </p>
               </div>
               {dashboardStats && (
@@ -6447,26 +6426,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                   />
                 </div>
                 <div className="form-group">
-                  <label>Stock Quantity</label>
-                  <input
-                    type="number"
-                    value={editData.stock_quantity || '0'}
-                    onChange={(e) => setEditData({...editData, stock_quantity: e.target.value})}
-                    className="form-input"
-                    min="0"
-                  />
-                </div>
-                <div className="form-group">
-                  <label>Minimum Stock Level</label>
-                  <input
-                    type="number"
-                    value={editData.min_stock_level || '5'}
-                    onChange={(e) => setEditData({...editData, min_stock_level: e.target.value})}
-                    className="form-input"
-                    min="0"
-                  />
-                </div>
-                <div className="form-group">
                   <label>Status *</label>
                   <select
                     value={editData.status || 'active'}
@@ -6552,22 +6511,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       />
 
       {receiptModalConfig && (
-        <ReceiptActionModal
-          kind={receiptModalConfig.kind}
-          code={receiptModalConfig.code}
-          subtitle={receiptModalConfig.subtitle}
-          description={receiptModalConfig.description}
-          summaryItems={receiptModalConfig.summaryItems}
-          previewMarkup={receiptModalConfig.previewMarkup}
-          onClose={() => setReceiptTarget(null)}
-          onDownload={() => {
-            receiptModalConfig.onDownload();
-            setReceiptTarget(null);
-          }}
-          onPrint={() => {
-            receiptModalConfig.onPrint();
-          }}
-        />
+        <div style={{ maxHeight: "100vh", overflowY: "auto" }}>
+          <ReceiptActionModal
+            kind={receiptModalConfig.kind}
+            code={receiptModalConfig.code}
+            subtitle={receiptModalConfig.subtitle}
+            description={receiptModalConfig.description}
+            summaryItems={receiptModalConfig.summaryItems}
+            previewMarkup={receiptModalConfig.previewMarkup}
+            onClose={() => setReceiptTarget(null)}
+            onDownload={() => {
+              receiptModalConfig.onDownload();
+              setReceiptTarget(null);
+            }}
+            onPrint={() => {
+              receiptModalConfig.onPrint();
+            }}
+          />
+        </div>
       )}
       
       {/* Receipt Confirmation Modal */}
@@ -6678,6 +6639,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 };
 
 export default AdminDashboard;
+
 
 
 

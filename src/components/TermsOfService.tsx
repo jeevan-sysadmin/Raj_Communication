@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { motion } from 'framer-motion';
 import { 
   FiFileText, 
@@ -30,7 +30,7 @@ const TermsOfService: React.FC = () => {
           <h1>Terms of Service</h1>
           <p className="terms-subtitle">Effective: January 15, 2026</p>
           <p className="terms-description">
-            Please read these Terms of Service carefully before using the Sun Computers 
+            Please read these Terms of Service carefully before using the Raj Communication 
             Service Center management system. By accessing or using our services, you 
             agree to be bound by these terms.
           </p>
@@ -264,7 +264,7 @@ const TermsOfService: React.FC = () => {
                 <h3>Our Content</h3>
                 <p>
                   All content, features, and functionality of our service management system 
-                  are owned by Sun Computers and are protected by copyright and other 
+                  are owned by Raj Communication and are protected by copyright and other 
                   intellectual property laws.
                 </p>
               </div>
@@ -310,7 +310,7 @@ const TermsOfService: React.FC = () => {
             <div className="acceptance-box">
               <h3>Acceptance of Terms</h3>
               <p>
-                By using the Sun Computers Service Center management system, you acknowledge 
+                By using the Raj Communication Service Center management system, you acknowledge 
                 that you have read, understood, and agree to be bound by these Terms of Service.
               </p>
               <div className="acceptance-actions">
@@ -329,10 +329,10 @@ const TermsOfService: React.FC = () => {
           transition={{ duration: 0.5, delay: 1.1 }}
         >
           <div className="footer-content">
-            <p>© 2026 Sun Computers Service Center. All rights reserved.</p>
+            <p>Â© 2026 Raj Communication Service Center. All rights reserved.</p>
             <p className="footer-note">
               For questions about these Terms of Service, please contact: 
-              <a href="mailto:legal@suncomputers.com"> legal@suncomputers.com</a>
+              <a href="mailto:legal@rajcommunication.com"> legal@rajcommunication.com</a>
             </p>
           </div>
         </motion.footer>

@@ -1,4 +1,4 @@
-import { jsPDF } from "jspdf";
+﻿import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 
 type PdfAccent = string | [number, number, number];
@@ -124,7 +124,7 @@ export const exportStyledPdfReport = ({
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(12);
-  doc.text("Sun Computers", pageWidth - 20, 23, { align: "right" });
+  doc.text("Raj Communication", pageWidth - 20, 23, { align: "right" });
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
@@ -191,10 +191,11 @@ export const exportStyledPdfReport = ({
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8.5);
       doc.setTextColor(100, 116, 139);
-      doc.text("Sun Computers Report", margin, pageHeight - 6);
+      doc.text("Raj Communication Report", margin, pageHeight - 6);
       doc.text(`Page ${pageNumber}`, pageWidth - margin, pageHeight - 6, { align: "right" });
     },
   });
 
   doc.save(filename);
 };
+

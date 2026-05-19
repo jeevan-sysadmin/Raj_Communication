@@ -72,8 +72,8 @@ const formatLastSeen = (value?: string) => {
 };
 
 const sortIndicator = (sortConfig: SortConfig, key: string) => {
-  if (sortConfig.key !== key) return "<>";
-  return sortConfig.direction === "asc" ? "^" : "v";
+  if (sortConfig.key !== key) return "↕";
+  return sortConfig.direction === "asc" ? "↑" : "↓";
 };
 
 const getRoleLabel = (role: string) => (role === "admin" ? "Admin" : "Staff");
@@ -81,6 +81,53 @@ const getRoleLabel = (role: string) => (role === "admin" ? "Admin" : "Staff");
 const getRoleDescription = (role: string) => (role === "admin" ? "Full access" : "Operational access");
 
 const ITEMS_PER_PAGE = 20;
+
+const ui = {
+  sectionHeader: {
+    alignItems: "stretch",
+    gap: "20px",
+    paddingBottom: "20px",
+    borderBottom: "1px solid rgba(148, 163, 184, 0.16)",
+  } as const,
+  pageTitle: {
+    fontSize: "30px",
+    lineHeight: 1.1,
+    marginBottom: "10px",
+    color: "#0f172a",
+  } as const,
+  pageSubtitle: {
+    fontSize: "15px",
+    lineHeight: 1.7,
+    color: "#64748b",
+    margin: 0,
+  } as const,
+  statGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+    gap: "14px",
+    marginTop: "22px",
+    marginBottom: "22px",
+  } as const,
+  statCard: {
+    borderRadius: "20px",
+    padding: "18px",
+    background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
+    border: "1px solid rgba(148, 163, 184, 0.14)",
+    boxShadow: "0 12px 30px rgba(15, 23, 42, 0.05)",
+  } as const,
+  filterPanel: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "16px",
+    flexWrap: "wrap",
+    padding: "18px",
+    borderRadius: "18px",
+    background: "linear-gradient(180deg, rgba(248,250,252,0.95), rgba(241,245,249,0.9))",
+    border: "1px solid rgba(148, 163, 184, 0.14)",
+    marginBottom: "20px",
+  } as const,
+};
 
 const UserTab = ({
   users,
@@ -182,12 +229,7 @@ const UserTab = ({
       <div className="data-table-wrapper" style={{ overflow: "hidden" }}>
         <div
           className="table-header-section"
-          style={{
-            alignItems: "stretch",
-            gap: "20px",
-            paddingBottom: "20px",
-            borderBottom: "1px solid rgba(148, 163, 184, 0.16)",
-          }}
+          style={ui.sectionHeader}
         >
           <div className="table-title-wrapper" style={{ maxWidth: "720px" }}>
             <div
@@ -209,8 +251,8 @@ const UserTab = ({
               <FiUsers />
               Team Access Control
             </div>
-            <h3 style={{ fontSize: "30px", lineHeight: 1.1, marginBottom: "10px", color: "#0f172a" }}>User & Staff Management</h3>
-            <p style={{ fontSize: "15px", lineHeight: 1.7, color: "#64748b", margin: 0 }}>
+            <h3 style={ui.pageTitle}>User & Staff Management</h3>
+            <p style={ui.pageSubtitle}>
               Review admin and staff accounts together, manage access, and keep your team directory clean and secure.
             </p>
           </div>
@@ -226,38 +268,25 @@ const UserTab = ({
               <FiFilter /> Clear Filters
             </button>
             <div className="export-buttons" style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
-              <button className="btn btn-export" onClick={onExportCSV}>
+              <button className="btn btn-export" onClick={onExportCSV} disabled={filteredUsers.length === 0}>
                 <FiDownload /> Export CSV
               </button>
-              <button className="btn btn-export" onClick={onExportPDF}>
+              <button className="btn btn-export" onClick={onExportPDF} disabled={filteredUsers.length === 0}>
                 <FiFileText /> Export PDF
               </button>
             </div>
           </div>
         </div>
 
-        <div
-          style={{
-            display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-            gap: "14px",
-            marginTop: "22px",
-            marginBottom: "22px",
-          }}
-        >
+        <div style={ui.statGrid}>
           {stats.map((stat, index) => (
             <motion.div
               key={stat.label}
               initial={{ opacity: 0, y: 12 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.04 }}
-              style={{
-                borderRadius: "20px",
-                padding: "18px",
-                background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
-                border: "1px solid rgba(148, 163, 184, 0.14)",
-                boxShadow: "0 12px 30px rgba(15, 23, 42, 0.05)",
-              }}
+              whileHover={{ y: -2 }}
+              style={ui.statCard}
             >
               <div
                 style={{
@@ -281,21 +310,7 @@ const UserTab = ({
           ))}
         </div>
 
-        <div
-          className="table-filters"
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: "16px",
-            flexWrap: "wrap",
-            padding: "18px",
-            borderRadius: "18px",
-            background: "linear-gradient(180deg, rgba(248,250,252,0.95), rgba(241,245,249,0.9))",
-            border: "1px solid rgba(148, 163, 184, 0.14)",
-            marginBottom: "20px",
-          }}
-        >
+        <div className="table-filters" style={ui.filterPanel}>
           <div className="filter-controls" style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
             <select className="filter-select" value={filterRole} onChange={(e) => onFilterRoleChange(e.target.value)}>
               <option value="">All Roles</option>
@@ -382,6 +397,7 @@ const UserTab = ({
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: index * 0.02 }}
                         className={selectedUserIds.includes(user.id) ? "selected" : ""}
+                        whileHover={{ backgroundColor: "#f8fafc" }}
                       >
                         <td>
                           <input

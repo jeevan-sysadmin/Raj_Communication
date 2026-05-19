@@ -27,8 +27,8 @@ const isSpareProduct = (product: Product) => {
 };
 
 const COMPANY_API_CANDIDATES = [
-  "http://162.141.0.9/raj_communication/api/companys.php",
-  "http://162.141.0.9/raj_communication/api/companys.php",
+  "http://localhost/raj_communication/api/companys.php",
+  "http://localhost/raj_communication/api/companys.php",
 ];
 
 const normalizeCompany = (row: any): Company => ({
@@ -990,20 +990,24 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
                     )}
                   </div>
 
-                  <div className="form-group-enhanced">
-                    <label className="form-label"><FiBriefcase className="label-icon" /><span>Service Type</span></label>
-                    <div className="enhanced-dropdown">
-                      <select id="service_type" name="service_type" value={orderForm.service_type} onChange={onChange} className="enhanced-select">
-                        <option value="general">General</option>
-                        <option value="repair">Repair</option>
-                        <option value="sales">Sales</option>
-                        <option value="water">Water</option>
-                        <option value="inverter">Inverter</option>
-                      </select>
-                      <FiChevronDown className="dropdown-icon" />
+                  {editMode ? (
+                    <div className="form-group-enhanced">
+                      <label className="form-label"><FiBriefcase className="label-icon" /><span>Service Type</span></label>
+                      <div className="enhanced-dropdown">
+                        <select id="service_type" name="service_type" value={orderForm.service_type} onChange={onChange} className="enhanced-select">
+                          <option value="general">General</option>
+                          <option value="repair">Repair</option>
+                          <option value="sales">Sales</option>
+                          <option value="water">Water</option>
+                          <option value="inverter">Inverter</option>
+                        </select>
+                        <FiChevronDown className="dropdown-icon" />
+                      </div>
+                      <div className="input-hint info"><FiCheck /> Used by income, salary, and expense reporting.</div>
                     </div>
-                    <div className="input-hint info"><FiCheck /> Used by income, salary, and expense reporting.</div>
-                  </div>
+                  ) : (
+                    <input type="hidden" id="service_type" name="service_type" value={orderForm.service_type || "general"} />
+                  )}
 
                   <div className="form-group-enhanced">
                     <label className="form-label"><FiClock className="label-icon" /><span>Warranty Status</span></label>

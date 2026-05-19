@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   FiHelpCircle, 
@@ -127,7 +127,7 @@ const SupportCenter: React.FC = () => {
             </div>
             <div className="header-text">
               <h1>Support Center</h1>
-              <p className="header-subtitle">Get help with Sun Computers Service Management System</p>
+              <p className="header-subtitle">Get help with Raj Communication Service Management System</p>
             </div>
           </div>
           
@@ -171,7 +171,7 @@ const SupportCenter: React.FC = () => {
             <div className="help-content">
               <h3>Email Support</h3>
               <p>General inquiries</p>
-              <a href="mailto:support@suncomputers.com">support@suncomputers.com</a>
+              <a href="mailto:support@rajcommunication.com">support@rajcommunication.com</a>
             </div>
           </div>
           <div className="help-card">
@@ -309,7 +309,7 @@ const SupportCenter: React.FC = () => {
                       <FiMail />
                     </div>
                     <h3>Email Support</h3>
-                    <p className="contact-email">support@suncomputers.com</p>
+                    <p className="contact-email">support@rajcommunication.com</p>
                     <p className="contact-response">Response time: 24 hours</p>
                     <p className="contact-note">For general inquiries and non-urgent matters</p>
                   </div>
@@ -480,7 +480,7 @@ const SupportCenter: React.FC = () => {
           transition={{ duration: 0.5, delay: 0.4 }}
         >
           <div className="footer-content">
-            <p>© 2026 Sun Computers Service Center. All support requests are handled with priority.</p>
+            <p>Â© 2026 Raj Communication Service Center. All support requests are handled with priority.</p>
             <div className="footer-links">
               <a href="#privacy">Privacy Policy</a>
               <a href="#terms">Terms of Service</a>
@@ -494,3 +494,4 @@ const SupportCenter: React.FC = () => {
 };
 
 export default SupportCenter;
+

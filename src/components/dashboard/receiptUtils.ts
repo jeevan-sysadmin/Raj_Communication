@@ -1,4 +1,4 @@
-import html2canvas from "html2canvas";
+﻿import html2canvas from "html2canvas";
 import { jsPDF } from "jspdf";
 import type { Delivery, Order, Product } from "./types";
 import { formatCurrency, formatDisplayDate } from "./utils";
@@ -205,6 +205,11 @@ export const createOrderReceiptMarkup = (order: Order, products: Product[] = [])
   const depositAmount = formatCurrency(order.deposit_amount);
   const createdDate = formatDisplayDate(order.created_at);
   const deliveryDate = formatDisplayDate(order.estimated_delivery_date);
+  const showExpectedDelivery =
+    !!deliveryDate &&
+    deliveryDate.trim() !== "" &&
+    deliveryDate.trim() !== "-" &&
+    deliveryDate.trim().toLowerCase() !== "n/a";
   const balanceDue = formatCurrency(
     Math.max(Number(order.final_cost || order.estimated_cost || 0) - Number(order.deposit_amount || 0), 0),
   );
@@ -215,7 +220,7 @@ export const createOrderReceiptMarkup = (order: Order, products: Product[] = [])
         <div style="padding:28px 32px;background:linear-gradient(135deg,#1d4ed8 0%,#2563eb 55%,#0f172a 100%);color:#ffffff;">
           <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;">
             <div>
-              <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;opacity:0.8;margin-bottom:8px;">Sun Computers</div>
+              <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;opacity:0.8;margin-bottom:8px;">Raj Communication</div>
               <h1 style="margin:0;font-size:32px;line-height:1.1;">${escapeReceiptHtml(receiptHeading)}</h1>
               <p style="margin:10px 0 0;font-size:14px;opacity:0.88;">${escapeReceiptHtml(receiptSubtitle)}</p>
             </div>
@@ -242,7 +247,11 @@ export const createOrderReceiptMarkup = (order: Order, products: Product[] = [])
                 <span style="background:#ffffff;border:1px solid #cbd5e1;color:#0f172a;padding:8px 12px;border-radius:999px;font-size:12px;font-weight:700;text-transform:capitalize;">${escapeReceiptHtml((order.warranty_status || "N/A").replaceAll("_", " "))}</span>
               </div>
               <div style="margin-top:16px;font-size:14px;color:#334155;"><strong>Assigned Staff:</strong> ${escapeReceiptHtml(order.staff_name || "Not assigned")}</div>
-              <div style="margin-top:8px;font-size:14px;color:#334155;"><strong>Expected Delivery:</strong> ${escapeReceiptHtml(deliveryDate)}</div>
+              ${
+                showExpectedDelivery
+                  ? `<div style="margin-top:8px;font-size:14px;color:#334155;"><strong>Expected Delivery:</strong> ${escapeReceiptHtml(deliveryDate)}</div>`
+                  : ""
+              }
             </div>
           </div>
           <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;padding:22px;margin-bottom:22px;">
@@ -290,7 +299,7 @@ export const createOrderReceiptMarkup = (order: Order, products: Product[] = [])
             <div style="padding:16px 0 0;border-top:2px solid #cbd5e1;">
               <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.4px;color:#64748b;margin-bottom:10px;">Authorized By</div>
               <div style="height:34px;"></div>
-              <div style="font-size:13px;color:#475569;">Sun Computers</div>
+              <div style="font-size:13px;color:#475569;">Raj Communication</div>
             </div>
           </div>
           <div style="display:flex;justify-content:space-between;gap:16px;align-items:center;margin-top:24px;padding-top:18px;border-top:1px solid #e2e8f0;font-size:13px;color:#64748b;">
@@ -430,7 +439,7 @@ export const createDeliveryReceiptMarkup = (delivery: Delivery) => {
         <div style="padding:28px 32px;background:linear-gradient(135deg,#7c3aed 0%,#8b5cf6 55%,#4c1d95 100%);color:#ffffff;">
           <div style="display:flex;justify-content:space-between;gap:16px;align-items:flex-start;">
             <div>
-              <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;opacity:0.8;margin-bottom:8px;">Sun Computers</div>
+              <div style="font-size:12px;letter-spacing:2px;text-transform:uppercase;opacity:0.8;margin-bottom:8px;">Raj Communication</div>
               <h1 style="margin:0;font-size:32px;line-height:1.1;">Delivery Receipt</h1>
               <p style="margin:10px 0 0;font-size:14px;opacity:0.88;">Clean handover summary for delivery records, client confirmation, and internal follow-up.</p>
             </div>
@@ -497,7 +506,7 @@ export const createDeliveryReceiptMarkup = (delivery: Delivery) => {
             <div style="padding:16px 0 0;border-top:2px solid #cbd5e1;">
               <div style="font-size:11px;text-transform:uppercase;letter-spacing:1.4px;color:#64748b;margin-bottom:10px;">Delivered By</div>
               <div style="height:34px;"></div>
-              <div style="font-size:13px;color:#475569;">Sun Computers</div>
+              <div style="font-size:13px;color:#475569;">Raj Communication</div>
             </div>
           </div>
           <div style="display:flex;justify-content:space-between;gap:16px;align-items:center;margin-top:24px;padding-top:18px;border-top:1px solid #e2e8f0;font-size:13px;color:#64748b;">
@@ -623,3 +632,4 @@ export const openReceiptPrintWindow = (title: string, markup: string) => {
     return true;
   }
 };
+

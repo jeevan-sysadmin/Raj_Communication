@@ -26,22 +26,24 @@ const SpareProductsTab = ({
   onPresetClick,
   onClearFilters,
 }: SpareProductsTabProps) => (
-  <ClaimProductsTab
-    claimLabel="Spare Products"
-    emptyLabel="Spare Product"
-    filePrefix="spare_products"
-    accentColor="#ea580c"
-    products={spareProducts}
-    orders={orders}
-    filteredProducts={filteredSpareProducts}
-    loading={loading}
-    searchTerm={searchTerm}
-    dateRange={dateRange}
-    onSearchChange={onSearchChange}
-    onDateRangeChange={onDateRangeChange}
-    onPresetClick={onPresetClick}
-    onClearFilters={onClearFilters}
-  />
+  <div style={{ maxHeight: "calc(100vh - 140px)", overflowY: "auto", overflowX: "hidden" }}>
+    <ClaimProductsTab
+      claimLabel="Replacement Products"
+      emptyLabel="Replacement Product"
+      filePrefix="spare_products"
+      accentColor="#ea580c"
+      products={spareProducts}
+      orders={orders}
+      filteredProducts={filteredSpareProducts}
+      loading={loading}
+      searchTerm={searchTerm}
+      dateRange={dateRange}
+      onSearchChange={onSearchChange}
+      onDateRangeChange={onDateRangeChange}
+      onPresetClick={onPresetClick}
+      onClearFilters={onClearFilters}
+    />
+  </div>
 );
 
 export default SpareProductsTab;

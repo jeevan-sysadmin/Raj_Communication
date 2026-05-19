@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+﻿import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
   FiMapPin, 
@@ -85,7 +85,7 @@ const ContactUs: React.FC = () => {
     {
       icon: <FiMail />,
       title: 'Email Addresses',
-      details: ['Support: support@suncomputers.com', 'Sales: sales@suncomputers.com', 'General: info@suncomputers.com'],
+      details: ['Support: support@rajcommunication.com', 'Sales: sales@rajcommunication.com', 'General: info@rajcommunication.com'],
       color: '#8B5CF6'
     },
     {
@@ -108,7 +108,7 @@ const ContactUs: React.FC = () => {
         >
           <div className="header-content">
             <h1>Contact Us</h1>
-            <p className="header-subtitle">Get in touch with Sun Computers Service Center</p>
+            <p className="header-subtitle">Get in touch with Raj Communication Service Center</p>
             <p className="header-description">
               We're here to help with any questions about our service management system, 
               technical support, or business inquiries.
@@ -301,11 +301,11 @@ const ContactUs: React.FC = () => {
                   </div>
                 </div>
                 <div className="map-address">
-                  <h4>Sun Computers Service Center</h4>
+                  <h4>Raj Communication Service Center</h4>
                   <p>123 Service Lane, Tech City</p>
                   <p>IN 560001, India</p>
                   <a href="https://maps.google.com" target="_blank" rel="noopener noreferrer">
-                    View on Google Maps →
+                    View on Google Maps â†’
                   </a>
                 </div>
               </div>
@@ -330,7 +330,7 @@ const ContactUs: React.FC = () => {
                   <FiMail />
                   <div>
                     <span>Emergency Email</span>
-                    <strong>emergency@suncomputers.com</strong>
+                    <strong>emergency@rajcommunication.com</strong>
                   </div>
                 </div>
               </div>
@@ -370,7 +370,7 @@ const ContactUs: React.FC = () => {
         >
           <div className="faq-header">
             <h3>Frequently Asked Questions</h3>
-            <a href="/support" className="view-all">View All FAQs →</a>
+            <a href="/support" className="view-all">View All FAQs â†’</a>
           </div>
           <div className="faq-grid">
             <div className="faq-item">
@@ -396,7 +396,7 @@ const ContactUs: React.FC = () => {
           transition={{ duration: 0.5, delay: 0.5 }}
         >
           <div className="footer-content">
-            <p>© 2026 Sun Computers Service Center. All rights reserved.</p>
+            <p>Â© 2026 Raj Communication Service Center. All rights reserved.</p>
             <div className="footer-links">
               <a href="/privacy">Privacy Policy</a>
               <a href="/terms">Terms of Service</a>

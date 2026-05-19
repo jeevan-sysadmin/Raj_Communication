@@ -1,9 +1,11 @@
 import { motion } from "framer-motion";
 import {
+  FiCheckSquare,
   FiCalendar,
   FiCheckCircle,
   FiClock,
   FiFileText,
+  FiMapPin,
   FiPackage,
   FiPrinter,
   FiTruck,
@@ -63,6 +65,7 @@ const DeliveryDetailModal = ({ delivery, onClose, onPrint }: DeliveryDetailModal
     >
       <motion.div
         className="modal-content order-detail-modal delivery-detail-modal"
+        style={{ maxHeight: "90vh", overflowY: "auto" }}
         initial={{ opacity: 0, scale: 0.94, y: 36 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 24 }}
@@ -154,11 +157,30 @@ const DeliveryDetailModal = ({ delivery, onClose, onPrint }: DeliveryDetailModal
 
             <div className="detail-section">
               <h3>
+                <FiCheckSquare /> Contact & Address
+              </h3>
+              <div className="detail-item"><span className="detail-label">Contact Person</span><span className="detail-value">{delivery.contact_person || "N/A"}</span></div>
+              <div className="detail-item"><span className="detail-label">Contact Phone</span><span className="detail-value">{delivery.contact_phone || delivery.client_phone || "N/A"}</span></div>
+              <div className="detail-item"><span className="detail-label">Delivery Person</span><span className="detail-value">{delivery.delivery_person || "N/A"}</span></div>
+            </div>
+
+            <div className="detail-section">
+              <h3>
                 <FiTruck /> Reference
               </h3>
               <div className="detail-item"><span className="detail-label">Delivery ID</span><span className="detail-value">#{delivery.id}</span></div>
               <div className="detail-item"><span className="detail-label">Delivery Code</span><span className="detail-value">{deliveryCode}</span></div>
               <div className="detail-item"><span className="detail-label">Order Code</span><span className="detail-value">{orderCode}</span></div>
+            </div>
+
+            <div className="detail-section full-width detail-section-notes">
+              <h3>
+                <FiMapPin /> Delivery Address
+              </h3>
+              <div className="detail-copy-block">
+                <span className="detail-copy-label">Destination</span>
+                <p>{delivery.address || delivery.client_address || "Address not available"}</p>
+              </div>
             </div>
 
             {delivery.notes && (

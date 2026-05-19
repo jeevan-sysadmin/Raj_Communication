@@ -41,6 +41,7 @@ const ReceiptActionModal = ({
     >
       <motion.div
         className="modal-content receipt-action-modal"
+        style={{ maxHeight: "92vh", overflowY: "auto", overflowX: "hidden" }}
         initial={{ opacity: 0, scale: 0.94, y: 32 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 24 }}
@@ -64,7 +65,7 @@ const ReceiptActionModal = ({
 
         <div className="receipt-action-body">
           <div className="receipt-action-layout">
-            <div className="receipt-action-sidebar">
+            <div className="receipt-action-sidebar" style={{ maxHeight: "calc(100vh - 220px)", overflowY: "scroll", overflowX: "hidden", scrollbarGutter: "stable" }}>
               <div className={`receipt-action-hero ${kind === "delivery" ? "delivery" : ""}`}>
                 <div>
                   <span className="receipt-action-kicker">{kind === "order" ? "Service Receipt" : "Delivery Receipt"}</span>
@@ -113,12 +114,12 @@ const ReceiptActionModal = ({
               </div>
             </div>
 
-            <div className="receipt-preview-stage">
+            <div className="receipt-preview-stage" style={{ maxHeight: "calc(100vh - 220px)", overflowY: "scroll", overflowX: "hidden", scrollbarGutter: "stable" }}>
               <div className="receipt-preview-toolbar">
                 <span>A4 Receipt Preview</span>
                 <strong>{kind === "order" ? "Customer copy" : "Delivery handover copy"}</strong>
               </div>
-              <div className="receipt-preview-scroll">
+              <div className="receipt-preview-scroll" style={{ maxHeight: "none", overflowY: "visible", overflowX: "hidden" }}>
                 <div className="receipt-preview-paper" dangerouslySetInnerHTML={{ __html: previewMarkup }} />
               </div>
             </div>

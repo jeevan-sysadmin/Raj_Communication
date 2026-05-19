@@ -82,14 +82,14 @@ const UserFormModal = ({
       onClick={onClose}
     >
       <motion.div
-        className="modal-content-enhanced product-modal-content"
+        className="modal-content-enhanced user-modal-content"
         initial={{ opacity: 0, scale: 0.96, y: 28 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 28 }}
         transition={{ type: "spring", damping: 24, stiffness: 260 }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="modal-header-enhanced product-modal-header">
+        <div className="modal-header-enhanced user-modal-header">
           <div className="modal-header-left">
             <div className="modal-icon-wrapper">
               <div className="modal-icon-bg">
@@ -111,10 +111,10 @@ const UserFormModal = ({
           </motion.button>
         </div>
 
-        <form onSubmit={onSubmit} className="service-form-enhanced product-form-enhanced">
-          <div className="product-form-shell">
-            <aside className="product-form-aside">
-              <div className="product-identity-card">
+        <form onSubmit={onSubmit} className="service-form-enhanced user-form-enhanced">
+          <div className="user-form-shell">
+            <aside className="user-form-aside">
+              <div className="user-identity-card">
                 <div
                   className="client-identity-avatar"
                   style={{
@@ -140,28 +140,28 @@ const UserFormModal = ({
                     initials
                   )}
                 </div>
-                <span className="product-identity-badge" style={{ backgroundColor: `${roleTone}15`, color: roleTone }}>
+                <span className="user-identity-badge" style={{ backgroundColor: `${roleTone}15`, color: roleTone }}>
                   {editMode ? "Editing Account" : "New Account"}
                 </span>
                 <h3>{profileLabel}</h3>
                 <p>{userForm.email.trim() || "Email address will appear here"}</p>
-                <div className="product-identity-meta">
+                <div className="user-identity-meta">
                   <span>{userForm.phone.trim() || "Phone not added"}</span>
                   <span>{userForm.role === "admin" ? "Administrator" : "User / Staff"}</span>
                   <span>{userForm.is_active ? "Active" : "Inactive"}</span>
                 </div>
               </div>
 
-              <div className="product-progress-card">
-                <div className="product-progress-header">
+              <div className="user-progress-card">
+                <div className="user-progress-header">
                   <strong>Setup progress</strong>
                   <span>
                     {completionCount}/{completionTotal}
                   </span>
                 </div>
-                <div className="product-progress-track">
+                <div className="user-progress-track">
                   <div
-                    className="product-progress-fill"
+                    className="user-progress-fill"
                     style={{
                       width: `${(completionCount / completionTotal) * 100}%`,
                       background: `linear-gradient(90deg, ${roleTone}, #38bdf8)`,
@@ -171,8 +171,8 @@ const UserFormModal = ({
                 <p>Best results come from a clear name, valid email, and the correct access role.</p>
               </div>
 
-              <div className="product-scan-card">
-                <div className="product-scan-header">
+              <div className="user-access-card">
+                <div className="user-access-header">
                   <FiShield />
                   <strong>{accessLabel}</strong>
                 </div>
@@ -184,18 +184,18 @@ const UserFormModal = ({
               </div>
             </aside>
 
-            <div className="product-form-main">
-              <section className="product-form-panel">
-                <div className="product-form-panel-header">
+            <div className="user-form-main">
+              <section className="user-form-panel">
+                <div className="user-form-panel-header">
                   <div>
                     <h3>Identity & Access</h3>
                     <p>Define who this person is and what level of system access they should get.</p>
                   </div>
-                  <span className="product-form-badge required">Core setup</span>
+                  <span className="user-form-badge required">Core setup</span>
                 </div>
 
-                <div className="form-grid product-form-grid">
-                  <div className="form-group full-width product-form-group">
+                <div className="form-grid user-form-grid">
+                  <div className="form-group full-width user-form-group">
                     <label>Profile Image</label>
                     <div className="image-upload-container">
                       <div className="image-preview">
@@ -227,37 +227,37 @@ const UserFormModal = ({
                     </div>
                   </div>
 
-                  <div className="form-group product-form-group">
+                  <div className="form-group user-form-group">
                     <label htmlFor="user_name">
                       <FiUser /> Full Name *
                     </label>
-                    <div className="product-input-wrap">
-                      <FiUser className="product-input-icon" />
+                    <div className="user-input-wrap">
+                      <FiUser className="user-input-icon" />
                       <input
                         id="user_name"
                         name="name"
                         value={userForm.name}
                         onChange={onChange}
-                        className="product-input has-icon"
+                        className="user-input has-icon"
                         placeholder="Full name"
                         required
                       />
                     </div>
                   </div>
 
-                  <div className="form-group product-form-group">
+                  <div className="form-group user-form-group">
                     <label htmlFor="user_email">
                       <FiMail /> Email *
                     </label>
-                    <div className="product-input-wrap">
-                      <FiMail className="product-input-icon" />
+                    <div className="user-input-wrap">
+                      <FiMail className="user-input-icon" />
                       <input
                         id="user_email"
                         name="email"
                         type="email"
                         value={userForm.email}
                         onChange={onChange}
-                        className="product-input has-icon"
+                        className="user-input has-icon"
                         placeholder="name@example.com"
                         required
                       />
@@ -265,19 +265,19 @@ const UserFormModal = ({
                   </div>
 
                   {!editMode && (
-                    <div className="form-group product-form-group">
+                    <div className="form-group user-form-group">
                       <label htmlFor="user_password">
                         <FiLock /> Password *
                       </label>
-                      <div className="product-input-wrap">
-                        <FiLock className="product-input-icon" />
+                      <div className="user-input-wrap">
+                        <FiLock className="user-input-icon" />
                         <input
                           id="user_password"
                           name="password"
                           type="password"
                           value={userForm.password || ""}
                           onChange={onChange}
-                          className="product-input has-icon"
+                          className="user-input has-icon"
                           placeholder="Minimum 6 characters"
                           required
                           minLength={6}
@@ -286,24 +286,24 @@ const UserFormModal = ({
                     </div>
                   )}
 
-                  <div className="form-group product-form-group">
+                  <div className="form-group user-form-group">
                     <label htmlFor="user_phone">
                       <FiPhone /> Phone
                     </label>
-                    <div className="product-input-wrap">
-                      <FiPhone className="product-input-icon" />
+                    <div className="user-input-wrap">
+                      <FiPhone className="user-input-icon" />
                       <input
                         id="user_phone"
                         name="phone"
                         value={userForm.phone}
                         onChange={onChange}
-                        className="product-input has-icon"
+                        className="user-input has-icon"
                         placeholder="Contact number"
                       />
                     </div>
                   </div>
 
-                  <div className="form-group product-form-group">
+                  <div className="form-group user-form-group">
                     <label htmlFor="user_role">
                       <FiShield /> Role *
                     </label>
@@ -312,7 +312,7 @@ const UserFormModal = ({
                       name="role"
                       value={userForm.role}
                       onChange={onChange}
-                      className="product-input"
+                      className="user-input"
                       required
                     >
                       <option value="admin">Admin</option>
@@ -322,23 +322,23 @@ const UserFormModal = ({
                 </div>
               </section>
 
-              <section className="product-form-panel">
-                <div className="product-form-panel-header">
+              <section className="user-form-panel">
+                <div className="user-form-panel-header">
                   <div>
                     <h3>Account State</h3>
                     <p>Control whether this account can currently access the dashboard.</p>
                   </div>
-                  <span className="product-form-badge optional">Access</span>
+                  <span className="user-form-badge optional">Access</span>
                 </div>
 
-                <div className="form-grid product-form-grid">
-                  <div className="form-group full-width product-form-group">
-                    <label className="product-checkbox-card">
+                <div className="form-grid user-form-grid">
+                  <div className="form-group full-width user-form-group">
+                    <label className="user-checkbox-card">
                       <input type="checkbox" name="is_active" checked={userForm.is_active} onChange={onChange} />
-                      <span className="product-checkbox-visual">
+                      <span className="user-checkbox-visual">
                         <FiCheckSquare />
                       </span>
-                      <span className="product-checkbox-copy">
+                      <span className="user-checkbox-copy">
                         <strong>{userForm.is_active ? "Account is Active" : "Account is Inactive"}</strong>
                         <small>
                           {userForm.is_active
@@ -353,13 +353,13 @@ const UserFormModal = ({
             </div>
           </div>
 
-          <div className="form-actions-enhanced product-form-actions">
-            <div className="product-form-actions-note">
+          <div className="form-actions-enhanced user-form-actions">
+            <div className="user-form-actions-note">
               {editMode
                 ? "Update the user profile and save changes when everything looks right."
                 : "Name, email, role, and password are the essentials for a new account."}
             </div>
-            <div className="product-form-actions-buttons">
+            <div className="user-form-actions-buttons">
               <motion.button
                 type="button"
                 className="btn-secondary-enhanced"

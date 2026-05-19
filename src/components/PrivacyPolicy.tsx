@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { motion } from 'framer-motion';
 import { FiShield, FiLock, FiEye, FiDatabase, FiUserCheck } from 'react-icons/fi';
 import './css/styles.css';
@@ -20,7 +20,7 @@ const PrivacyPolicy: React.FC = () => {
           <h1>Privacy Policy</h1>
           <p className="policy-subtitle">Last updated: January 15, 2026</p>
           <p className="policy-description">
-            This Privacy Policy describes how Sun Computers Service Center collects, uses, 
+            This Privacy Policy describes how Raj Communication Service Center collects, uses, 
             and protects your information when you use our service management system.
           </p>
         </motion.div>
@@ -249,12 +249,12 @@ const PrivacyPolicy: React.FC = () => {
             <div className="contact-grid">
               <div className="contact-card">
                 <h3>Data Protection Officer</h3>
-                <p>Email: dpo@suncomputers.com</p>
+                <p>Email: dpo@rajcommunication.com</p>
                 <p>Phone: +91 98765 43210</p>
               </div>
               <div className="contact-card">
                 <h3>Privacy Concerns</h3>
-                <p>Email: privacy@suncomputers.com</p>
+                <p>Email: privacy@rajcommunication.com</p>
                 <p>Response time: 48 hours</p>
               </div>
               <div className="contact-card">
@@ -304,7 +304,7 @@ const PrivacyPolicy: React.FC = () => {
           transition={{ duration: 0.5, delay: 0.9 }}
         >
           <div className="footer-content">
-            <p>© 2026 Sun Computers Service Center. All rights reserved.</p>
+            <p>Â© 2026 Raj Communication Service Center. All rights reserved.</p>
             <p className="footer-note">
               This Privacy Policy is effective from January 15, 2026. For any questions 
               or concerns about your privacy, please contact our Data Protection Officer.

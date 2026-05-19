@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   FiChevronLeft,
@@ -235,7 +235,7 @@ const ClaimProductsTab = ({
           </style>
         </head>
         <body>
-          <h1>Sun Computers ${claimLabel} Report</h1>
+          <h1>Raj Communication ${claimLabel} Report</h1>
           <p>${escapeHtml(selectedProducts.length > 0 ? `${selectedProducts.length} selected products` : `${filteredProducts.length} filtered products`)}</p>
           <table>
             <thead>
@@ -424,3 +424,4 @@ const ClaimProductsTab = ({
 };
 
 export default ClaimProductsTab;
+

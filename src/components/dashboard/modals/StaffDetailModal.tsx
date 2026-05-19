@@ -78,7 +78,7 @@ interface StaffDetailModalProps {
   onViewOrders?: (staff: StaffRecord) => void;
 }
 
-const API_BASE_URL = "http://162.141.0.9/sun_computers/api";
+const API_BASE_URL = "http://localhost/raj_communication/api_sync";
 const serviceTypes = ["general", "repair", "sales", "water", "inverter"];
 const expenseTypes = ["petrol", "travel", "food", "tools", "stationery", "others"];
 
@@ -754,7 +754,7 @@ const StaffDetailModal = ({ show, staff, staffOrders, onClose, onEdit, onViewOrd
   return (
     <motion.div className="modal-overlay-enhanced" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
       <motion.div
-        className="modal-content-enhanced product-modal-content"
+        className="modal-content-enhanced staff-detail-modal-content"
         initial={{ opacity: 0, scale: 0.96, y: 24 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 24 }}

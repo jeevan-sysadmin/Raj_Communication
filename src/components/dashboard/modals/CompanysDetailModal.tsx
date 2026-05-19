@@ -28,6 +28,7 @@ const CompanysDetailModal = ({ company, onClose, onEdit }: CompanysDetailModalPr
   >
     <motion.div
       className="modal-content order-detail-modal product-detail-modal"
+      style={{ maxHeight: "90vh", overflowY: "auto" }}
       initial={{ opacity: 0, scale: 0.94, y: 36 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       exit={{ opacity: 0, scale: 0.96, y: 24 }}

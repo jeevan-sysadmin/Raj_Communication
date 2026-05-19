@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   FiCalendar,
@@ -7,10 +7,14 @@ import {
   FiChevronLeft,
   FiChevronRight,
   FiEdit2,
+  FiMapPin,
   FiPackage,
+  FiPhone,
   FiPrinter,
+  FiSave,
   FiSearch,
   FiTruck,
+  FiUser,
   FiX,
 } from "react-icons/fi";
 import BulkActionPanel from "../BulkActionPanel";
@@ -34,8 +38,8 @@ interface DeliveryTabProps {
 }
 
 const ITEMS_PER_PAGE = 20;
-const DELIVERY_API_URL = "http://162.141.0.9/raj_communication/api/deliveries.php";
-const ORDERS_API_URL = "http://162.141.0.9/raj_communication/api/Order.php";
+const DELIVERY_API_URL = "http://localhost/raj_communication/api/deliveries.php";
+const ORDERS_API_URL = "http://localhost/raj_communication/api/Order.php";
 
 interface DeliveryOrderMeta {
   id: number;
@@ -292,6 +296,7 @@ const DeliveryTab = ({
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedDeliveryIds, setSelectedDeliveryIds] = useState<string[]>([]);
   const [selectedDelivery, setSelectedDelivery] = useState<Delivery | null>(null);
+  const [loadingDetailData, setLoadingDetailData] = useState(false);
   const [editingDelivery, setEditingDelivery] = useState<Delivery | null>(null);
   const [editForm, setEditForm] = useState({
     delivery_type: "inhand",
@@ -305,6 +310,7 @@ const DeliveryTab = ({
     notes: "",
   });
   const [savingEdit, setSavingEdit] = useState(false);
+  const [loadingEditData, setLoadingEditData] = useState(false);
   const [editFeedback, setEditFeedback] = useState<string>("");
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
 
@@ -408,14 +414,16 @@ const DeliveryTab = ({
           return [{
             ...delivery,
             product_name: fallback?.name || delivery.product_name || "",
-            delivery_type: fallback?.deliveryType || delivery.delivery_type || "inhand",
+            // Show delivery type exactly as stored in deliveries table.
+            delivery_type: normalizeDeliveryTypeValue(delivery.delivery_type),
             __rowKey: `${delivery.id}-${delivery.order_id}-0`,
           }];
         }
         return deliveredProductEntries.map((entry, index) => ({
           ...delivery,
           product_name: entry.name,
-          delivery_type: entry.deliveryType,
+          // Keep DB value for UI consistency with Delivery Tracking requirements.
+          delivery_type: normalizeDeliveryTypeValue(delivery.delivery_type),
           __rowKey: `${delivery.id}-${delivery.order_id}-${index}`,
         }));
       }),
@@ -662,7 +670,7 @@ const DeliveryTab = ({
           </style>
         </head>
         <body>
-          <h1>Sun Computers Delivery Report</h1>
+          <h1>Raj Communication Delivery Report</h1>
           <p>${escapeHtml(selectedDeliveries.length > 0 ? `${selectedDeliveries.length} selected deliveries` : `${sortedDeliveries.length} filtered deliveries`)}</p>
           <table>
             <thead>
@@ -679,21 +687,68 @@ const DeliveryTab = ({
     printWindow.close();
   };
 
-  const openEditModal = (delivery: Delivery) => {
+  const openEditModal = async (delivery: Delivery) => {
     setEditingDelivery(delivery);
     setEditFeedback("");
-    setEditForm({
-      delivery_type: normalizeDeliveryTypeValue(delivery.delivery_type),
-      address: delivery.address || "",
-      contact_person: delivery.contact_person || "",
-      contact_phone: delivery.contact_phone || "",
-      scheduled_date: delivery.scheduled_date || "",
-      scheduled_time: delivery.scheduled_time || "",
-      delivery_person: delivery.delivery_person || "",
-      status: delivery.status || "scheduled",
-      notes: delivery.notes || "",
-    });
     setEditErrors({});
+    setLoadingEditData(true);
+    try {
+      const token = localStorage.getItem("authToken") || localStorage.getItem("token");
+      const response = await fetch(`${DELIVERY_API_URL}?id=${delivery.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      const data = await response.json();
+      const source = data?.success && data?.delivery ? normalizeDelivery(data.delivery) : delivery;
+      setEditForm({
+        delivery_type: normalizeDeliveryTypeValue(source.delivery_type),
+        address: source.address || "",
+        contact_person: source.contact_person || "",
+        contact_phone: source.contact_phone || "",
+        scheduled_date: source.scheduled_date || "",
+        scheduled_time: source.scheduled_time || "",
+        delivery_person: source.delivery_person || "",
+        status: source.status || "scheduled",
+        notes: source.notes || "",
+      });
+      if (!(data?.success && data?.delivery)) {
+        setEditFeedback("Loaded available values. Live DB details could not be fetched.");
+      }
+    } catch {
+      setEditForm({
+        delivery_type: normalizeDeliveryTypeValue(delivery.delivery_type),
+        address: delivery.address || "",
+        contact_person: delivery.contact_person || "",
+        contact_phone: delivery.contact_phone || "",
+        scheduled_date: delivery.scheduled_date || "",
+        scheduled_time: delivery.scheduled_time || "",
+        delivery_person: delivery.delivery_person || "",
+        status: delivery.status || "scheduled",
+        notes: delivery.notes || "",
+      });
+      setEditFeedback("Loaded available values. Live DB details could not be fetched.");
+    } finally {
+      setLoadingEditData(false);
+    }
+  };
+
+  const openDeliveryDetailModal = async (delivery: Delivery) => {
+    setLoadingDetailData(true);
+    try {
+      const token = localStorage.getItem("authToken") || localStorage.getItem("token");
+      const response = await fetch(`${DELIVERY_API_URL}?id=${delivery.id}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      const data = await response.json();
+      if (response.ok && data?.success && data?.delivery) {
+        setSelectedDelivery(normalizeDelivery(data.delivery));
+      } else {
+        setSelectedDelivery(delivery);
+      }
+    } catch {
+      setSelectedDelivery(delivery);
+    } finally {
+      setLoadingDetailData(false);
+    }
   };
 
   const validateEditForm = () => {
@@ -927,7 +982,7 @@ const DeliveryTab = ({
                 };
 
                 return (
-                  <motion.tr key={delivery.__rowKey} className={isSelected ? "selected-row" : ""} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }} whileHover={{ backgroundColor: "#f8fafc", cursor: "pointer" }} onClick={() => setSelectedDelivery(delivery)}>
+                  <motion.tr key={delivery.__rowKey} className={isSelected ? "selected-row" : ""} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }} whileHover={{ backgroundColor: "#f8fafc", cursor: "pointer" }} onClick={() => void openDeliveryDetailModal(delivery)}>
                     <td onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
@@ -1000,7 +1055,7 @@ const DeliveryTab = ({
                         <motion.button className="action-btn print" onClick={(e) => { e.stopPropagation(); onPrintDeliveryReceipt(enrichedDeliveryForReceipt as Delivery); }} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} title="Receipt Options">
                           <FiPrinter />
                         </motion.button>
-                        <motion.button className="action-btn view" onClick={(e) => { e.stopPropagation(); openEditModal(delivery); }} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} title="Edit Delivery">
+                        <motion.button className="action-btn view" onClick={(e) => { e.stopPropagation(); void openEditModal(delivery); }} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} title="Edit Delivery">
                           <FiEdit2 />
                         </motion.button>
                       </div>
@@ -1044,7 +1099,7 @@ const DeliveryTab = ({
         </div>
       )}
 
-      {selectedDelivery && (
+      {selectedDelivery && !loadingDetailData && (
         <DeliveryDetailModal
           delivery={selectedDelivery}
           onClose={() => setSelectedDelivery(null)}
@@ -1053,105 +1108,180 @@ const DeliveryTab = ({
       )}
 
       {editingDelivery && (
-        <div className="modal-overlay" onClick={() => !savingEdit && setEditingDelivery(null)}>
-          <div className="modal-content order-detail-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Edit Delivery #{editingDelivery.id}</h3>
-              <button type="button" className="close-btn" onClick={() => !savingEdit && setEditingDelivery(null)}>
+        <motion.div
+          className="modal-overlay-enhanced"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          onClick={() => !savingEdit && setEditingDelivery(null)}
+        >
+          <motion.div
+            className="modal-content-enhanced delivery-edit-modal-content"
+            initial={{ opacity: 0, scale: 0.95, y: 28 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 28 }}
+            transition={{ type: "spring", damping: 24, stiffness: 260 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header-enhanced delivery-edit-modal-header">
+              <div className="modal-header-left">
+                <div className="modal-icon-wrapper">
+                  <div className="modal-icon-bg">
+                    <FiTruck />
+                  </div>
+                </div>
+                <div className="modal-title-enhanced">
+                  <h2>Edit Delivery</h2>
+                  <p>Update handover details, schedule, and tracking in one clean flow.</p>
+                </div>
+              </div>
+              <motion.button
+                type="button"
+                className="close-btn-enhanced"
+                onClick={() => !savingEdit && setEditingDelivery(null)}
+                whileHover={{ rotate: 90 }}
+                whileTap={{ scale: 0.9 }}
+              >
                 <FiX />
-              </button>
+              </motion.button>
             </div>
-            <div className="modal-body" style={{ display: "grid", gap: "14px" }}>
-              {editFeedback && (
-                <div style={{ background: "#f8fafc", border: "1px solid #cbd5e1", borderRadius: "10px", padding: "10px 12px", color: "#334155", fontWeight: 500 }}>
-                  {editFeedback}
+
+            <div className="service-form-enhanced delivery-edit-form-enhanced">
+              <div className="delivery-edit-shell">
+                <aside className="delivery-edit-aside">
+                  <div className="delivery-edit-preview-card">
+                    <span className="delivery-edit-preview-badge">Delivery #{editingDelivery.id}</span>
+                    <h3>{editingDelivery.delivery_code || `DEL${String(editingDelivery.id).padStart(3, "0")}`}</h3>
+                    <p>{editingDelivery.client_name || "Client name not available"}</p>
+                    <div className="delivery-edit-preview-meta">
+                      <span>{editingDelivery.product_name || "Product not linked"}</span>
+                      <span>{editForm.status.replaceAll("_", " ")}</span>
+                    </div>
+                  </div>
+                  <div className="delivery-edit-tip-card">
+                    <strong>Quick tips</strong>
+                    <ul className="delivery-edit-tip-list">
+                      <li>Choose delivery type first to auto-check address requirements.</li>
+                      <li>Keep phone and contact person updated for same-day delivery calls.</li>
+                      <li>Mark delivered only after handover confirmation.</li>
+                    </ul>
+                  </div>
+                </aside>
+
+                <div className="delivery-edit-main">
+                  {editFeedback && <div className="delivery-edit-feedback">{editFeedback}</div>}
+
+                  <section className="delivery-edit-panel">
+                    <div className="delivery-edit-panel-header">
+                      <div>
+                        <h3>Delivery Method</h3>
+                        <p>Select how this handover will happen.</p>
+                      </div>
+                    </div>
+                    <div className="delivery-type-grid">
+                      {DELIVERY_TYPE_OPTIONS.map((option) => {
+                        const active = editForm.delivery_type === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            className={`delivery-type-option ${active ? "active" : ""}`}
+                            onClick={() => setEditForm((prev) => ({ ...prev, delivery_type: option.value }))}
+                          >
+                            <strong>{option.label}</strong>
+                            <span>{option.hint}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+
+                  <section className="delivery-edit-panel">
+                    <div className="delivery-edit-panel-header">
+                      <div>
+                        <h3>Contact & Schedule</h3>
+                        <p>Who receives it and when.</p>
+                      </div>
+                    </div>
+                    <div className="form-grid delivery-edit-grid">
+                      <label className="delivery-edit-field">
+                        <span><FiUser /> Contact Person</span>
+                        <input value={editForm.contact_person} onChange={(e) => setEditForm((prev) => ({ ...prev, contact_person: e.target.value }))} placeholder="Contact person" className="client-input" />
+                        {editErrors.contact_person && <small className="delivery-edit-error">{editErrors.contact_person}</small>}
+                      </label>
+                      <label className="delivery-edit-field">
+                        <span><FiPhone /> Contact Phone</span>
+                        <input value={editForm.contact_phone} onChange={(e) => setEditForm((prev) => ({ ...prev, contact_phone: e.target.value }))} placeholder="Contact phone" className="client-input" />
+                        {editErrors.contact_phone && <small className="delivery-edit-error">{editErrors.contact_phone}</small>}
+                      </label>
+                      <label className="delivery-edit-field full-width">
+                        <span><FiMapPin /> Address</span>
+                        <input value={editForm.address} onChange={(e) => setEditForm((prev) => ({ ...prev, address: e.target.value }))} placeholder="Address / landmark" className="client-input" />
+                        {editErrors.address && <small className="delivery-edit-error">{editErrors.address}</small>}
+                      </label>
+                      <label className="delivery-edit-field">
+                        <span><FiCalendar /> Scheduled Date</span>
+                        <input type="date" value={editForm.scheduled_date} onChange={(e) => setEditForm((prev) => ({ ...prev, scheduled_date: e.target.value }))} className="client-input" />
+                        {editErrors.scheduled_date && <small className="delivery-edit-error">{editErrors.scheduled_date}</small>}
+                      </label>
+                      <label className="delivery-edit-field">
+                        <span><FiClock /> Scheduled Time</span>
+                        <input type="time" value={editForm.scheduled_time} onChange={(e) => setEditForm((prev) => ({ ...prev, scheduled_time: e.target.value }))} className="client-input" />
+                        {editErrors.scheduled_time && <small className="delivery-edit-error">{editErrors.scheduled_time}</small>}
+                      </label>
+                    </div>
+                  </section>
+
+                  <section className="delivery-edit-panel">
+                    <div className="delivery-edit-panel-header">
+                      <div>
+                        <h3>Execution</h3>
+                        <p>Assign owner, status, and notes.</p>
+                      </div>
+                    </div>
+                    <div className="form-grid delivery-edit-grid">
+                      <label className="delivery-edit-field">
+                        <span>Delivery Person</span>
+                        <input value={editForm.delivery_person} onChange={(e) => setEditForm((prev) => ({ ...prev, delivery_person: e.target.value }))} placeholder="Delivery person name" className="client-input" />
+                      </label>
+                      <label className="delivery-edit-field">
+                        <span>Status</span>
+                        <select value={editForm.status} onChange={(e) => setEditForm((prev) => ({ ...prev, status: e.target.value }))} className="client-input">
+                          <option value="scheduled">Scheduled</option>
+                          <option value="in_transit">In Transit</option>
+                          <option value="delivered">Delivered</option>
+                          <option value="cancelled">Cancelled</option>
+                          <option value="failed">Failed</option>
+                        </select>
+                      </label>
+                      <label className="delivery-edit-field full-width">
+                        <span>Notes</span>
+                        <textarea value={editForm.notes} onChange={(e) => setEditForm((prev) => ({ ...prev, notes: e.target.value }))} placeholder="Add delivery notes for staff follow-up..." rows={4} className="client-input client-textarea" />
+                      </label>
+                    </div>
+                  </section>
                 </div>
-              )}
-              <label style={{ display: "grid", gap: "6px" }}>
-                <span style={{ fontWeight: 600, color: "#334155" }}>Delivery Type</span>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: "10px" }}>
-                  {DELIVERY_TYPE_OPTIONS.map((option) => {
-                    const active = editForm.delivery_type === option.value;
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => setEditForm((prev) => ({ ...prev, delivery_type: option.value }))}
-                        style={{
-                          textAlign: "left",
-                          borderRadius: "12px",
-                          border: active ? "2px solid #8B5CF6" : "1px solid #cbd5e1",
-                          background: active ? "#f5f3ff" : "#fff",
-                          padding: "10px",
-                          color: "#1e293b",
-                        }}
-                      >
-                        <div style={{ fontWeight: 700, fontSize: "13px" }}>{option.label}</div>
-                        <div style={{ fontSize: "11px", opacity: 0.8 }}>{option.hint}</div>
-                      </button>
-                    );
-                  })}
+              </div>
+
+              <div className="form-actions-enhanced delivery-edit-actions">
+                <div className="delivery-edit-actions-note">Changes will update this delivery record instantly.</div>
+                <div className="client-form-actions-buttons">
+                  <motion.button type="button" className="btn-secondary-enhanced" onClick={() => setEditingDelivery(null)} disabled={savingEdit || loadingEditData} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                    Cancel
+                  </motion.button>
+                  <motion.button type="button" className="btn-primary-enhanced" onClick={saveDeliveryEdit} disabled={savingEdit || loadingEditData} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>
+                    <FiSave />
+                    {loadingEditData ? "Loading..." : savingEdit ? "Saving..." : "Save Delivery"}
+                  </motion.button>
                 </div>
-              </label>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                <label style={{ display: "grid", gap: "6px" }}>
-                  <span style={{ fontWeight: 600, color: "#334155" }}>Contact Person</span>
-                  <input value={editForm.contact_person} onChange={(e) => setEditForm((prev) => ({ ...prev, contact_person: e.target.value }))} placeholder="Contact person" style={{ padding: "10px 12px", borderRadius: "10px", border: "1px solid #cbd5e1" }} />
-                  {editErrors.contact_person && <span style={{ color: "#dc2626", fontSize: "12px" }}>{editErrors.contact_person}</span>}
-                </label>
-                <label style={{ display: "grid", gap: "6px" }}>
-                  <span style={{ fontWeight: 600, color: "#334155" }}>Contact Phone</span>
-                  <input value={editForm.contact_phone} onChange={(e) => setEditForm((prev) => ({ ...prev, contact_phone: e.target.value }))} placeholder="Contact phone" style={{ padding: "10px 12px", borderRadius: "10px", border: "1px solid #cbd5e1" }} />
-                  {editErrors.contact_phone && <span style={{ color: "#dc2626", fontSize: "12px" }}>{editErrors.contact_phone}</span>}
-                </label>
               </div>
-              <label style={{ display: "grid", gap: "6px" }}>
-                <span style={{ fontWeight: 600, color: "#334155" }}>Address</span>
-                <input value={editForm.address} onChange={(e) => setEditForm((prev) => ({ ...prev, address: e.target.value }))} placeholder="Address" style={{ padding: "10px 12px", borderRadius: "10px", border: "1px solid #cbd5e1" }} />
-                {editErrors.address && <span style={{ color: "#dc2626", fontSize: "12px" }}>{editErrors.address}</span>}
-              </label>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                <label style={{ display: "grid", gap: "6px" }}>
-                  <span style={{ fontWeight: 600, color: "#334155", display: "inline-flex", alignItems: "center", gap: "6px" }}><FiCalendar />Scheduled Date</span>
-                  <input type="date" value={editForm.scheduled_date} onChange={(e) => setEditForm((prev) => ({ ...prev, scheduled_date: e.target.value }))} style={{ padding: "10px 12px", borderRadius: "10px", border: "1px solid #cbd5e1" }} />
-                  {editErrors.scheduled_date && <span style={{ color: "#dc2626", fontSize: "12px" }}>{editErrors.scheduled_date}</span>}
-                </label>
-                <label style={{ display: "grid", gap: "6px" }}>
-                  <span style={{ fontWeight: 600, color: "#334155", display: "inline-flex", alignItems: "center", gap: "6px" }}><FiClock />Scheduled Time</span>
-                  <input type="time" value={editForm.scheduled_time} onChange={(e) => setEditForm((prev) => ({ ...prev, scheduled_time: e.target.value }))} style={{ padding: "10px 12px", borderRadius: "10px", border: "1px solid #cbd5e1" }} />
-                  {editErrors.scheduled_time && <span style={{ color: "#dc2626", fontSize: "12px" }}>{editErrors.scheduled_time}</span>}
-                </label>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                <label style={{ display: "grid", gap: "6px" }}>
-                  <span style={{ fontWeight: 600, color: "#334155" }}>Delivery Person</span>
-                  <input value={editForm.delivery_person} onChange={(e) => setEditForm((prev) => ({ ...prev, delivery_person: e.target.value }))} placeholder="Delivery person" style={{ padding: "10px 12px", borderRadius: "10px", border: "1px solid #cbd5e1" }} />
-                </label>
-                <label style={{ display: "grid", gap: "6px" }}>
-                  <span style={{ fontWeight: 600, color: "#334155" }}>Status</span>
-                  <select value={editForm.status} onChange={(e) => setEditForm((prev) => ({ ...prev, status: e.target.value }))} style={{ padding: "10px 12px", borderRadius: "10px", border: "1px solid #cbd5e1" }}>
-                <option value="scheduled">Scheduled</option>
-                <option value="in_transit">In Transit</option>
-                <option value="delivered">Delivered</option>
-                <option value="cancelled">Cancelled</option>
-                <option value="failed">Failed</option>
-              </select>
-                </label>
-              </div>
-              <label style={{ display: "grid", gap: "6px" }}>
-                <span style={{ fontWeight: 600, color: "#334155" }}>Notes</span>
-                <textarea value={editForm.notes} onChange={(e) => setEditForm((prev) => ({ ...prev, notes: e.target.value }))} placeholder="Notes" rows={3} style={{ padding: "10px 12px", borderRadius: "10px", border: "1px solid #cbd5e1" }} />
-              </label>
             </div>
-            <div className="modal-footer" style={{ display: "flex", gap: "10px", justifyContent: "flex-end", marginTop: "12px" }}>
-              <button type="button" className="btn outline" onClick={() => setEditingDelivery(null)} disabled={savingEdit}>Cancel</button>
-              <button type="button" className="btn primary" onClick={saveDeliveryEdit} disabled={savingEdit}>{savingEdit ? "Saving..." : "Save"}</button>
-            </div>
-          </div>
-        </div>
+          </motion.div>
+        </motion.div>
       )}
     </div>
   );
 };
 
 export default DeliveryTab;
+

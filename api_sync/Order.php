@@ -426,7 +426,9 @@ function normalizeRepairingStatusMap($value) {
 
 function normalizeHandoverType($value) {
     $normalized = strtolower(trim((string)$value));
-    $allowed = ['in_hand', 'courier', 'parcel_service'];
+    if ($normalized === 'in_hand' || $normalized === 'pickup') return 'inhand';
+    if ($normalized === 'parcel_service' || $normalized === 'delivery') return 'parcelservice';
+    $allowed = ['inhand', 'courier', 'parcelservice'];
     return in_array($normalized, $allowed, true) ? $normalized : null;
 }
 

@@ -33,6 +33,7 @@ const ClientsDetailModal = ({ client, relatedOrders, onClose, onEdit }: ClientsD
     >
       <motion.div
         className="modal-content client-detail-modal"
+        style={{ maxHeight: "90vh", overflowY: "auto" }}
         initial={{ opacity: 0, scale: 0.94, y: 36 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 24 }}

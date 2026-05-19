@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   FiBox,
@@ -147,8 +147,6 @@ const ProductsTab = ({
       "warranty_period",
       "warranty_status",
       "price",
-      "stock_quantity",
-      "min_stock_level",
       "status",
       "created_at",
       "updated_at",
@@ -295,7 +293,7 @@ const ProductsTab = ({
           </style>
         </head>
         <body>
-          <h1>Sun Computers Products Report</h1>
+          <h1>Raj Communication Products Report</h1>
           <p>${escapeHtml(selectedProducts.length > 0 ? `${selectedProducts.length} selected products` : `${filteredProducts.length} filtered products`)}</p>
           <table>
             <thead>
@@ -403,6 +401,7 @@ const ProductsTab = ({
                 <th>Model</th>
                 <th>Category</th>
                 <th>Price (Rs.)</th>
+                <th>Status</th>
                 <th>Orders</th>
                 <th>Created</th>
                 <th>Actions</th>
@@ -446,6 +445,11 @@ const ProductsTab = ({
                     </td>
                     <td>
                       <span className="product-price">Rs. {formatCurrency(product.price)}</span>
+                    </td>
+                    <td>
+                      <span className={`status-badge ${product.status}`}>
+                        {product.status === "handover" ? "Handover" : "Active"}
+                      </span>
                     </td>
                     <td>
                       <span className="product-orders">{getOrderCountForProduct(product.id)}</span>
@@ -516,3 +520,4 @@ const ProductsTab = ({
 };
 
 export default ProductsTab;
+

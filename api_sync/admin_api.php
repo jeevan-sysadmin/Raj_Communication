@@ -2001,13 +2001,22 @@ class AdminAPI {
                 return;
             }
             
+            $normalizeDeliveryType = function ($value) {
+                $normalized = strtolower(trim((string)$value));
+                if ($normalized === 'in_hand' || $normalized === 'pickup') return 'inhand';
+                if ($normalized === 'parcel_service' || $normalized === 'delivery') return 'parcelservice';
+                if (in_array($normalized, ['inhand', 'courier', 'parcelservice'], true)) return $normalized;
+                return 'inhand';
+            };
+
             $query = "UPDATE deliveries SET status = :status, delivery_person = :delivery_person,
-                     notes = :notes, updated_at = NOW() WHERE id = :id";
+                     delivery_type = :delivery_type, notes = :notes, updated_at = NOW() WHERE id = :id";
             
             $stmt = $this->conn->prepare($query);
             $stmt->bindValue(':id', $data['id'], PDO::PARAM_INT);
             $stmt->bindValue(':status', $data['status'], PDO::PARAM_STR);
             $stmt->bindValue(':delivery_person', isset($data['delivery_person']) ? $data['delivery_person'] : '', PDO::PARAM_STR);
+            $stmt->bindValue(':delivery_type', $normalizeDeliveryType($data['delivery_type'] ?? ''), PDO::PARAM_STR);
             $stmt->bindValue(':notes', isset($data['notes']) ? $data['notes'] : '', PDO::PARAM_STR);
             
             if ($stmt->execute()) {
