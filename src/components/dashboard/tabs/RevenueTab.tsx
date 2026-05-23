@@ -94,10 +94,7 @@ interface RevenueResponse {
   message?: string;
 }
 
-
 const API_BASE_URL = "http://localhost/raj_communication/api";
-
-
 const serviceTypeOptions = ["all", "general", "repair", "sales", "water", "inverter"];
 
 const todayString = () => new Date().toISOString().split("T")[0];
