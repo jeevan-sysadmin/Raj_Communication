@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   FiHelpCircle, 
@@ -337,7 +337,7 @@ const SupportCenter: React.FC = () => {
                 
                 <div className="contact-form-section">
                   <h3>Send us a Message</h3>
-                  <form className="contact-form">
+                  <form className="contact-form" autoComplete="off">
                     <div className="form-group">
                       <input type="text" placeholder="Your Name" required />
                     </div>
@@ -480,7 +480,7 @@ const SupportCenter: React.FC = () => {
           transition={{ duration: 0.5, delay: 0.4 }}
         >
           <div className="footer-content">
-            <p>Â© 2026 Raj Communication Service Center. All support requests are handled with priority.</p>
+            <p>© 2026 Raj Communication Service Center. All support requests are handled with priority.</p>
             <div className="footer-links">
               <a href="#privacy">Privacy Policy</a>
               <a href="#terms">Terms of Service</a>

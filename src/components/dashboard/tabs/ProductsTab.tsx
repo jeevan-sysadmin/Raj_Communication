@@ -401,6 +401,7 @@ const ProductsTab = ({
                 <th>Model</th>
                 <th>Category</th>
                 <th>Price (Rs.)</th>
+                <th>Qty</th>
                 <th>Status</th>
                 <th>Orders</th>
                 <th>Created</th>
@@ -445,6 +446,9 @@ const ProductsTab = ({
                     </td>
                     <td>
                       <span className="product-price">Rs. {formatCurrency(product.price)}</span>
+                    </td>
+                    <td>
+                      <span className="product-orders">{Number(product.stock_quantity ?? 0)}</span>
                     </td>
                     <td>
                       <span className={`status-badge ${product.status}`}>

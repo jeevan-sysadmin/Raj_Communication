@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import OrdersTab from "./OrdersTab";
 import type { DateRange, Order, Product } from "../types";
 
@@ -50,9 +50,7 @@ const CompanyToSunTab = ({
   getPriorityColor,
   getWarrantyColor,
 }: CompanyToSunTabProps) => {
-  const [filterStatus, setFilterStatus] = useState("all");
-  const [filterPriority, setFilterPriority] = useState("all");
-
+  void getPriorityColor;
   const normalizeStatus = (status: unknown) =>
     String(status ?? "")
       .trim()
@@ -200,12 +198,8 @@ const CompanyToSunTab = ({
       products={companyToSunClaims}
       loading={loading}
       searchTerm={searchTerm}
-      filterStatus={filterStatus}
-      filterPriority={filterPriority}
       dateRange={dateRange}
       onSearchChange={onSearchChange}
-      onFilterStatusChange={setFilterStatus}
-      onFilterPriorityChange={setFilterPriority}
       onDateRangeChange={onDateRangeChange}
       onPresetClick={onPresetClick}
       onViewOrder={onViewOrder || (() => {})}

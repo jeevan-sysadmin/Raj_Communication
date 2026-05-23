@@ -2102,6 +2102,7 @@
   display: flex;
   flex-direction: column;
   gap: 2rem;
+  border-radius: 0;
 }
 
 .order-header {
@@ -2170,10 +2171,14 @@
 
 .detail-card {
   background: #f9fafb;
-  border-radius: 12px;
+  border-radius: 0;
   padding: 1.5rem;
   border: 1px solid #e5e7eb;
   transition: all 0.3s;
+}
+
+.detail-card.service-details {
+  min-height: 460px;
 }
 
 .detail-card:hover {
@@ -2247,12 +2252,84 @@
 .issue-description {
   background: white;
   padding: 1rem;
-  border-radius: 8px;
+  border-radius: 0;
   border: 1px solid #e5e7eb;
   font-size: 0.875rem;
   line-height: 1.6;
-  max-height: 200px;
+  max-height: none;
+  overflow: visible;
+}
+
+.detail-value.issue-description {
+  border-radius: 0 !important;
+  display: block;
+  width: 444px;
+  height: 260px;
+  min-height: 260px;
+  max-height: 260px;
+  max-width: 700px;
+  box-sizing: border-box;
   overflow-y: auto;
+}
+
+.issue-cards-admin {
+  gap: 0.65rem;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  box-sizing: border-box;
+  overflow-y: hidden;
+}
+
+.issue-list-box-admin {
+  width: 500px;
+  height: 260px;
+  min-height: 260px;
+  max-height: 260px;
+  max-width: 400px;
+  border: 1px solid #cbd5e1;
+  border-radius: 0;
+  background: #f8fafc;
+  padding: 0.65rem;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.issue-list-box-title {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin-bottom: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.issue-card-admin {
+  border-left: 3px solid #2563eb;
+  padding: 0.65rem 0.75rem;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  border-radius: 0;
+  min-height: 88px;
+}
+
+.issue-product-meta {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.15rem 0.45rem;
+  border-radius: 0;
+  border: 1px solid #dbeafe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
+.issue-text-admin {
+  color: #0f172a;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .inline-icon {
@@ -2293,7 +2370,7 @@
   display: inline-flex;
   align-items: center;
   padding: 0.25rem 0.7rem;
-  border-radius: 999px;
+  border-radius: 0;
   border: 1px solid transparent;
   font-size: 0.75rem;
   font-weight: 700;
@@ -2330,7 +2407,7 @@
   gap: 0.5rem;
   padding: 0.5rem 0.65rem;
   border: 1px solid #e5e7eb;
-  border-radius: 0.65rem;
+  border-radius: 0;
   background: #ffffff;
 }
 
@@ -2344,7 +2421,7 @@
   display: inline-flex;
   align-items: center;
   padding: 0.18rem 0.6rem;
-  border-radius: 999px;
+  border-radius: 0;
   border: 1px solid transparent;
   font-size: 0.72rem;
   font-weight: 800;
@@ -2356,9 +2433,16 @@
   gap: 0.55rem;
 }
 
+.flow-status-list-admin.issue-cards-admin {
+  width: 100%;
+  height: calc(260px - 44px);
+  min-height: 0;
+  overflow-y: hidden;
+}
+
 .flow-status-card-admin {
   border: 1px solid #e5e7eb;
-  border-radius: 0.7rem;
+  border-radius: 0;
   background: #ffffff;
   padding: 0.55rem 0.7rem;
 }
@@ -2381,7 +2465,7 @@
   display: inline-flex;
   align-items: center;
   padding: 0.2rem 0.58rem;
-  border-radius: 999px;
+  border-radius: 0;
   border: 1px solid transparent;
   font-size: 0.72rem;
   font-weight: 800;
@@ -3005,6 +3089,18 @@
     gap: 0.25rem;
   }
 
+  .flow-status-head-admin {
+    align-items: flex-start;
+  }
+
+  .issue-product-meta {
+    font-size: 0.64rem;
+  }
+
+  .issue-text-admin {
+    font-size: 0.79rem;
+  }
+
   .filter-controls {
     flex-direction: column;
     width: 100%;
@@ -3594,5 +3690,223 @@
   .btn-secondary,
   .btn-outline {
     min-height: 40px;
+  }
+}
+
+/* Pending tab */
+.pending-tab-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.pending-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border: 1px solid #dbeafe;
+  background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 100%);
+  border-radius: 14px;
+}
+
+.pending-hero h2 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #0f172a;
+}
+
+.pending-hero p {
+  margin: 0.35rem 0 0;
+  color: #334155;
+  font-size: 0.88rem;
+}
+
+.pending-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+}
+
+.pending-toolbar label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.pending-company-select {
+  min-width: 280px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.9rem;
+  color: #0f172a;
+  background: #fff;
+}
+
+.pending-summary-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 0.9rem;
+}
+
+.pending-filter-bar {
+  display: grid;
+  grid-template-columns: 180px 180px 1fr;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.pending-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.pending-filter-group label {
+  font-size: 0.78rem;
+  color: #475569;
+  font-weight: 700;
+}
+
+.pending-filter-group input[type="date"] {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 0.58rem 0.7rem;
+  color: #0f172a;
+  background: #fff;
+}
+
+.pending-preset-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.pending-status-select {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 0.55rem 0.7rem;
+  background: #fff;
+  color: #0f172a;
+  min-width: 150px;
+}
+
+.pending-summary-card {
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 0.8rem 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.pending-summary-card svg {
+  color: #1d4ed8;
+  font-size: 1.2rem;
+}
+
+.pending-summary-card strong {
+  display: block;
+  color: #0f172a;
+  font-size: 1.05rem;
+}
+
+.pending-summary-card span {
+  color: #475569;
+  font-size: 0.8rem;
+}
+
+.pending-table-shell {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #ffffff;
+  overflow-x: auto;
+}
+
+.pending-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 1060px;
+}
+
+.pending-table thead th {
+  position: sticky;
+  top: 0;
+  background: #f1f5f9;
+  color: #0f172a;
+  font-weight: 700;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  border-bottom: 1px solid #cbd5e1;
+}
+
+.pending-table th,
+.pending-table td {
+  padding: 0.68rem 0.62rem;
+  border-bottom: 1px solid #e2e8f0;
+  text-align: left;
+  vertical-align: top;
+  font-size: 0.84rem;
+  color: #0f172a;
+}
+
+.pending-table tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.pending-day-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.24rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #7f1d1d;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+}
+
+.pending-empty-state {
+  border: 1px dashed #cbd5e1;
+  border-radius: 12px;
+  background: #f8fafc;
+  color: #475569;
+  padding: 1rem;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+@media (max-width: 900px) {
+  .pending-hero {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pending-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .pending-filter-bar {
+    grid-template-columns: 1fr;
+  }
+
+  .pending-company-select {
+    min-width: 100%;
+    width: 100%;
+  }
+
+  .pending-summary-row {
+    grid-template-columns: 1fr;
   }
 }

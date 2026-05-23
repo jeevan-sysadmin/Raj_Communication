@@ -315,6 +315,9 @@ export const createOrderReceiptMarkup = (order: Order, products: Product[] = [])
 export const createDeliveryReceiptMarkup = (delivery: Delivery) => {
   const extendedDelivery = delivery as Delivery & {
     product_names?: string[] | string;
+    product_ids?: number[] | string[] | string;
+    product_serial_numbers?: string[] | string;
+    product_status_map?: Record<string, string> | string;
     replacement_product_name?: string;
     replacement_product_names?: string[] | string;
     company_name?: string;
@@ -346,6 +349,44 @@ export const createDeliveryReceiptMarkup = (delivery: Delivery) => {
     return [];
   };
 
+  const parseIds = (value: unknown): number[] => {
+    if (Array.isArray(value)) return value.map((entry) => Number(entry)).filter((id) => Number.isInteger(id) && id > 0);
+    if (typeof value === "number") return Number.isInteger(value) && value > 0 ? [value] : [];
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (!trimmed) return [];
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return parsed.map((entry) => Number(entry)).filter((id) => Number.isInteger(id) && id > 0);
+      } catch {
+        return trimmed
+          .split(",")
+          .map((entry) => Number(entry.trim()))
+          .filter((id) => Number.isInteger(id) && id > 0);
+      }
+    }
+    return [];
+  };
+
+  const parseStatusMap = (value: unknown): Record<string, string> => {
+    if (!value) return {};
+    let raw: unknown = value;
+    if (typeof raw === "string") {
+      try {
+        raw = JSON.parse(raw);
+      } catch {
+        return {};
+      }
+    }
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+    return Object.entries(raw as Record<string, unknown>).reduce<Record<string, string>>((acc, [productId, status]) => {
+      const normalized = String(status || "").trim().toLowerCase();
+      if (!normalized) return acc;
+      acc[productId] = normalized === "delivered" ? "deliveryed" : normalized;
+      return acc;
+    }, {});
+  };
+
   const deliveryCode = delivery.delivery_code || `DEL${String(delivery.id).padStart(3, "0")}`;
   const orderCode = delivery.order_code || `ORD${String(delivery.order_id).padStart(3, "0")}`;
   const scheduledDate = delivery.scheduled_date_formatted || formatDisplayDate(delivery.scheduled_date);
@@ -365,6 +406,22 @@ export const createDeliveryReceiptMarkup = (delivery: Delivery) => {
   if (replacementProducts.length === 0 && extendedDelivery.replacement_product_name) {
     replacementProducts.push(String(extendedDelivery.replacement_product_name));
   }
+  const productIds = parseIds(extendedDelivery.product_ids);
+  const productSerials = parseNames(extendedDelivery.product_serial_numbers);
+  const productStatuses = parseStatusMap(extendedDelivery.product_status_map);
+  const allProducts = primaryProducts.length > 0 ? primaryProducts : (extendedDelivery.product_name ? [String(extendedDelivery.product_name)] : []);
+  const productRows = allProducts.map((name, index) => {
+    const pid = productIds[index];
+    const serial = productSerials[index] || "";
+    const statusById = pid ? productStatuses[String(pid)] : "";
+    const fallbackStatus = String(extendedDelivery.status || "").trim().toLowerCase();
+    const statusValue = statusById || (fallbackStatus === "delivered" ? "deliveryed" : fallbackStatus || "pending");
+    return { name, serial, status: statusValue };
+  });
+  const deliveredRows = productRows.filter((row) => row.status === "deliveryed");
+  const pendingRows = productRows.filter((row) => row.status !== "deliveryed");
+  const formatProductLine = (row: { name: string; serial: string }, index: number) =>
+    `${index + 1}. ${row.name}${row.serial ? ` (SN: ${row.serial})` : ""}`;
 
   const companyProductMap = extendedDelivery.company_product_name_map;
   const companyWiseProductsMarkup =
@@ -480,6 +537,28 @@ export const createDeliveryReceiptMarkup = (delivery: Delivery) => {
                 <div style="font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:1.2px;margin-bottom:6px;">Product</div>
                 <div style="font-size:20px;font-weight:700;color:#0f172a;">${escapeReceiptHtml(primaryProducts[0] || delivery.product_name || "N/A")}</div>
                 <div style="font-size:14px;color:#64748b;margin-top:4px;">${escapeReceiptHtml(delivery.product_brand || "Brand not available")}</div>
+              </div>
+            </div>
+            <div style="margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+              <div style="padding:12px;border:1px solid #bbf7d0;background:#f0fdf4;border-radius:12px;">
+                <div style="font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:#166534;margin-bottom:8px;"><strong>Delivered Products</strong></div>
+                <div style="font-size:14px;line-height:1.7;color:#14532d;">
+                  ${
+                    deliveredRows.length > 0
+                      ? deliveredRows.map((row, index) => escapeReceiptHtml(formatProductLine(row, index))).join("<br/>")
+                      : "No delivered products"
+                  }
+                </div>
+              </div>
+              <div style="padding:12px;border:1px solid #fecaca;background:#fef2f2;border-radius:12px;">
+                <div style="font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:#991b1b;margin-bottom:8px;"><strong>Remaining Pending Products</strong></div>
+                <div style="font-size:14px;line-height:1.7;color:#7f1d1d;">
+                  ${
+                    pendingRows.length > 0
+                      ? pendingRows.map((row, index) => escapeReceiptHtml(formatProductLine(row, index))).join("<br/>")
+                      : "No pending products"
+                  }
+                </div>
               </div>
             </div>
             <div style="margin-top:16px;">

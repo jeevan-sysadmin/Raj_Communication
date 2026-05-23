@@ -111,7 +111,7 @@ const UserFormModal = ({
           </motion.button>
         </div>
 
-        <form onSubmit={onSubmit} className="service-form-enhanced user-form-enhanced">
+        <form autoComplete="off" onSubmit={onSubmit} className="service-form-enhanced user-form-enhanced">
           <div className="user-form-shell">
             <aside className="user-form-aside">
               <div className="user-identity-card">

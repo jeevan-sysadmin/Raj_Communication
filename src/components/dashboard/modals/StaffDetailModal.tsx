@@ -78,7 +78,7 @@ interface StaffDetailModalProps {
   onViewOrders?: (staff: StaffRecord) => void;
 }
 
-const API_BASE_URL = "http://162.141.0.9/raj_communication/api_sync";
+const API_BASE_URL = "http://localhost/raj_communication/api_sync";
 const serviceTypes = ["general", "repair", "sales", "water", "inverter"];
 const expenseTypes = ["petrol", "travel", "food", "tools", "stationery", "others"];
 

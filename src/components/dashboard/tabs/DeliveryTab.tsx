@@ -38,27 +38,30 @@ interface DeliveryTabProps {
 }
 
 const ITEMS_PER_PAGE = 20;
-const DELIVERY_API_URL = "http://162.141.0.9/raj_communication/api/deliveries.php";
-const ORDERS_API_URL = "http://162.141.0.9/raj_communication/api/Order.php";
+const DELIVERY_API_URL = "http://localhost/raj_communication/api/deliveries.php";
+const ORDERS_API_URL = "http://localhost/raj_communication/api/Order.php";
 
 interface DeliveryOrderMeta {
   id: number;
   product_name?: string;
   product_names?: string[] | string;
+  product_serial_numbers?: string[] | string;
+  product_model?: string;
+  product_brand?: string;
   product_ids?: number[] | string[] | string;
   product_status_map?: Record<string, string> | string;
   handover_type_map?: Record<string, string> | string;
   replacement_product_name?: string;
   replacement_product_names?: string[] | string;
+  replacement_product_serial_numbers?: string[] | string;
   client_name?: string;
   company_name?: string;
   company_names?: string[] | string;
   company_product_map?: Record<string, number[] | string[] | string> | string;
   warranty_status?: string;
-  payment_status?: string;
   priority?: string;
 }
-type SplitDeliveryRow = Delivery & { __rowKey: string };
+type SplitDeliveryRow = Delivery & { __rowKey: string; product_ids?: number[] | string[] | string };
 const isDeliveryCompleted = (delivery: Delivery) => {
   const normalizedStatus = String(delivery.status || "").toLowerCase();
   return (
@@ -234,48 +237,82 @@ const getOrderProductNameById = (orderMeta: DeliveryOrderMeta | undefined, produ
   return names[index] || "";
 };
 
-  const formatCompanyProductGroups = (orderMeta?: DeliveryOrderMeta) => {
+const getDeliveryCompanyName = (orderMeta: DeliveryOrderMeta | undefined, delivery: Delivery): string => {
   if (!orderMeta) return "N/A";
+
   const companies = toList(orderMeta.company_names).length > 0 ? toList(orderMeta.company_names) : toList(orderMeta.company_name);
-  const products = toList(orderMeta.product_names).length > 0 ? toList(orderMeta.product_names) : toList(orderMeta.product_name);
-  const productIds = parseIds(orderMeta.product_ids);
+  const fallbackCompany = companies[0] || "N/A";
+  const productId = getDeliveryProductId(delivery);
 
   const parsedCompanyMap = (() => {
     const raw = orderMeta.company_product_map;
-    if (!raw) return {};
+    if (!raw) return {} as Record<string, unknown>;
     if (typeof raw === "string") {
       try {
         const parsed = JSON.parse(raw);
-        return typeof parsed === "object" && parsed ? parsed as Record<string, unknown> : {};
+        return typeof parsed === "object" && parsed ? (parsed as Record<string, unknown>) : {};
       } catch {
         return {};
       }
     }
-    return typeof raw === "object" ? raw : {};
+    return typeof raw === "object" && raw ? (raw as Record<string, unknown>) : {};
   })();
 
-  if (companies.length === 0 && products.length === 0) return "N/A";
-  if (companies.length === 0) return products.join(", ");
-  if (products.length === 0) return companies.join("\n");
-
-  if (Object.keys(parsedCompanyMap).length > 0 && productIds.length > 0) {
-    const productNameById = new Map<number, string>();
-    productIds.forEach((id, index) => {
-      productNameById.set(id, products[index] || `Product #${id}`);
-    });
-    return companies
-      .map((companyName, index) => {
-        const companyKey = String(Object.keys(parsedCompanyMap)[index] || "");
-        const mappedIds = parseIds((parsedCompanyMap as Record<string, unknown>)[companyKey]);
-        const mappedProducts = mappedIds.map((id) => productNameById.get(id) || `Product #${id}`);
-        return `${companyName}\n${(mappedProducts.length > 0 ? mappedProducts : products).map((product) => `- ${product}`).join("\n")}`;
-      })
-      .join("\n\n");
+  if (productId > 0 && Object.keys(parsedCompanyMap).length > 0) {
+    const companyKeys = Object.keys(parsedCompanyMap);
+    for (let index = 0; index < companyKeys.length; index += 1) {
+      const companyKey = companyKeys[index];
+      const mappedIds = parseIds(parsedCompanyMap[companyKey]);
+      if (mappedIds.includes(productId)) {
+        return companies[index] || companies[0] || `Company #${companyKey}`;
+      }
+    }
   }
 
-  return companies
-    .map((companyName) => `${companyName}\n${products.map((product) => `- ${product}`).join("\n")}`)
-    .join("\n\n");
+  return fallbackCompany;
+};
+
+const getOrderProductSerialById = (orderMeta: DeliveryOrderMeta | undefined, productId: number): string => {
+  if (!orderMeta || productId <= 0) return "";
+  const serials = toList(orderMeta.product_serial_numbers);
+  const ids = parseIds(orderMeta.product_ids);
+  if (ids.length === 0 || serials.length === 0) return "";
+  const index = ids.findIndex((id) => id === productId);
+  if (index < 0) return "";
+  return serials[index] || "";
+};
+
+const getOrderProductSerialByName = (orderMeta: DeliveryOrderMeta | undefined, productName: string): string => {
+  if (!orderMeta) return "";
+  const target = String(productName || "").trim().toLowerCase();
+  if (!target) return "";
+  const names = toList(orderMeta.product_names).length > 0 ? toList(orderMeta.product_names) : toList(orderMeta.product_name);
+  const serials = toList(orderMeta.product_serial_numbers);
+  if (names.length === 0 || serials.length === 0) return "";
+  const index = names.findIndex((name) => String(name || "").trim().toLowerCase() === target);
+  if (index < 0) return "";
+  return serials[index] || "";
+};
+
+const getDeliveredProductEntryById = (orderMeta: DeliveryOrderMeta | undefined, productId: number) => {
+  if (!orderMeta || productId <= 0) return null as null | { name: string; serial: string };
+  const name = getOrderProductNameById(orderMeta, productId);
+  const serial = getOrderProductSerialById(orderMeta, productId);
+  if (!name && !serial) return null;
+  return { name: name || "N/A", serial: serial || "N/A" };
+};
+
+const getNumberedNameSerialLines = (names: string[], serials: string[]) =>
+  names.map((name, index) => `${index + 1}. ${name}\nSerial: ${serials[index] || ""}`).join("\n");
+
+const toSerialListFromDelivery = (delivery: Delivery): string[] => {
+  const itemSerials = toList((delivery as any).delivery_item_serial_numbers);
+  if (itemSerials.length > 0) return itemSerials;
+  const directList = toList((delivery as any).product_serial_numbers);
+  if (directList.length > 0) return directList;
+  const one =
+    String((delivery as any).serial_number || (delivery as any).delivery_serial_number || (delivery as any).product_serial_number || "").trim();
+  return one ? [one] : [];
 };
 
 const DeliveryTab = ({
@@ -365,17 +402,20 @@ const DeliveryTab = ({
             id: Number(order.id),
             product_name: order.product_name,
             product_names: order.product_names,
+            product_serial_numbers: (order as any).product_serial_numbers,
             replacement_product_name: order.replacement_product_name,
             replacement_product_names: order.replacement_product_names,
+            replacement_product_serial_numbers: (order as any).replacement_product_serial_numbers,
             client_name: order.client_name,
             company_name: order.company_name,
             company_names: order.company_names,
+            product_model: (order as any).product_model,
+            product_brand: (order as any).product_brand,
             company_product_map: order.company_product_map,
             product_ids: order.product_ids,
             product_status_map: order.product_status_map,
             handover_type_map: order.handover_type_map,
             warranty_status: order.warranty_status,
-            payment_status: order.payment_status,
             priority: order.priority,
           };
         });
@@ -393,40 +433,61 @@ const DeliveryTab = ({
 
   const sourceDeliveries = liveDeliveries.length > 0 ? liveDeliveries : filteredDeliveries;
   const splitDeliveries = useMemo<SplitDeliveryRow[]>(
-    () =>
-      sourceDeliveries.flatMap((delivery) => {
+    () => {
+      const grouped = new Map<number, SplitDeliveryRow>();
+
+      sourceDeliveries.forEach((delivery) => {
         const orderMeta = orderMetaById[delivery.order_id];
-        const deliveryProductId = getDeliveryProductId(delivery);
-
-        // If backend already gives per-product delivery rows, keep one row per DB record.
-        if (deliveryProductId > 0) {
-          const mappedName = getOrderProductNameById(orderMeta, deliveryProductId);
-          return [{
-            ...delivery,
-            product_name: mappedName || delivery.product_name || `Product #${deliveryProductId}`,
-            __rowKey: `${delivery.id}-${delivery.order_id}-${deliveryProductId}`,
-          }];
-        }
-
+        const itemProductNames = toList((delivery as any).delivery_item_product_names);
+        const itemProductIds = parseIds((delivery as any).delivery_item_product_ids);
         const deliveredProductEntries = getDeliveredProductEntries(orderMeta);
-        if (deliveredProductEntries.length <= 1) {
-          const fallback = deliveredProductEntries[0];
-          return [{
+        const deliveredNames = deliveredProductEntries.map((entry) => entry.name).filter(Boolean);
+        const fallbackName = delivery.product_name && String(delivery.product_name).trim()
+          ? String(delivery.product_name).trim()
+          : "";
+        const candidateNames =
+          itemProductNames.length > 0
+            ? itemProductNames
+            : deliveredNames.length > 0
+              ? deliveredNames
+              : (fallbackName ? [fallbackName] : []);
+        const candidateSerials = toSerialListFromDelivery(delivery);
+
+        const existing = grouped.get(delivery.order_id);
+        if (!existing) {
+          grouped.set(delivery.order_id, {
             ...delivery,
-            product_name: fallback?.name || delivery.product_name || "",
-            // Show delivery type exactly as stored in deliveries table.
+            product_name: candidateNames.join(", "),
+            product_ids: itemProductIds.length > 0 ? itemProductIds : (delivery as any).product_ids,
+            product_serial_numbers: candidateSerials,
             delivery_type: normalizeDeliveryTypeValue(delivery.delivery_type),
-            __rowKey: `${delivery.id}-${delivery.order_id}-0`,
-          }];
+            __rowKey: `order-${delivery.order_id}`,
+          });
+          return;
         }
-        return deliveredProductEntries.map((entry, index) => ({
-          ...delivery,
-          product_name: entry.name,
-          // Keep DB value for UI consistency with Delivery Tracking requirements.
-          delivery_type: normalizeDeliveryTypeValue(delivery.delivery_type),
-          __rowKey: `${delivery.id}-${delivery.order_id}-${index}`,
-        }));
-      }),
+
+        const existingNames = String(existing.product_name || "")
+          .split(",")
+          .map((name) => name.trim())
+          .filter(Boolean);
+        const mergedNames = Array.from(new Set([...existingNames, ...candidateNames]));
+        const existingSerials = toList((existing as any).product_serial_numbers);
+        const mergedSerials = Array.from(new Set([...existingSerials, ...candidateSerials]));
+        const existingTime = new Date(existing.scheduled_date || existing.created_at || 0).getTime();
+        const currentTime = new Date(delivery.scheduled_date || delivery.created_at || 0).getTime();
+        const preferCurrent = Number.isFinite(currentTime) && currentTime >= existingTime;
+
+        grouped.set(delivery.order_id, {
+          ...(preferCurrent ? delivery : existing),
+          product_name: mergedNames.join(", "),
+          product_serial_numbers: mergedSerials,
+          delivery_type: normalizeDeliveryTypeValue((preferCurrent ? delivery : existing).delivery_type),
+          __rowKey: `order-${delivery.order_id}`,
+        });
+      });
+
+      return Array.from(grouped.values());
+    },
     [orderMetaById, sourceDeliveries],
   );
   const normalizedSearchTerm = searchTerm.trim().toLowerCase();
@@ -453,7 +514,6 @@ const DeliveryTab = ({
           orderMeta?.company_name,
           toList(orderMeta?.company_names).join(" "),
           orderMeta?.warranty_status,
-          orderMeta?.payment_status,
           orderMeta?.priority,
         ]
           .map((value) => String(value || "").toLowerCase())
@@ -633,7 +693,7 @@ const DeliveryTab = ({
           (toList(orderMeta?.replacement_product_names).length > 0
             ? toList(orderMeta?.replacement_product_names).join(", ")
             : orderMeta?.replacement_product_name) || "N/A";
-        const companiesValue = formatCompanyProductGroups(orderMeta);
+        const companiesValue = getDeliveryCompanyName(orderMeta, delivery);
         return `
           <tr>
             <td>${escapeHtml(delivery.id)}</td>
@@ -644,7 +704,6 @@ const DeliveryTab = ({
             <td>${escapeHtml(replacementValue)}</td>
             <td style="white-space: pre-line;">${escapeHtml(companiesValue)}</td>
             <td>${escapeHtml(orderMeta?.warranty_status || "N/A")}</td>
-            <td>${escapeHtml(orderMeta?.payment_status || "N/A")}</td>
             <td>${escapeHtml(delivery.scheduled_date_formatted || formatDisplayDate(delivery.scheduled_date))}</td>
             <td>${escapeHtml(normalizedDelivered ? "Delivered" : delivery.status)}</td>
             <td>${escapeHtml(
@@ -674,7 +733,7 @@ const DeliveryTab = ({
           <p>${escapeHtml(selectedDeliveries.length > 0 ? `${selectedDeliveries.length} selected deliveries` : `${sortedDeliveries.length} filtered deliveries`)}</p>
           <table>
             <thead>
-              <tr><th>ID</th><th>Delivery</th><th>Order</th><th>Client</th><th>Product</th><th>Replacement</th><th>Companies</th><th>Warranty</th><th>Payment</th><th>Scheduled</th><th>Status</th><th>Delivered Date</th></tr>
+              <tr><th>ID</th><th>Delivery</th><th>Order</th><th>Client</th><th>Product</th><th>Replacement</th><th>Companies</th><th>Warranty</th><th>Scheduled</th><th>Status</th><th>Delivered Date</th></tr>
             </thead>
             <tbody>${rows}</tbody>
           </table>
@@ -740,12 +799,90 @@ const DeliveryTab = ({
       });
       const data = await response.json();
       if (response.ok && data?.success && data?.delivery) {
-        setSelectedDelivery(normalizeDelivery(data.delivery));
+        const normalized = normalizeDelivery(data.delivery) as Delivery & { product_serial_number?: string; product_id?: number };
+        const orderMeta = orderMetaById[normalized.order_id];
+        const productId = getDeliveryProductId(normalized);
+        const deliveredEntry = getDeliveredProductEntryById(orderMeta, productId);
+        const preferredName = delivery.product_name || normalized.product_name || deliveredEntry?.name || "";
+        const serialByName = getOrderProductSerialByName(orderMeta, preferredName);
+        setSelectedDelivery({
+          ...normalized,
+          product_name: preferredName || deliveredEntry?.name || "N/A",
+          product_serial_numbers:
+            toList((delivery as any).product_serial_numbers).length > 0
+              ? toList((delivery as any).product_serial_numbers)
+              : toSerialListFromDelivery(normalized),
+          product_names: toList(orderMeta?.product_names).length > 0 ? toList(orderMeta?.product_names) : toList(orderMeta?.product_name),
+          replacement_product_names:
+            toList(orderMeta?.replacement_product_names).length > 0
+              ? toList(orderMeta?.replacement_product_names)
+              : toList(orderMeta?.replacement_product_name),
+          replacement_product_serial_numbers: (orderMeta as any)?.replacement_product_serial_numbers,
+          product_serial_number:
+            deliveredEntry?.serial ||
+            getOrderProductSerialById(orderMeta, productId) ||
+            serialByName ||
+            "",
+          product_brand: normalized.product_brand || (orderMeta?.product_brand as any) || delivery.product_brand || "",
+          product_model: (orderMeta?.product_model as any) || (delivery as any).product_model || "",
+        } as Delivery);
       } else {
-        setSelectedDelivery(delivery);
+        const fallback = delivery as Delivery & { product_serial_number?: string; product_id?: number };
+        const orderMeta = orderMetaById[fallback.order_id];
+        const productId = getDeliveryProductId(fallback);
+        const deliveredEntry = getDeliveredProductEntryById(orderMeta, productId);
+        const preferredName = fallback.product_name || deliveredEntry?.name || "";
+        const serialByName = getOrderProductSerialByName(orderMeta, preferredName);
+        setSelectedDelivery({
+          ...fallback,
+          product_name: preferredName || "N/A",
+          product_serial_numbers:
+            toList((fallback as any).product_serial_numbers).length > 0
+              ? toList((fallback as any).product_serial_numbers)
+              : toSerialListFromDelivery(fallback),
+          product_names: toList(orderMeta?.product_names).length > 0 ? toList(orderMeta?.product_names) : toList(orderMeta?.product_name),
+          replacement_product_names:
+            toList(orderMeta?.replacement_product_names).length > 0
+              ? toList(orderMeta?.replacement_product_names)
+              : toList(orderMeta?.replacement_product_name),
+          replacement_product_serial_numbers: (orderMeta as any)?.replacement_product_serial_numbers,
+          product_serial_number:
+            deliveredEntry?.serial ||
+            getOrderProductSerialById(orderMeta, productId) ||
+            serialByName ||
+            "",
+          product_brand: fallback.product_brand || (orderMeta?.product_brand as any) || "",
+          product_model: (orderMeta?.product_model as any) || (fallback as any).product_model || "",
+        } as Delivery);
       }
     } catch {
-      setSelectedDelivery(delivery);
+      const fallback = delivery as Delivery & { product_serial_number?: string; product_id?: number };
+      const orderMeta = orderMetaById[fallback.order_id];
+      const productId = getDeliveryProductId(fallback);
+      const deliveredEntry = getDeliveredProductEntryById(orderMeta, productId);
+      const preferredName = fallback.product_name || deliveredEntry?.name || "";
+      const serialByName = getOrderProductSerialByName(orderMeta, preferredName);
+      setSelectedDelivery({
+        ...fallback,
+        product_name: preferredName || "N/A",
+        product_serial_numbers:
+          toList((fallback as any).product_serial_numbers).length > 0
+            ? toList((fallback as any).product_serial_numbers)
+            : toSerialListFromDelivery(fallback),
+        product_names: toList(orderMeta?.product_names).length > 0 ? toList(orderMeta?.product_names) : toList(orderMeta?.product_name),
+        replacement_product_names:
+          toList(orderMeta?.replacement_product_names).length > 0
+            ? toList(orderMeta?.replacement_product_names)
+            : toList(orderMeta?.replacement_product_name),
+        replacement_product_serial_numbers: (orderMeta as any)?.replacement_product_serial_numbers,
+        product_serial_number:
+          deliveredEntry?.serial ||
+          getOrderProductSerialById(orderMeta, productId) ||
+          serialByName ||
+          "",
+        product_brand: fallback.product_brand || (orderMeta?.product_brand as any) || "",
+        product_model: (orderMeta?.product_model as any) || (fallback as any).product_model || "",
+      } as Delivery);
     } finally {
       setLoadingDetailData(false);
     }
@@ -811,16 +948,28 @@ const DeliveryTab = ({
   };
 
   return (
-    <div className="delivery-section">
+    <div className="orders-section delivery-section delivery-section-ux">
       <div className="section-header">
         <div className="section-title">
           <h2>Delivery Tracking</h2>
-          <p>Showing {sortedDeliveries.length} deliveries</p>
+          <p>Showing {sortedDeliveries.length} of {sourceDeliveries.length} deliveries</p>
           {dateRange.startDate && dateRange.endDate && (
             <p className="date-range-info">
               Date Range: {dateRange.startDate} to {dateRange.endDate}
             </p>
           )}
+        </div>
+        <div className="section-filters">
+          <motion.button
+            type="button"
+            className="btn primary"
+            onClick={onViewOrders}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <FiPackage />
+            <span>Service Orders</span>
+          </motion.button>
         </div>
       </div>
 
@@ -832,6 +981,7 @@ const DeliveryTab = ({
             type="text"
             placeholder="Search deliveries by order, client, product..."
             className="search-filter-input"
+            style={{ height: "48px", fontSize: "15px", paddingLeft: "44px" }}
             value={searchTerm}
             onChange={(e) => onSearchChange(e.target.value)}
           />
@@ -880,7 +1030,7 @@ const DeliveryTab = ({
             <p>Loading deliveries...</p>
           </div>
         ) : sortedDeliveries.length > 0 ? (
-          <table className="orders-table">
+          <table className="orders-table delivery-compact-table">
             <thead>
               <tr>
                 <th>
@@ -892,15 +1042,11 @@ const DeliveryTab = ({
                     aria-label="Select all deliveries on this page"
                   />
                 </th>
-                <th>ID</th>
-                <th>Delivery Code</th>
-                <th>Order Code</th>
                 <th>Client</th>
                 <th>Product</th>
                 <th>Replacement</th>
                 <th>Companies</th>
                 <th>Warranty</th>
-                <th>Payment Status</th>
                 <th>Delivery Type</th>
                 <th>Status</th>
                 <th>Delivered Date</th>
@@ -913,7 +1059,9 @@ const DeliveryTab = ({
                 const isSelected = selectedDeliveryIds.includes(delivery.__rowKey);
                 const orderMeta = orderMetaById[delivery.order_id];
                 const deliveredProductNames = getDeliveredProductNames(orderMeta);
+                const deliveryItemNames = toList((delivery as any).delivery_item_product_names);
                 const productValue =
+                  (deliveryItemNames.length > 0 ? deliveryItemNames.join(", ") : "") ||
                   (deliveredProductNames.length > 0 ? deliveredProductNames.join(", ") : "") ||
                   (delivery.product_name && String(delivery.product_name).trim()) ||
                   "N/A";
@@ -921,14 +1069,38 @@ const DeliveryTab = ({
                   (toList(orderMeta?.replacement_product_names).length > 0
                     ? toList(orderMeta?.replacement_product_names).join(", ")
                     : orderMeta?.replacement_product_name) || "N/A";
-                const companiesValue = formatCompanyProductGroups(orderMeta);
+                const productSerialList =
+                  toList((delivery as any).delivery_item_serial_numbers).length > 0
+                    ? toList((delivery as any).delivery_item_serial_numbers)
+                    : toList((delivery as any).product_serial_numbers).length > 0
+                      ? toList((delivery as any).product_serial_numbers)
+                    : toList(orderMeta?.product_serial_numbers);
+                const replacementNamesList =
+                  toList(orderMeta?.replacement_product_names).length > 0
+                    ? toList(orderMeta?.replacement_product_names)
+                    : toList(orderMeta?.replacement_product_name);
+                const replacementSerialList = toList((orderMeta as any)?.replacement_product_serial_numbers);
+                const companiesValue = getDeliveryCompanyName(orderMeta, delivery);
                 const productNamesList =
-                  deliveredProductNames.length > 0
+                  deliveryItemNames.length > 0
+                    ? deliveryItemNames
+                    : deliveredProductNames.length > 0
                     ? deliveredProductNames
                     : toList(orderMeta?.product_names).length > 0
                       ? toList(orderMeta?.product_names)
                       : toList(orderMeta?.product_name);
-                const productIds = parseIds(orderMeta?.product_ids);
+                const productIds =
+                  parseIds((delivery as any).delivery_item_product_ids).length > 0
+                    ? parseIds((delivery as any).delivery_item_product_ids)
+                    : parseIds(orderMeta?.product_ids);
+                const productMultiLine = getNumberedNameSerialLines(
+                  productNamesList.length > 0 ? productNamesList : [productValue],
+                  productSerialList,
+                );
+                const replacementMultiLine =
+                  replacementNamesList.length > 0
+                    ? getNumberedNameSerialLines(replacementNamesList, replacementSerialList)
+                    : "N/A";
                 const companyNamesList =
                   toList(orderMeta?.company_names).length > 0 ? toList(orderMeta?.company_names) : toList(orderMeta?.company_name);
                 const parsedCompanyMap = (() => {
@@ -971,11 +1143,20 @@ const DeliveryTab = ({
                   client_name: orderMeta?.client_name || delivery.client_name,
                   product_name: productValue,
                   product_names: productNamesList,
+                  product_ids: productIds,
+                  product_serial_numbers:
+                    toList((delivery as any).delivery_item_serial_numbers).length > 0
+                      ? toList((delivery as any).delivery_item_serial_numbers)
+                      : toList((delivery as any).product_serial_numbers).length > 0
+                        ? toList((delivery as any).product_serial_numbers)
+                      : orderMeta?.product_serial_numbers,
+                  product_status_map: orderMeta?.product_status_map,
                   replacement_product_name: replacementValue === "N/A" ? "" : replacementValue,
                   replacement_product_names:
                     toList(orderMeta?.replacement_product_names).length > 0
                       ? toList(orderMeta?.replacement_product_names)
                       : toList(orderMeta?.replacement_product_name),
+                  replacement_product_serial_numbers: (orderMeta as any)?.replacement_product_serial_numbers,
                   company_name: orderMeta?.company_name,
                   company_names: companyNamesList,
                   company_product_name_map: companyProductNameMap,
@@ -993,19 +1174,6 @@ const DeliveryTab = ({
                       />
                     </td>
                     <td>
-                      <span style={{ fontWeight: "600", color: "#334155" }}>{delivery.id}</span>
-                    </td>
-                    <td>
-                      <span className="delivery-code" style={{ fontWeight: "bold", color: "#8B5CF6" }}>
-                        {delivery.delivery_code || `DEL${String(delivery.id).padStart(3, "0")}`}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="order-code" style={{ fontWeight: "10" ,fontSize: "12px"}}>
-                        {delivery.order_code || `ORD${String(delivery.order_id).padStart(3, "0")}`}
-                      </span>
-                    </td>
-                    <td>
                       <div className="client-cell">
                         <div className="client-avatar-placeholder" style={{ background: "#8B5CF6" }}>
                           {delivery.client_name?.charAt(0) || "C"}
@@ -1018,11 +1186,11 @@ const DeliveryTab = ({
                     <td>
                       <div className="product-cell">
                         <FiPackage className="product-icon" />
-                        <span style={{ fontWeight: "500" }}>{productValue}</span>
+                        <span className="delivery-list-text">{productMultiLine}</span>
                       </div>
                     </td>
                     <td>
-                      <span style={{ fontWeight: "500" }}>{replacementValue}</span>
+                      <span className="delivery-list-text">{replacementMultiLine}</span>
                     </td>
                     <td>
                       <div style={{ whiteSpace: "pre-line", fontSize: "12px", lineHeight: 1.35 }}>
@@ -1030,7 +1198,6 @@ const DeliveryTab = ({
                       </div>
                     </td>
                     <td><span>{orderMeta?.warranty_status || "N/A"}</span></td>
-                    <td><span>{orderMeta?.payment_status || "N/A"}</span></td>
                     <td>
                       <span style={{ fontWeight: 600, textTransform: "capitalize" }}>
                         {String(delivery.delivery_type || "inhand").replaceAll("_", " ")}

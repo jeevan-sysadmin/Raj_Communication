@@ -210,10 +210,10 @@ async function apiLogin(email: string, password: string): Promise<LoginResponse>
     password: password
   };
 
-  console.log(`Trying endpoint: http://162.141.0.9/raj_communication/api/login.php`);
+  console.log(`Trying endpoint: http://localhost/raj_communication/api/login.php`);
   
   try {
-    const response = await fetch("http://162.141.0.9/raj_communication/api/login.php", {
+    const response = await fetch("http://localhost/raj_communication/api/login.php", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -448,7 +448,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
             Sign in to your account
           </motion.p>
 
-          <form onSubmit={handleLogin} className={`login-form ${shake ? 'shake' : ''}`}>
+          <form onSubmit={handleLogin} className={`login-form ${shake ? 'shake' : ''}`} autoComplete="off">
             <motion.div 
               className="input-group"
               initial={{ opacity: 0, x: -30 }}
@@ -467,7 +467,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                   }}
                   required
                   className="login-input"
-                  autoComplete="username"
+                  autoComplete="off"
                 />
               </div>
             </motion.div>
@@ -490,7 +490,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
                   }}
                   required
                   className="login-input"
-                  autoComplete="current-password"
+                  autoComplete="off"
                 />
                 <button
                   type="button"

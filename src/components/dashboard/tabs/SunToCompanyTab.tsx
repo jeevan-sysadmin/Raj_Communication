@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import OrdersTab from "./OrdersTab";
 import type { DateRange, Order, Product } from "../types";
 
-const API_BASE_URL = "http://162.141.0.9/raj_communication/api";
+const API_BASE_URL = "http://localhost/raj_communication/api";
 
 interface SunToCompanyApiResponse {
   success?: boolean;
@@ -52,8 +52,7 @@ const SunToCompanyTab = ({
   getPriorityColor,
   getWarrantyColor,
 }: SunToCompanyTabProps) => {
-  const [filterStatus, setFilterStatus] = useState("all");
-  const [filterPriority, setFilterPriority] = useState("all");
+  void getPriorityColor;
   const [apiLoaded, setApiLoaded] = useState(false);
   const [apiLoading, setApiLoading] = useState(false);
   const [apiOrders, setApiOrders] = useState<Order[]>([]);
@@ -276,12 +275,8 @@ const SunToCompanyTab = ({
       products={sourceClaims}
       loading={loading || apiLoading}
       searchTerm={searchTerm}
-      filterStatus={filterStatus}
-      filterPriority={filterPriority}
       dateRange={dateRange}
       onSearchChange={onSearchChange}
-      onFilterStatusChange={setFilterStatus}
-      onFilterPriorityChange={setFilterPriority}
       onDateRangeChange={onDateRangeChange}
       onPresetClick={onPresetClick}
       onViewOrder={onViewOrder || (() => {})}

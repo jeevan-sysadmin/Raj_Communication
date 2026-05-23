@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import {
   FiChevronLeft,
@@ -24,12 +24,8 @@ interface OrdersTabProps {
   products?: Product[];
   loading: boolean;
   searchTerm: string;
-  filterStatus: string;
-  filterPriority: string;
   dateRange: DateRange;
   onSearchChange: (value: string) => void;
-  onFilterStatusChange: (value: string) => void;
-  onFilterPriorityChange: (value: string) => void;
   onDateRangeChange: (start: string, end: string) => void;
   onPresetClick: (preset: "today" | "yesterday" | "thisWeek" | "thisMonth" | "lastMonth" | "thisYear") => void;
   onViewOrder: (order: Order) => void;
@@ -132,16 +128,37 @@ const buildOrderProductEntries = (
   products: Product[],
   isReplacement: boolean,
 ): ProductEntry[] => {
+  const orderAny = order as Order & {
+    replacement_serial_numbers?: string[] | string;
+    replacement_product_serial_number?: string;
+    replacement_serial_no?: string;
+    replacement_product_serial_no?: string;
+  };
+
   const ids = isReplacement
     ? mergeIds(order.replacement_product_ids, order.replacement_product_id)
     : mergeIds(order.product_ids, order.product_id);
   const namesFromList = isReplacement ? normalizeNames(order.replacement_product_names) : normalizeNames(order.product_names);
   const fallbackNames = isReplacement ? normalizeNames(order.replacement_product_name) : normalizeNames(order.product_name);
   const names = namesFromList.length > 0 ? namesFromList : fallbackNames;
-  const serialsFromList = parseSerialList(
-    isReplacement ? order.replacement_product_serial_numbers : order.product_serial_numbers,
-  );
-  const fallbackSerial = (isReplacement ? order.replacement_serial_number : order.serial_number) || "";
+  const replacementSerials = isReplacement
+    ? [
+        ...parseSerialList(order.replacement_product_serial_numbers),
+        ...parseSerialList(orderAny.replacement_serial_numbers),
+      ]
+    : [];
+  const serialsFromList = isReplacement
+    ? Array.from(new Set(replacementSerials.map((value) => String(value || "").trim()).filter(Boolean)))
+    : parseSerialList(order.product_serial_numbers);
+  const fallbackSerial = isReplacement
+    ? String(
+        order.replacement_serial_number ||
+          orderAny.replacement_product_serial_number ||
+          orderAny.replacement_serial_no ||
+          orderAny.replacement_product_serial_no ||
+          "",
+      )
+    : String(order.serial_number || "");
 
   const idEntries = ids.map((id, index) => {
     const matched = products.find((product) => product.id === id);
@@ -287,6 +304,27 @@ const normalizeRepairingStatusMap = (value: unknown): Record<string, string> => 
   return normalized;
 };
 
+const normalizeIssueDescriptionMap = (value: unknown): Record<string, string> => {
+  if (!value) return {};
+  let parsed: unknown = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+      if (typeof parsed === "string") parsed = JSON.parse(parsed);
+    } catch {
+      return {};
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  const normalized: Record<string, string> = {};
+  Object.entries(parsed as Record<string, unknown>).forEach(([productId, text]) => {
+    const key = String(productId || "").trim();
+    if (!key) return;
+    normalized[key] = String(text ?? "").trim();
+  });
+  return normalized;
+};
+
 const getRepairingStatusTone = (status: string) => {
   const normalized = status.trim().toLowerCase().replaceAll("_", " ");
   if (normalized === "ready") {
@@ -372,7 +410,25 @@ const getCompanyProductLines = (order: Order, products: Product[]): string[] => 
   });
 };
 
-const renderOrderProductChips = (entries: ProductEntry[], emptyLabel: string) => {
+const getPerProductIssueLines = (order: Order, products: Product[]): string[] => {
+  const issueMap = normalizeIssueDescriptionMap((order as Order & { issue_description_map?: unknown }).issue_description_map);
+  const productIds = mergeIds(order.product_ids, order.product_id);
+  const productEntries = getOrderProductEntries(order, products);
+  return productIds
+    .map((productId, index) => {
+      const text = String(issueMap[String(productId)] || "").trim();
+      if (!text) return "";
+      const label = productEntries[index]?.label || products.find((p) => p.id === productId)?.product_name || `Product #${productId}`;
+      return `${label}: ${text}`;
+    })
+    .filter((line) => line.length > 0);
+};
+
+const renderOrderProductChips = (
+  entries: ProductEntry[],
+  emptyLabel: string,
+  columnType: "product" | "replacement",
+) => {
   if (!entries.length) {
     return <span className="product-empty">{emptyLabel}</span>;
   }
@@ -381,11 +437,15 @@ const renderOrderProductChips = (entries: ProductEntry[], emptyLabel: string) =>
   const hiddenCount = entries.length - visibleEntries.length;
 
   return (
-    <div className="order-product-stack" title={entries.map((entry, index) => `${index + 1}. ${formatProductEntry(entry)}`).join(", ")}>
+    <div
+      className={`order-product-stack ${columnType === "replacement" ? "replacement" : "product"}`}
+      title={entries.map((entry, index) => `${index + 1}. ${formatProductEntry(entry)}`).join(", ")}
+    >
       <div className="order-product-chips">
         {visibleEntries.map((entry, index) => (
           <span key={`${entry.label}-${index}`} className="product-chip">
-            {index + 1}. {entry.label}
+            <span className="product-chip-title">{index + 1}. {entry.label}</span>
+            <small className="product-chip-serial">SN: {entry.serialNumber || "N/A"}</small>
           </span>
         ))}
         {hiddenCount > 0 && <span className="product-chip more">+{hiddenCount} more</span>}
@@ -404,12 +464,8 @@ const OrdersTab = (props: OrdersTabProps) => {
     products = [],
     loading,
     searchTerm,
-    filterStatus,
-    filterPriority,
     dateRange,
     onSearchChange,
-    onFilterStatusChange,
-    onFilterPriorityChange,
     onDateRangeChange,
     onPresetClick,
     onViewOrder,
@@ -428,21 +484,62 @@ const OrdersTab = (props: OrdersTabProps) => {
     exportFilePrefix = "service_orders_full_export",
   } = props;
   void getStatusColor;
+  void getPriorityColor;
 
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedOrderIds, setSelectedOrderIds] = useState<number[]>([]);
 
-  const totalPages = Math.max(1, Math.ceil(filteredOrders.length / ITEMS_PER_PAGE));
+  const searchableOrders = useMemo(() => {
+    const search = String(searchTerm || "").trim().toLowerCase();
+    if (!search) return filteredOrders;
+
+    const matchesSearch = (order: Order) => {
+      const productEntries = getOrderProductEntries(order, products);
+      const replacementEntries = getOrderReplacementEntries(order, products);
+
+      const serialBlob = [
+        ...(Array.isArray(order.product_serial_numbers) ? order.product_serial_numbers : []),
+        ...(Array.isArray(order.replacement_product_serial_numbers) ? order.replacement_product_serial_numbers : []),
+        order.serial_number || "",
+        order.replacement_serial_number || "",
+        ...productEntries.map((entry) => entry.serialNumber || ""),
+        ...replacementEntries.map((entry) => entry.serialNumber || ""),
+      ]
+        .map((value) => String(value || "").trim().toLowerCase())
+        .filter(Boolean)
+        .join(" ");
+
+      const basicBlob = [
+        order.order_code,
+        order.client_name,
+        order.client_phone,
+        order.issue_description,
+        order.staff_name,
+      ]
+        .map((value) => String(value || "").toLowerCase())
+        .join(" ");
+
+      return basicBlob.includes(search) || serialBlob.includes(search);
+    };
+
+    const filteredMatches = filteredOrders.filter(matchesSearch);
+    if (filteredMatches.length > 0) return filteredMatches;
+
+    // Fallback: if parent-level filtering misses serial matches, search full orders here.
+    return orders.filter(matchesSearch);
+  }, [filteredOrders, orders, products, searchTerm]);
+
+  const totalPages = Math.max(1, Math.ceil(searchableOrders.length / ITEMS_PER_PAGE));
   const pageStartIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const paginatedOrders = filteredOrders.slice(pageStartIndex, pageStartIndex + ITEMS_PER_PAGE);
-  const selectedOrders = filteredOrders.filter((order) => selectedOrderIds.includes(order.id));
-  const bulkOrders = selectedOrders.length > 0 ? selectedOrders : filteredOrders;
+  const paginatedOrders = searchableOrders.slice(pageStartIndex, pageStartIndex + ITEMS_PER_PAGE);
+  const selectedOrders = searchableOrders.filter((order) => selectedOrderIds.includes(order.id));
+  const bulkOrders = selectedOrders.length > 0 ? selectedOrders : searchableOrders;
   const allPageSelected =
     paginatedOrders.length > 0 && paginatedOrders.every((order) => selectedOrderIds.includes(order.id));
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, filterStatus, filterPriority, dateRange.startDate, dateRange.endDate]);
+  }, [searchTerm, dateRange.startDate, dateRange.endDate]);
 
   useEffect(() => {
     if (currentPage > totalPages) {
@@ -451,8 +548,8 @@ const OrdersTab = (props: OrdersTabProps) => {
   }, [currentPage, totalPages]);
 
   useEffect(() => {
-    setSelectedOrderIds((prev) => prev.filter((id) => filteredOrders.some((order) => order.id === id)));
-  }, [filteredOrders]);
+    setSelectedOrderIds((prev) => prev.filter((id) => searchableOrders.some((order) => order.id === id)));
+  }, [searchableOrders]);
 
   const toggleOrderSelection = (orderId: number) => {
     setSelectedOrderIds((prev) =>
@@ -470,7 +567,7 @@ const OrdersTab = (props: OrdersTabProps) => {
   };
 
   const selectAllFilteredOrders = () => {
-    setSelectedOrderIds(filteredOrders.map((order) => order.id));
+    setSelectedOrderIds(searchableOrders.map((order) => order.id));
   };
 
   const clearSelection = () => {
@@ -725,7 +822,7 @@ const OrdersTab = (props: OrdersTabProps) => {
       scopeLabel:
         selectedOrders.length > 0
           ? `${selectedOrders.length} selected orders`
-          : `${filteredOrders.length} filtered orders`,
+          : `${searchableOrders.length} filtered orders`,
       accentColor: "#2563eb",
       orientation: "landscape",
       metrics: [
@@ -747,7 +844,8 @@ const OrdersTab = (props: OrdersTabProps) => {
       body: bulkOrders.map((order) => {
         const replacementEntries = getOrderReplacementEntries(order, products);
         const companyLines = getCompanyProductLines(order, products);
-        const issueText = [order.issue_description, order.diagnosis_notes, order.repair_notes, order.notes]
+        const perProductIssue = getPerProductIssueLines(order, products);
+        const issueText = [order.issue_description, ...perProductIssue, order.diagnosis_notes, order.repair_notes, order.notes]
           .filter((value) => Boolean(String(value || "").trim()))
           .join("\n");
         const finalAmount = Number(order.final_cost || order.estimated_cost || 0);
@@ -797,8 +895,12 @@ const OrdersTab = (props: OrdersTabProps) => {
               .map((line) => `<div class="print-company-line">${escapeHtml(line)}</div>`)
               .join("")
           : `<div class="print-muted">No companies</div>`;
-        const issueHtml = order.issue_description
-          ? `<div class="print-issue-main">${escapeHtml(order.issue_description)}</div>`
+        const perProductIssue = getPerProductIssueLines(order, products);
+        const issueMainText = [order.issue_description, ...perProductIssue]
+          .filter((value) => Boolean(String(value || "").trim()))
+          .join("\n");
+        const issueHtml = issueMainText
+          ? `<div class="print-issue-main">${escapeHtml(issueMainText).replace(/\n/g, "<br />")}</div>`
           : `<div class="print-muted">N/A</div>`;
         const notesHtml = order.notes
           ? `<div class="print-issue-note"><strong>Note:</strong> ${escapeHtml(order.notes)}</div>`
@@ -849,7 +951,7 @@ const OrdersTab = (props: OrdersTabProps) => {
             <p>${escapeHtml(
               selectedOrders.length > 0
                 ? `${selectedOrders.length} selected orders`
-                : `${filteredOrders.length} filtered orders`,
+                : `${searchableOrders.length} filtered orders`,
             )}</p>
             <p>Printed on ${escapeHtml(new Date().toLocaleString("en-IN"))}</p>
           </div>
@@ -882,7 +984,7 @@ const OrdersTab = (props: OrdersTabProps) => {
         <div className="section-title">
           <h2>{title}</h2>
           <p>
-            Showing {filteredOrders.length} of {orders.length} orders
+            Showing {searchableOrders.length} of {orders.length} orders
           </p>
           {dateRange.startDate && dateRange.endDate && (
             <p className="date-range-info">
@@ -901,25 +1003,6 @@ const OrdersTab = (props: OrdersTabProps) => {
             <FiPlus />
             <span>{createLabel}</span>
           </motion.button>
-          <div className="filter-group">
-            <select className="filter-select" value={filterStatus} onChange={(e) => onFilterStatusChange(e.target.value)}>
-              <option value="all">All Status</option>
-              <option value="pending">Pending</option>
-              <option value="scheduled">Scheduled</option>
-              <option value="process">Process</option>
-              <option value="completed">Completed</option>
-              <option value="ready">Ready</option>
-              <option value="delivered">Delivered</option>
-              <option value="cancelled">Cancelled</option>
-            </select>
-            <select className="filter-select" value={filterPriority} onChange={(e) => onFilterPriorityChange(e.target.value)}>
-              <option value="all">All Priority</option>
-              <option value="urgent">Urgent</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
-            </select>
-          </div>
         </div>
       </div>
 
@@ -946,7 +1029,7 @@ const OrdersTab = (props: OrdersTabProps) => {
         itemLabelSingular="order"
         itemLabelPlural="orders"
         selectedCount={selectedOrders.length}
-        filteredCount={filteredOrders.length}
+        filteredCount={searchableOrders.length}
         totalPages={totalPages}
         itemsPerPage={ITEMS_PER_PAGE}
         helperText="Export and print use selected rows first. If nothing is selected, all filtered orders are used."
@@ -956,7 +1039,7 @@ const OrdersTab = (props: OrdersTabProps) => {
         onExportCSV={exportOrdersToCSV}
         onExportPDF={exportOrdersToPDF}
         onPrint={printOrders}
-        disableSelectAll={filteredOrders.length === 0}
+        disableSelectAll={searchableOrders.length === 0}
         disableClearSelection={selectedOrderIds.length === 0}
         disableActions={bulkOrders.length === 0}
       />
@@ -967,7 +1050,7 @@ const OrdersTab = (props: OrdersTabProps) => {
             <div className="loading-spinner"></div>
             <p>Loading orders...</p>
           </div>
-        ) : filteredOrders.length > 0 ? (
+        ) : searchableOrders.length > 0 ? (
           <table className="orders-table">
             <thead>
               <tr>
@@ -989,7 +1072,6 @@ const OrdersTab = (props: OrdersTabProps) => {
                 <th>Payment Status</th>
                 <th>Repairing Status</th>
                 <th>Pending Days</th>
-                <th>Priority</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -1030,14 +1112,20 @@ const OrdersTab = (props: OrdersTabProps) => {
                     </td>
                     <td>
                       <div className="product-cell order-products-cell">
-                        <FiPackage className="product-icon" />
-                        {renderOrderProductChips(productEntries, "Not added")}
+                        <div className="order-products-meta">
+                          <FiPackage className="product-icon" />
+                          <span className="order-products-label">Products</span>
+                        </div>
+                        {renderOrderProductChips(productEntries, "Not added", "product")}
                       </div>
                     </td>
                     <td>
                       <div className="product-cell order-products-cell">
-                        <FiPackage className="product-icon" />
-                        {renderOrderProductChips(replacementEntries, "No replacement")}
+                        <div className="order-products-meta">
+                          <FiPackage className="product-icon" />
+                          <span className="order-products-label">Replacement</span>
+                        </div>
+                        {renderOrderProductChips(replacementEntries, "No replacement", "replacement")}
                       </div>
                     </td>
                     <td>
@@ -1078,12 +1166,6 @@ const OrdersTab = (props: OrdersTabProps) => {
                       <span className="staff-name">
                         {deliveredByProducts ? "Delivered" : pendingDays}
                       </span>
-                    </td>
-                    <td>
-                      <div className="priority-cell">
-                        <div className="priority-dot" style={{ backgroundColor: getPriorityColor(order.priority) }}></div>
-                        <span className="priority-label">{order.priority}</span>
-                      </div>
                     </td>
                     <td>
                       <div className="action-buttons">
@@ -1155,11 +1237,11 @@ const OrdersTab = (props: OrdersTabProps) => {
         )}
       </div>
 
-      {filteredOrders.length > 0 && (
+      {searchableOrders.length > 0 && (
         <div className="orders-pagination">
           <div className="orders-pagination-info">
-            Showing {pageStartIndex + 1} to {Math.min(pageStartIndex + ITEMS_PER_PAGE, filteredOrders.length)} of{" "}
-            {filteredOrders.length} orders
+            Showing {pageStartIndex + 1} to {Math.min(pageStartIndex + ITEMS_PER_PAGE, searchableOrders.length)} of{" "}
+            {searchableOrders.length} orders
           </div>
           <div className="orders-pagination-controls">
             <button

@@ -27,8 +27,8 @@ const isSpareProduct = (product: Product) => {
 };
 
 const COMPANY_API_CANDIDATES = [
-  "http://162.141.0.9/raj_communication/api/companys.php",
-  "http://162.141.0.9/raj_communication/api/companys.php",
+  "http://localhost/raj_communication/api/companys.php",
+  "http://localhost/raj_communication/api/companys.php",
 ];
 
 const normalizeCompany = (row: any): Company => ({
@@ -125,6 +125,29 @@ const normalizeRepairingStatusMap = (value: unknown): Record<string, RepairingSt
   return normalized;
 };
 
+const normalizeIssueDescriptionMap = (value: unknown): Record<string, string> => {
+  if (!value) return {};
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+      if (typeof parsed === "string") {
+        parsed = JSON.parse(parsed);
+      }
+    } catch {
+      return {};
+    }
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+  const normalized: Record<string, string> = {};
+  Object.entries(parsed as Record<string, unknown>).forEach(([productId, text]) => {
+    const key = productId.trim();
+    if (!key) return;
+    normalized[key] = String(text ?? "").trim();
+  });
+  return normalized;
+};
+
 const parseJsonResponseSafely = async <T,>(response: Response): Promise<T | null> => {
   const rawBody = await response.text();
   const trimmedBody = rawBody.trim();
@@ -153,6 +176,7 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
   const [companyProductMap, setCompanyProductMap] = useState<Record<string, string[]>>({});
   const [productStatusMap, setProductStatusMap] = useState<Record<string, ProductFlowStatus>>({});
   const [repairingStatusMapState, setRepairingStatusMapState] = useState<Record<string, RepairingStatus>>({});
+  const [issueDescriptionMapState, setIssueDescriptionMapState] = useState<Record<string, string>>({});
   const [activeCompanyId, setActiveCompanyId] = useState("");
   const [companySelectValue, setCompanySelectValue] = useState("");
   const companySelectRef = useRef<HTMLSelectElement>(null);
@@ -183,6 +207,7 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
       setCompanyProductMap({});
       setProductStatusMap({});
       setRepairingStatusMapState({});
+      setIssueDescriptionMapState({});
       setActiveCompanyId("");
       setCompanySelectValue("");
       initializedFromOrderRef.current = false;
@@ -230,20 +255,27 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
     const allProductIds = flattenCompanyProductIds(initialCompanyIds, normalizedMap);
     const incomingProductStatusMap = normalizeProductStatusMap((orderForm as any).product_status_map);
     const incomingRepairingStatusMap = normalizeRepairingStatusMap((orderForm as any).repairing_status_map);
+    const incomingIssueDescriptionMap = normalizeIssueDescriptionMap((orderForm as any).issue_description_map);
     const normalizedProductStatusMap: Record<string, ProductFlowStatus> = {};
     const normalizedRepairingStatusMap: Record<string, RepairingStatus> = {};
+    const normalizedIssueDescriptionMap: Record<string, string> = {};
     allProductIds.forEach((productId) => {
       normalizedProductStatusMap[productId] = normalizeProductFlowStatus(incomingProductStatusMap[productId]);
       normalizedRepairingStatusMap[productId] = normalizeRepairingStatus(incomingRepairingStatusMap[productId]);
+      normalizedIssueDescriptionMap[productId] = String(incomingIssueDescriptionMap[productId] || "").trim();
     });
 
     setProductStatusMap(normalizedProductStatusMap);
     setRepairingStatusMapState(normalizedRepairingStatusMap);
+    setIssueDescriptionMapState(normalizedIssueDescriptionMap);
     onChange({
       target: { name: "product_status_map", value: JSON.stringify(normalizedProductStatusMap) }
     } as ChangeEvent<HTMLInputElement>);
     onChange({
       target: { name: "repairing_status_map", value: JSON.stringify(normalizedRepairingStatusMap) }
+    } as ChangeEvent<HTMLInputElement>);
+    onChange({
+      target: { name: "issue_description_map", value: JSON.stringify(normalizedIssueDescriptionMap) }
     } as ChangeEvent<HTMLInputElement>);
 
     if (allProductIds.length > 0 && initialProductIds.length === 0) {
@@ -383,7 +415,7 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
   const depositAmount = Number.parseFloat(orderForm.deposit_amount || "0") || 0;
   const finalCost = Number.parseFloat(orderForm.final_cost || orderForm.estimated_cost || "0") || 0;
   const remainingBalance = Math.max(finalCost - depositAmount, 0);
-  const completionCount = [orderForm.client_id, orderForm.client_phone, effectiveProductIds.length > 0 ? "filled" : "", orderForm.issue_description, orderForm.estimated_cost, orderForm.priority].filter((v) => String(v || "").trim().length > 0).length;
+  const completionCount = [orderForm.client_id, orderForm.client_phone, effectiveProductIds.length > 0 ? "filled" : "",  orderForm.estimated_cost, orderForm.priority].filter((v) => String(v || "").trim().length > 0).length;
 
   const getPriorityColor = (priority: string) => ({ urgent: "#ef4444", high: "#f59e0b", medium: "#3b82f6", low: "#10b981" }[priority] || "#10b981");
   const getProductFlowStatusColor = (status: ProductFlowStatus) => ({ pending: "#f59e0b", rajtocom: "#3b82f6", comtoraj: "#8b5cf6", deliveryed: "#10b981" }[status] || "#f59e0b");
@@ -401,11 +433,14 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
     const allProductIds = flattenCompanyProductIds(dedupedCompanyIds, map);
     const sourceProductStatusMap = statusMapOverride || productStatusMap;
     const sourceRepairingStatusMap = repairingStatusMapState;
+    const sourceIssueDescriptionMap = issueDescriptionMapState;
     const nextProductStatusMap: Record<string, ProductFlowStatus> = {};
     const nextRepairingStatusMap: Record<string, RepairingStatus> = {};
+    const nextIssueDescriptionMap: Record<string, string> = {};
     allProductIds.forEach((productId) => {
       nextProductStatusMap[productId] = normalizeProductFlowStatus(sourceProductStatusMap[productId]);
       nextRepairingStatusMap[productId] = normalizeRepairingStatus(sourceRepairingStatusMap[productId]);
+      nextIssueDescriptionMap[productId] = String(sourceIssueDescriptionMap[productId] || "").trim();
     });
     
     // Update all related fields
@@ -437,10 +472,14 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
     onChange({
       target: { name: "repairing_status_map", value: JSON.stringify(nextRepairingStatusMap) }
     } as ChangeEvent<HTMLInputElement>);
+    onChange({
+      target: { name: "issue_description_map", value: JSON.stringify(nextIssueDescriptionMap) }
+    } as ChangeEvent<HTMLInputElement>);
     
     // Update product list
     setProductStatusMap(nextProductStatusMap);
     setRepairingStatusMapState(nextRepairingStatusMap);
+    setIssueDescriptionMapState(nextIssueDescriptionMap);
     onProductsChange(allProductIds);
   };
   
@@ -523,6 +562,19 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
       target: { name: "repairing_status_map", value: JSON.stringify(nextStatusMap) }
     } as ChangeEvent<HTMLInputElement>);
   };
+
+  const updateProductIssueDescription = (productId: string, issueText: string) => {
+    const normalizedProductId = productId.trim();
+    if (!normalizedProductId) return;
+    const nextIssueMap: Record<string, string> = {
+      ...issueDescriptionMapState,
+      [normalizedProductId]: issueText,
+    };
+    setIssueDescriptionMapState(nextIssueMap);
+    onChange({
+      target: { name: "issue_description_map", value: JSON.stringify(nextIssueMap) }
+    } as ChangeEvent<HTMLInputElement>);
+  };
   
   const addCompany = (companyId: string) => {
     const normalizedCompanyId = companyId.trim();
@@ -584,8 +636,12 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
     onChange({
       target: { name: "repairing_status_map", value: JSON.stringify({}) },
     } as ChangeEvent<HTMLInputElement>);
+    onChange({
+      target: { name: "issue_description_map", value: JSON.stringify({}) },
+    } as ChangeEvent<HTMLInputElement>);
     setProductStatusMap({});
     setRepairingStatusMapState({});
+    setIssueDescriptionMapState({});
     onProductsChange([]);
   };
   
@@ -638,7 +694,7 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
             <motion.button className="close-btn-enhanced" onClick={onClose} whileHover={{ rotate: 90, scale: 1.1 }} whileTap={{ scale: 0.9 }}><FiX /></motion.button>
           </div>
 
-          <form onSubmit={onSubmit} className="service-form-enhanced order-form-enhanced">
+          <form autoComplete="off" onSubmit={onSubmit} className="service-form-enhanced order-form-enhanced">
             <div className="order-form-shell">
               <aside className="order-form-aside">
                 <div className="order-preview-card">
@@ -890,6 +946,14 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
                                   </select>
                                   <FiChevronDown className="dropdown-icon" />
                                 </div>
+                                <textarea
+                                  value={issueDescriptionMapState[product.id.toString()] || ""}
+                                  onChange={(e) => updateProductIssueDescription(product.id.toString(), e.target.value)}
+                                  placeholder="Issue Description for this product"
+                                  rows={2}
+                                  className="enhanced-textarea"
+                                  style={{ marginTop: "10px" }}
+                                />
                               </div>
                               <button type="button" className="selected-product-remove" onClick={() => removeProduct(product.id.toString())}>
                                 <FiX />
@@ -1005,9 +1069,7 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
                       </div>
                       <div className="input-hint info"><FiCheck /> Used by income, salary, and expense reporting.</div>
                     </div>
-                  ) : (
-                    <input type="hidden" id="service_type" name="service_type" value={orderForm.service_type || "general"} />
-                  )}
+                  ) : null}
 
                   <div className="form-group-enhanced">
                     <label className="form-label"><FiClock className="label-icon" /><span>Warranty Status</span></label>
@@ -1033,9 +1095,7 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
                   <div className="form-group-enhanced"><label className="form-label"><FiCreditCard className="label-icon" /><span>Payment Status</span></label><div className="enhanced-dropdown"><select id="payment_status" name="payment_status" value={orderForm.payment_status === "partial" ? "partially_paid" : orderForm.payment_status} onChange={onChange} className="enhanced-select"><option value="pending">Pending</option><option value="paid">Paid</option><option value="partially_paid">Partially Paid</option><option value="refunded">Refunded</option></select><FiChevronDown className="dropdown-icon" /></div></div>
                   <div className="financial-summary order-financial-summary"><div className="summary-title">Payment Summary</div><div className="summary-item"><span>Estimated Cost:</span><strong>Rs. {estimatedCost.toLocaleString()}</strong></div><div className="summary-item"><span>Deposit Paid:</span><strong className="text-success">- Rs. {depositAmount.toLocaleString()}</strong></div><div className="summary-divider"></div><div className="summary-item total"><span>Remaining Balance:</span><strong className="text-warning">Rs. {remainingBalance.toLocaleString()}</strong></div></div>
 
-                  <div className="form-group-enhanced full-width order-section-heading"><div className="summary-title">Details & Notes</div><p>Describe the issue well so technicians and front-desk staff stay aligned.</p></div>
-                  <div className="form-group-enhanced full-width"><label className="form-label"><FiAlertCircle className="label-icon" /><span>Issue Description</span></label><textarea id="issue_description" name="issue_description" value={orderForm.issue_description} onChange={onChange} placeholder="Describe the issue in detail. Include symptoms, user-reported problems, or any visible faults..." rows={5} className="enhanced-textarea" /><div className="char-count">{orderForm.issue_description?.length || 0} characters</div></div>
-                  <div className="form-group-enhanced full-width"><label className="form-label"><FiPackage className="label-icon" /><span>Additional Notes</span></label><textarea id="notes" name="notes" value={orderForm.notes} onChange={onChange} placeholder="Special instructions, promised accessories, approval notes, or internal comments..." rows={4} className="enhanced-textarea" /></div>
+                  <div className="form-group-enhanced full-width order-section-heading"><div className="summary-title">Details & Notes</div><p>Describe the issue well so technicians and front-desk staff stay aligned.</p></div>                  <div className="form-group-enhanced full-width"><label className="form-label"><FiPackage className="label-icon" /><span>Additional Notes</span></label><textarea id="notes" name="notes" value={orderForm.notes} onChange={onChange} placeholder="Special instructions, promised accessories, approval notes, or internal comments..." rows={4} className="enhanced-textarea" /></div>
                 </motion.div>
               </div>
             </div>
@@ -1043,6 +1103,7 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
             <div className="form-actions-enhanced order-form-actions">
               <input type="hidden" name="product_status_map" value={JSON.stringify(productStatusMap)} />
               <input type="hidden" name="repairing_status_map" value={JSON.stringify(repairingStatusMapState)} />
+              <input type="hidden" name="issue_description_map" value={JSON.stringify(issueDescriptionMapState)} />
               <div className="order-form-actions-note">Required: client, phone, and product. The remaining fields help with service quality, internal clarity, and billing.</div>
               <div className="order-form-actions-buttons">
                 <motion.button type="button" className="btn-secondary-enhanced" onClick={onClose} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>Cancel</motion.button>
@@ -1057,3 +1118,4 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
 };
 
 export default OrderFormModal;
+

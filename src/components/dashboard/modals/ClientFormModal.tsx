@@ -85,7 +85,7 @@ const ClientFormModal = ({
           </motion.button>
         </div>
 
-        <form onSubmit={onSubmit} className="service-form-enhanced client-form-enhanced">
+        <form onSubmit={onSubmit} className="service-form-enhanced client-form-enhanced" autoComplete="off">
           <div className="client-form-shell">
             <aside className="client-form-aside">
               <div className="client-identity-card">

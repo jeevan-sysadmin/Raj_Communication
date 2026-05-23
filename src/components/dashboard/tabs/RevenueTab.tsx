@@ -17,6 +17,8 @@ import { exportStyledPdfReport } from "../pdfExport";
 interface ServiceSummary {
   service_type: string;
   income: number;
+  final_cost_total?: number;
+  deposit_amount_total?: number;
   expenses: number;
   salaries: number;
   total_costs: number;
@@ -29,6 +31,8 @@ interface MonthlyRow {
   month: string;
   label: string;
   income: number;
+  final_cost_total?: number;
+  deposit_amount_total?: number;
   expenses: number;
   salaries: number;
   total_costs: number;
@@ -69,6 +73,8 @@ interface RevenueResponse {
     period_label: string;
     date_range: { from: string; to: string };
     total_income: number;
+    total_final_cost: number;
+    total_deposit_amount: number;
     payment_income: number;
     manual_income_total: number;
     manual_income_count: number;
@@ -88,9 +94,7 @@ interface RevenueResponse {
   message?: string;
 }
 
-<<<<<<< HEAD
-const API_BASE_URL = "http://162.141.0.9/raj_communication/api";
-=======
+const API_BASE_URL = "http://localhost/raj_communication/api";
 const serviceTypeOptions = ["all", "general", "repair", "sales", "water", "inverter"];
 
 const todayString = () => new Date().toISOString().split("T")[0];
@@ -463,6 +467,8 @@ const RevenueTab = () => {
   const summaryCards = data
     ? [
         ["Total Income", formatCurrency(data.summary.total_income), <FiDollarSign />, "linear-gradient(135deg, #10b981, #34d399)"],
+        ["Final Cost", formatCurrency(data.summary.total_final_cost), <FiBarChart2 />, "linear-gradient(135deg, #0f766e, #14b8a6)"],
+        ["Deposit Amount", formatCurrency(data.summary.total_deposit_amount), <FiCreditCard />, "linear-gradient(135deg, #2563eb, #60a5fa)"],
         ["Manual Income", formatCurrency(data.summary.manual_income_total), <FiPlus />, "linear-gradient(135deg, #0ea5e9, #38bdf8)"],
         ["Expenses", formatCurrency(data.summary.total_expenses), <FiTrendingDown />, "linear-gradient(135deg, #ef4444, #fb7185)"],
         ["Salaries", formatCurrency(data.summary.total_salaries), <FiCreditCard />, "linear-gradient(135deg, #3b82f6, #60a5fa)"],
@@ -639,7 +645,7 @@ const RevenueTab = () => {
               </div>
 
               {showIncomeForm ? (
-                <form onSubmit={submitIncome} style={{ display: "grid", gap: "12px" }}>
+                <form autoComplete="off" onSubmit={submitIncome} style={{ display: "grid", gap: "12px" }}>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px" }}>
                     <select value={incomeForm.service_type} onChange={(event) => setIncomeForm((prev) => ({ ...prev, service_type: event.target.value }))} style={inputStyle}>
                       {manualIncomeServices.map((option) => (
@@ -720,6 +726,8 @@ const RevenueTab = () => {
                     ["Orders Count", String(data.summary.order_count)],
                     ["Unique Customers", String(data.summary.unique_customers)],
                     ["Average Payment", formatCurrency(data.summary.average_payment)],
+                    ["Final Cost", formatCurrency(data.summary.total_final_cost)],
+                    ["Deposit Amount", formatCurrency(data.summary.total_deposit_amount)],
                     ["Manual Entries", String(data.summary.manual_income_count)],
                     ["Total Costs", formatCurrency(data.summary.total_costs)],
                   ].map(([label, value]) => (

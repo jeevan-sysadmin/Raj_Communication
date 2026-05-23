@@ -165,14 +165,13 @@ if ($serviceType !== 'all') {
 
 $paymentSummary = revenue_statement($db, "
     SELECT
-        COALESCE(SUM(p.amount), 0) AS total_income,
-        COUNT(p.id) AS payment_count,
-        COUNT(DISTINCT p.order_id) AS order_count,
+        COALESCE(SUM(COALESCE(so.final_cost, 0)), 0) AS total_income,
+        0 AS payment_count,
+        COUNT(so.id) AS order_count,
         COUNT(DISTINCT so.client_id) AS unique_customers,
-        COALESCE(AVG(p.amount), 0) AS average_payment
-    FROM payments p
-    INNER JOIN service_orders so ON p.order_id = so.id
-    WHERE " . implode(' AND ', $paymentConditions), $paymentParams)->fetch(PDO::FETCH_ASSOC);
+        COALESCE(AVG(COALESCE(so.final_cost, 0)), 0) AS average_payment
+    FROM service_orders so
+    WHERE " . implode(' AND ', $serviceOrderConditions), $serviceOrderParams)->fetch(PDO::FETCH_ASSOC);
 
 $manualIncomeSummary = revenue_statement($db, "
     SELECT
@@ -191,11 +190,32 @@ $salarySummary = revenue_statement($db, "
     FROM staff_salaries s
     WHERE " . implode(' AND ', $salaryConditions), $salaryParams)->fetch(PDO::FETCH_ASSOC);
 
+$serviceOrderConditions = [
+    "DATE(so.created_at) BETWEEN :from_date AND :to_date",
+];
+$serviceOrderParams = [
+    ':from_date' => $period['from_date'],
+    ':to_date' => $period['to_date'],
+];
+if ($serviceType !== 'all') {
+    $serviceOrderConditions[] = "COALESCE(NULLIF(TRIM(so.service_type), ''), 'general') = :service_type";
+    $serviceOrderParams[':service_type'] = $serviceType;
+}
+
+$serviceOrderFinancialSummary = revenue_statement($db, "
+    SELECT
+        COALESCE(SUM(COALESCE(so.final_cost, 0)), 0) AS total_final_cost,
+        COALESCE(SUM(COALESCE(so.deposit_amount, 0)), 0) AS total_deposit_amount
+    FROM service_orders so
+    WHERE " . implode(' AND ', $serviceOrderConditions), $serviceOrderParams)->fetch(PDO::FETCH_ASSOC);
+
 $paymentIncome = (float)($paymentSummary['total_income'] ?? 0);
 $manualIncome = (float)($manualIncomeSummary['total_income'] ?? 0);
 $totalExpenses = (float)($expenseSummary['total_expenses'] ?? 0);
 $totalSalaries = (float)($salarySummary['total_salaries'] ?? 0);
-$totalIncome = $paymentIncome + $manualIncome;
+$totalFinalCost = (float)($serviceOrderFinancialSummary['total_final_cost'] ?? 0);
+$totalDepositAmount = (float)($serviceOrderFinancialSummary['total_deposit_amount'] ?? 0);
+$totalIncome = $totalFinalCost;
 $totalCosts = $totalExpenses + $totalSalaries;
 $netProfit = $totalIncome - $totalCosts;
 
@@ -204,14 +224,13 @@ $serviceRows = [];
 $paymentServiceRows = revenue_statement($db, "
     SELECT
         COALESCE(NULLIF(TRIM(so.service_type), ''), 'general') AS service_type,
-        COALESCE(SUM(p.amount), 0) AS income,
-        COUNT(DISTINCT p.order_id) AS order_count,
+        COALESCE(SUM(COALESCE(so.final_cost, 0)), 0) AS income,
+        COUNT(so.id) AS order_count,
         COUNT(DISTINCT so.client_id) AS customer_count
-    FROM payments p
-    INNER JOIN service_orders so ON p.order_id = so.id
-    WHERE " . implode(' AND ', $paymentConditions) . "
+    FROM service_orders so
+    WHERE " . implode(' AND ', $serviceOrderConditions) . "
     GROUP BY COALESCE(NULLIF(TRIM(so.service_type), ''), 'general')
-", $paymentParams)->fetchAll(PDO::FETCH_ASSOC);
+", $serviceOrderParams)->fetchAll(PDO::FETCH_ASSOC);
 
 foreach ($paymentServiceRows as $row) {
     $key = $row['service_type'] ?: 'general';
@@ -227,31 +246,7 @@ foreach ($paymentServiceRows as $row) {
     ];
 }
 
-$manualIncomeRows = revenue_statement($db, "
-    SELECT
-        i.service_type,
-        COALESCE(SUM(i.amount), 0) AS income
-    FROM income_entries i
-    WHERE " . implode(' AND ', $incomeConditions) . "
-    GROUP BY i.service_type
-", $incomeParams)->fetchAll(PDO::FETCH_ASSOC);
-
-foreach ($manualIncomeRows as $row) {
-    $key = $row['service_type'] ?: 'general';
-    if (!isset($serviceRows[$key])) {
-        $serviceRows[$key] = [
-            'service_type' => $key,
-            'income' => 0.0,
-            'expenses' => 0.0,
-            'salaries' => 0.0,
-            'total_costs' => 0.0,
-            'net_profit' => 0.0,
-            'order_count' => 0,
-            'customer_count' => 0,
-        ];
-    }
-    $serviceRows[$key]['income'] += (float)$row['income'];
-}
+// Revenue is derived only from service_orders.final_cost.
 
 $expenseRows = revenue_statement($db, "
     SELECT
@@ -329,18 +324,41 @@ foreach ($serviceRows as $key => $row) {
 ksort($serviceRows);
 $serviceBreakdown = array_values($serviceRows);
 
+$serviceFinancialRows = revenue_statement($db, "
+    SELECT
+        COALESCE(NULLIF(TRIM(so.service_type), ''), 'general') AS service_type,
+        COALESCE(SUM(COALESCE(so.final_cost, 0)), 0) AS final_cost_total,
+        COALESCE(SUM(COALESCE(so.deposit_amount, 0)), 0) AS deposit_amount_total
+    FROM service_orders so
+    WHERE " . implode(' AND ', $serviceOrderConditions) . "
+    GROUP BY COALESCE(NULLIF(TRIM(so.service_type), ''), 'general')
+", $serviceOrderParams)->fetchAll(PDO::FETCH_ASSOC);
+
+$serviceFinancialMap = [];
+foreach ($serviceFinancialRows as $row) {
+    $serviceFinancialMap[$row['service_type'] ?? 'general'] = [
+        'final_cost_total' => (float)($row['final_cost_total'] ?? 0),
+        'deposit_amount_total' => (float)($row['deposit_amount_total'] ?? 0),
+    ];
+}
+
+foreach ($serviceBreakdown as $index => $row) {
+    $serviceKey = $row['service_type'] ?? 'general';
+    $serviceBreakdown[$index]['final_cost_total'] = round((float)($serviceFinancialMap[$serviceKey]['final_cost_total'] ?? 0), 2);
+    $serviceBreakdown[$index]['deposit_amount_total'] = round((float)($serviceFinancialMap[$serviceKey]['deposit_amount_total'] ?? 0), 2);
+}
+
 $monthlyData = revenue_month_keys($period['from_date'], $period['to_date']);
 
 $paymentMonthlyRows = revenue_statement($db, "
     SELECT
-        DATE_FORMAT(p.created_at, '%Y-%m') AS month_key,
-        COALESCE(SUM(p.amount), 0) AS income
-    FROM payments p
-    INNER JOIN service_orders so ON p.order_id = so.id
-    WHERE " . implode(' AND ', $paymentConditions) . "
-    GROUP BY DATE_FORMAT(p.created_at, '%Y-%m')
+        DATE_FORMAT(so.created_at, '%Y-%m') AS month_key,
+        COALESCE(SUM(COALESCE(so.final_cost, 0)), 0) AS income
+    FROM service_orders so
+    WHERE " . implode(' AND ', $serviceOrderConditions) . "
+    GROUP BY DATE_FORMAT(so.created_at, '%Y-%m')
     ORDER BY month_key ASC
-", $paymentParams)->fetchAll(PDO::FETCH_ASSOC);
+", $serviceOrderParams)->fetchAll(PDO::FETCH_ASSOC);
 
 foreach ($paymentMonthlyRows as $row) {
     if (!isset($monthlyData[$row['month_key']])) {
@@ -349,22 +367,7 @@ foreach ($paymentMonthlyRows as $row) {
     $monthlyData[$row['month_key']]['income'] += (float)$row['income'];
 }
 
-$manualIncomeMonthlyRows = revenue_statement($db, "
-    SELECT
-        DATE_FORMAT(i.income_date, '%Y-%m') AS month_key,
-        COALESCE(SUM(i.amount), 0) AS income
-    FROM income_entries i
-    WHERE " . implode(' AND ', $incomeConditions) . "
-    GROUP BY DATE_FORMAT(i.income_date, '%Y-%m')
-    ORDER BY month_key ASC
-", $incomeParams)->fetchAll(PDO::FETCH_ASSOC);
-
-foreach ($manualIncomeMonthlyRows as $row) {
-    if (!isset($monthlyData[$row['month_key']])) {
-        continue;
-    }
-    $monthlyData[$row['month_key']]['income'] += (float)$row['income'];
-}
+// Revenue is derived only from service_orders.final_cost.
 
 $expenseMonthlyRows = revenue_statement($db, "
     SELECT
@@ -400,12 +403,33 @@ foreach ($salaryMonthlyRows as $row) {
     $monthlyData[$row['month_key']]['salaries'] = (float)$row['salaries'];
 }
 
+$serviceOrderMonthlyRows = revenue_statement($db, "
+    SELECT
+        DATE_FORMAT(so.created_at, '%Y-%m') AS month_key,
+        COALESCE(SUM(COALESCE(so.final_cost, 0)), 0) AS final_cost_total,
+        COALESCE(SUM(COALESCE(so.deposit_amount, 0)), 0) AS deposit_amount_total
+    FROM service_orders so
+    WHERE " . implode(' AND ', $serviceOrderConditions) . "
+    GROUP BY DATE_FORMAT(so.created_at, '%Y-%m')
+    ORDER BY month_key ASC
+", $serviceOrderParams)->fetchAll(PDO::FETCH_ASSOC);
+
+foreach ($serviceOrderMonthlyRows as $row) {
+    if (!isset($monthlyData[$row['month_key']])) {
+        continue;
+    }
+    $monthlyData[$row['month_key']]['final_cost_total'] = (float)($row['final_cost_total'] ?? 0);
+    $monthlyData[$row['month_key']]['deposit_amount_total'] = (float)($row['deposit_amount_total'] ?? 0);
+}
+
 foreach ($monthlyData as $key => $row) {
     $monthlyData[$key]['income'] = round($row['income'], 2);
     $monthlyData[$key]['expenses'] = round($row['expenses'], 2);
     $monthlyData[$key]['salaries'] = round($row['salaries'], 2);
     $monthlyData[$key]['total_costs'] = round($row['expenses'] + $row['salaries'], 2);
     $monthlyData[$key]['net_profit'] = round($row['income'] - $monthlyData[$key]['total_costs'], 2);
+    $monthlyData[$key]['final_cost_total'] = round((float)($row['final_cost_total'] ?? 0), 2);
+    $monthlyData[$key]['deposit_amount_total'] = round((float)($row['deposit_amount_total'] ?? 0), 2);
 }
 
 $topCustomersRows = revenue_statement($db, "
@@ -413,16 +437,15 @@ $topCustomersRows = revenue_statement($db, "
         c.id AS client_id,
         c.full_name AS client_name,
         c.phone,
-        COUNT(DISTINCT p.order_id) AS order_count,
-        COALESCE(SUM(p.amount), 0) AS total_paid
-    FROM payments p
-    INNER JOIN service_orders so ON p.order_id = so.id
+        COUNT(so.id) AS order_count,
+        COALESCE(SUM(COALESCE(so.final_cost, 0)), 0) AS total_paid
+    FROM service_orders so
     LEFT JOIN clients c ON so.client_id = c.id
-    WHERE " . implode(' AND ', $paymentConditions) . "
+    WHERE " . implode(' AND ', $serviceOrderConditions) . "
     GROUP BY c.id, c.full_name, c.phone
     ORDER BY total_paid DESC, client_name ASC
     LIMIT 5
-", $paymentParams)->fetchAll(PDO::FETCH_ASSOC);
+", $serviceOrderParams)->fetchAll(PDO::FETCH_ASSOC);
 
 $topCustomers = array_map(static function (array $row): array {
     return [
@@ -470,9 +493,11 @@ finance_response([
             'to' => $period['to_date'],
         ],
         'total_income' => round($totalIncome, 2),
-        'payment_income' => round($paymentIncome, 2),
-        'manual_income_total' => round($manualIncome, 2),
-        'manual_income_count' => (int)($manualIncomeSummary['income_count'] ?? 0),
+        'total_final_cost' => round($totalFinalCost, 2),
+        'total_deposit_amount' => round($totalDepositAmount, 2),
+        'payment_income' => round($totalFinalCost, 2),
+        'manual_income_total' => 0.0,
+        'manual_income_count' => 0,
         'total_expenses' => round($totalExpenses, 2),
         'total_salaries' => round($totalSalaries, 2),
         'total_costs' => round($totalCosts, 2),
@@ -480,7 +505,9 @@ finance_response([
         'payment_count' => (int)($paymentSummary['payment_count'] ?? 0),
         'order_count' => (int)($paymentSummary['order_count'] ?? 0),
         'unique_customers' => (int)($paymentSummary['unique_customers'] ?? 0),
-        'average_payment' => round((float)($paymentSummary['average_payment'] ?? 0), 2),
+        'average_payment' => (int)($paymentSummary['order_count'] ?? 0) > 0
+            ? round($totalFinalCost / (int)$paymentSummary['order_count'], 2)
+            : 0.0,
         'by_service' => $serviceBreakdown,
     ],
     'monthly_data' => array_values($monthlyData),

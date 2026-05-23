@@ -1,4 +1,4 @@
-﻿import React, { useState } from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { 
   FiMapPin, 
@@ -170,7 +170,7 @@ const ContactUs: React.FC = () => {
                 <p>Thank you for contacting us. We'll get back to you soon.</p>
               </motion.div>
             ) : (
-              <form onSubmit={handleSubmit} className="contact-form">
+              <form autoComplete="off" onSubmit={handleSubmit} className="contact-form">
                 <div className="form-grid">
                   <div className="form-group">
                     <label htmlFor="name">Full Name *</label>
@@ -305,7 +305,7 @@ const ContactUs: React.FC = () => {
                   <p>123 Service Lane, Tech City</p>
                   <p>IN 560001, India</p>
                   <a href="https://maps.google.com" target="_blank" rel="noopener noreferrer">
-                    View on Google Maps â†’
+                    View on Google Maps →
                   </a>
                 </div>
               </div>
@@ -370,7 +370,7 @@ const ContactUs: React.FC = () => {
         >
           <div className="faq-header">
             <h3>Frequently Asked Questions</h3>
-            <a href="/support" className="view-all">View All FAQs â†’</a>
+            <a href="/support" className="view-all">View All FAQs →</a>
           </div>
           <div className="faq-grid">
             <div className="faq-item">
@@ -396,7 +396,7 @@ const ContactUs: React.FC = () => {
           transition={{ duration: 0.5, delay: 0.5 }}
         >
           <div className="footer-content">
-            <p>Â© 2026 Raj Communication Service Center. All rights reserved.</p>
+            <p>© 2026 Raj Communication Service Center. All rights reserved.</p>
             <div className="footer-links">
               <a href="/privacy">Privacy Policy</a>
               <a href="/terms">Terms of Service</a>

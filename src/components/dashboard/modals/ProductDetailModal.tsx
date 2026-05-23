@@ -132,6 +132,7 @@ const ProductDetailModal = ({ product, relatedOrders, onClose, onEdit }: Product
                 <FiCheckSquare /> Inventory
               </h3>
               <div className="detail-item"><span className="detail-label">Status</span><span className="detail-value">{formatLabel(product.status)}</span></div>
+              <div className="detail-item"><span className="detail-label">Stock Quantity</span><span className="detail-value">{Number(product.stock_quantity ?? 0)}</span></div>
               <div className="detail-item"><span className="detail-label">Replacement Product</span><span className="detail-value">{isSpareProduct ? "Yes" : "No"}</span></div>
               <div className="detail-item"><span className="detail-label">Warranty</span><span className="detail-value">{product.warranty_period || "Not specified"}</span></div>
               <div className="detail-item"><span className="detail-label">Purchase Date</span><span className="detail-value">{product.purchase_date ? formatDisplayDate(product.purchase_date) : "N/A"}</span></div>

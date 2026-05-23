@@ -24,7 +24,7 @@ export default defineConfig({
     // Proxy for API requests
     proxy: {
       '/api': {
-        target: 'http://162.141.0.9/raj_communication/api',
+        target: 'http://localhost/sun_computers/api',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
       }

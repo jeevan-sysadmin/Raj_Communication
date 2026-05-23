@@ -36,7 +36,73 @@ const humanize = (value?: string) =>
     .replaceAll("_", " ")
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
+const parseNameList = (value: unknown): string[] => {
+  if (Array.isArray(value)) return value.map((entry) => String(entry ?? "").trim()).filter(Boolean);
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed.map((entry) => String(entry ?? "").trim()).filter(Boolean);
+    } catch {
+      return trimmed
+        .split("||")
+        .flatMap((part) => part.split(","))
+        .map((part) => part.trim())
+        .filter(Boolean);
+    }
+  }
+  return [];
+};
+
 const DeliveryDetailModal = ({ delivery, onClose, onPrint }: DeliveryDetailModalProps) => {
+  const deliveryAny = delivery as Delivery & {
+    product_serial_number?: string;
+    serial_number?: string;
+    product_serial_numbers?: string[] | string;
+    product_names?: string[] | string;
+    replacement_product_names?: string[] | string;
+    replacement_product_serial_numbers?: string[] | string;
+  };
+  const productSerial = (() => {
+    const direct = String(deliveryAny.product_serial_number || "").trim();
+    if (direct) return direct;
+    const legacy = String(deliveryAny.serial_number || "").trim();
+    if (legacy) return legacy;
+    const rawList = deliveryAny.product_serial_numbers;
+    if (Array.isArray(rawList)) {
+      const first = String(rawList[0] || "").trim();
+      if (first) return first;
+    } else if (typeof rawList === "string") {
+      const trimmed = rawList.trim();
+      if (trimmed) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            const first = String(parsed[0] || "").trim();
+            if (first) return first;
+          }
+        } catch {
+          const first = trimmed.split("||")[0]?.split(",")[0]?.trim();
+          if (first) return first;
+        }
+      }
+    }
+    return "";
+  })();
+  const productModel = String((delivery as Delivery & { product_model?: string }).product_model || "").trim();
+  const productName = String(delivery.product_name || "").trim() || "N/A";
+  const productNames = parseNameList(deliveryAny.product_names);
+  const productSerials = parseNameList(deliveryAny.product_serial_numbers);
+  const replacementNames = parseNameList(deliveryAny.replacement_product_names);
+  const replacementSerials = parseNameList(deliveryAny.replacement_product_serial_numbers);
+  const productListLines = (productNames.length > 0 ? productNames : [productName]).map(
+    (name, index) => `${index + 1}. ${name} - Serial: ${productSerials[index] || (index === 0 ? productSerial || "N/A" : "N/A")}`,
+  );
+  const replacementListLines =
+    replacementNames.length > 0
+      ? replacementNames.map((name, index) => `${index + 1}. ${name} - Serial: ${replacementSerials[index] || "N/A"}`)
+      : [];
   const deliveryCode = delivery.delivery_code || `DEL${String(delivery.id).padStart(3, "0")}`;
   const orderCode = delivery.order_code || `ORD${String(delivery.order_id).padStart(3, "0")}`;
   const scheduledDate = delivery.scheduled_date_formatted || formatDisplayDate(delivery.scheduled_date);
@@ -120,8 +186,8 @@ const DeliveryDetailModal = ({ delivery, onClose, onPrint }: DeliveryDetailModal
               </div>
               <div>
                 <span className="order-detail-hero-label">Product</span>
-                <strong>{delivery.product_name || "N/A"}</strong>
-                <p>{delivery.product_brand || "Brand not available"}</p>
+                <strong>{productName}</strong>
+                <p>{productSerial ? `Serial: ${productSerial}` : "Serial: N/A"}</p>
               </div>
             </div>
             <div className="order-detail-hero-card">
@@ -171,6 +237,9 @@ const DeliveryDetailModal = ({ delivery, onClose, onPrint }: DeliveryDetailModal
               <div className="detail-item"><span className="detail-label">Delivery ID</span><span className="detail-value">#{delivery.id}</span></div>
               <div className="detail-item"><span className="detail-label">Delivery Code</span><span className="detail-value">{deliveryCode}</span></div>
               <div className="detail-item"><span className="detail-label">Order Code</span><span className="detail-value">{orderCode}</span></div>
+              <div className="detail-item"><span className="detail-label">Products</span><span className="detail-value" style={{ whiteSpace: "pre-line" }}>{productListLines.join("\n")}</span></div>
+              <div className="detail-item"><span className="detail-label">Replacement</span><span className="detail-value" style={{ whiteSpace: "pre-line" }}>{replacementListLines.length > 0 ? replacementListLines.join("\n") : "N/A"}</span></div>
+              <div className="detail-item"><span className="detail-label">Product Model</span><span className="detail-value">{productModel || "N/A"}</span></div>
             </div>
 
             <div className="detail-section full-width detail-section-notes">

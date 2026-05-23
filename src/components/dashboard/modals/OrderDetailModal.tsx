@@ -81,9 +81,23 @@ const normalizeNames = (value: unknown) =>
           ? value
           : typeof value === "number"
             ? [value]
+          : typeof value === "object" && value !== null
+            ? Object.values(value as Record<string, unknown>)
           : typeof value === "string"
-            ? parseJsonArray(value.trim()) ??
-              (value.includes("||") ? value.split("||") : value.split(","))
+            ? (() => {
+                const trimmed = value.trim();
+                if (!trimmed) return [];
+                const parsedArray = parseJsonArray(trimmed);
+                if (parsedArray) return parsedArray;
+                try {
+                  const parsed = JSON.parse(trimmed);
+                  if (Array.isArray(parsed)) return parsed;
+                  if (parsed && typeof parsed === "object") return Object.values(parsed as Record<string, unknown>);
+                } catch {
+                  // Fall through to delimited parsing.
+                }
+                return trimmed.includes("||") ? trimmed.split("||") : trimmed.split(",");
+              })()
             : []
       )
         .map((name) => String(name ?? "").trim())
@@ -113,7 +127,7 @@ const normalizeIds = (value: unknown) =>
 
 const withIdFallback = (names: string[], ids: number[], labelPrefix: string) => {
   if (names.length > 0) return names;
-  return ids.map((id) => `${labelPrefix} #${id}`);
+  return ids.map(() => labelPrefix);
 };
 
 interface ProductEntry {
@@ -126,6 +140,13 @@ const buildOrderProductEntries = (
   products: Product[],
   isReplacement: boolean,
 ): ProductEntry[] => {
+  const orderAny = order as Order & {
+    replacement_serial_numbers?: string[] | string;
+    replacement_product_serial_number?: string;
+    replacement_serial_no?: string;
+    replacement_product_serial_no?: string;
+  };
+
   const ids = normalizeIds([
     ...(isReplacement ? normalizeIds(order.replacement_product_ids) : normalizeIds(order.product_ids)),
     ...(isReplacement ? normalizeIds(order.replacement_product_id) : normalizeIds(order.product_id)),
@@ -133,10 +154,24 @@ const buildOrderProductEntries = (
   const namesFromList = isReplacement ? normalizeNames(order.replacement_product_names) : normalizeNames(order.product_names);
   const fallbackNames = isReplacement ? normalizeNames(order.replacement_product_name) : normalizeNames(order.product_name);
   const names = namesFromList.length > 0 ? namesFromList : fallbackNames;
-  const serials = normalizeNames(
-    isReplacement ? order.replacement_product_serial_numbers : order.product_serial_numbers,
-  );
-  const fallbackSerial = (isReplacement ? order.replacement_serial_number : order.serial_number) || "";
+  const replacementSerials = isReplacement
+    ? [
+        ...normalizeNames(order.replacement_product_serial_numbers),
+        ...normalizeNames(orderAny.replacement_serial_numbers),
+      ]
+    : [];
+  const serials = isReplacement
+    ? Array.from(new Set(replacementSerials.map((value) => String(value || "").trim()).filter(Boolean)))
+    : normalizeNames(order.product_serial_numbers);
+  const fallbackSerial = isReplacement
+    ? String(
+        order.replacement_serial_number ||
+          orderAny.replacement_product_serial_number ||
+          orderAny.replacement_serial_no ||
+          orderAny.replacement_product_serial_no ||
+          "",
+      )
+    : String(order.serial_number || "");
 
   const entries = ids.map((id, index) => {
     const matched = products.find((product) => product.id === id);
@@ -144,7 +179,7 @@ const buildOrderProductEntries = (
       label:
         names[index] ||
         matched?.product_name ||
-        `${isReplacement ? "Replacement Product" : "Product"} #${id}`,
+        `${isReplacement ? "Replacement Product" : "Product"}`,
       serialNumber: serials[index] || matched?.serial_number || (index === 0 ? fallbackSerial : "") || "",
     };
   });
@@ -163,22 +198,22 @@ const renderProductCollection = (entries: ProductEntry[], emptyLabel: string) =>
   }
 
   return (
-    <div className="order-detail-product-value">
-      <span className="order-detail-product-count">
-        {entries.length} item{entries.length > 1 ? "s" : ""}
-      </span>
-      <div className="order-detail-product-list">
+    <div className="order-detail-product-value product-table-view">
+      <div className="order-detail-product-table">
+        <div className="order-detail-product-table-head">
+          <span>S.No</span>
+          <span>Product Name</span>
+          <span>Serial Number</span>
+        </div>
         {entries.map((entry, index) => (
           <div
             key={`${entry.label}-${index}`}
-            className="order-detail-product-list-item"
+            className="order-detail-product-table-row"
             title={entry.serialNumber ? `${entry.label} (SN: ${entry.serialNumber})` : entry.label}
           >
-            <span className="order-detail-product-index">{index + 1}.</span>
-            <span className="order-detail-product-text">
-              {entry.label}
-              {entry.serialNumber ? ` (SN: ${entry.serialNumber})` : ""}
-            </span>
+            <span>{index + 1}</span>
+            <span>{entry.label}</span>
+            <span>{entry.serialNumber || "N/A"}</span>
           </div>
         ))}
       </div>
@@ -219,6 +254,17 @@ interface RepairingStatusEntry {
   status: string;
   tone: { bg: string; color: string; border: string; label: string };
 }
+
+const buildDisplayMainProductEntries = (mainEntries: ProductEntry[], replacementEntries: ProductEntry[]) => {
+  if (mainEntries.length <= 1 || replacementEntries.length === 0) return mainEntries;
+
+  const replacementKeys = new Set(
+    replacementEntries.map((entry) => `${entry.label}`.trim().toLowerCase()),
+  );
+
+  const filtered = mainEntries.filter((entry) => !replacementKeys.has(String(entry.label || "").trim().toLowerCase()));
+  return filtered.length > 0 ? filtered : mainEntries;
+};
 
 const renderRepairingStatusRows = (entries: RepairingStatusEntry[]) => {
   const rows = entries.map((entry, index) => (
@@ -310,6 +356,29 @@ const normalizeRepairingStatusMap = (value: unknown): Record<string, string> => 
   return normalized;
 };
 
+const normalizeIssueDescriptionMap = (value: unknown): Record<string, string> => {
+  if (!value) return {};
+  let parsed: unknown = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+      if (typeof parsed === "string") {
+        parsed = JSON.parse(parsed);
+      }
+    } catch {
+      return {};
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  const normalized: Record<string, string> = {};
+  Object.entries(parsed as Record<string, unknown>).forEach(([productId, text]) => {
+    const key = String(productId || "").trim();
+    if (!key) return;
+    normalized[key] = String(text ?? "").trim();
+  });
+  return normalized;
+};
+
 const normalizeProductFlowStatusMap = (value: unknown): Record<string, string> => {
   if (!value) return {};
   let parsed: unknown = value;
@@ -389,6 +458,8 @@ const getCompanyNames = (order: Order): string[] => {
   return names.length > 0 ? names : companyIds.map((id) => `Company #${id}`);
 };
 
+const isCompanyIdLabel = (value: string) => /^company\s*#\s*\d+$/i.test(value.trim());
+
 const OrderDetailModal = ({
   order,
   products = [],
@@ -407,7 +478,9 @@ const OrderDetailModal = ({
   const balanceDue = getBalanceDue(order.final_cost, order.estimated_cost, order.deposit_amount);
   const productEntries = buildOrderProductEntries(order, products, false);
   const replacementEntries = buildOrderProductEntries(order, products, true);
+  const displayProductEntries = buildDisplayMainProductEntries(productEntries, replacementEntries);
   const repairingStatusMap = normalizeRepairingStatusMap((order as Order & { repairing_status_map?: unknown }).repairing_status_map);
+  const issueDescriptionMap = normalizeIssueDescriptionMap((order as Order & { issue_description_map?: unknown }).issue_description_map);
   const productFlowStatusMap = normalizeProductFlowStatusMap((order as Order & { product_status_map?: unknown }).product_status_map);
   const productFlowDatesMap = normalizeProductFlowDatesMap(
     (order as Order & { product_status_dates_map?: unknown }).product_status_dates_map,
@@ -420,15 +493,15 @@ const OrderDetailModal = ({
     ? mapRepairingProductIds
     : productIdsForRepairingStatus;
   const productNameById = new Map<number, string>();
-  productEntries.forEach((entry, index) => {
+  displayProductEntries.forEach((entry, index) => {
     const pid = productIdsForRepairingStatus[index];
     if (pid) productNameById.set(pid, entry.label);
   });
-  const productSummary = productEntries.length > 1
-    ? `${productEntries[0].label} +${productEntries.length - 1} more`
-    : (productEntries[0]?.label || "Not added");
-  const productFullList = productEntries.length
-    ? productEntries
+  const productSummary = displayProductEntries.length > 1
+    ? `${displayProductEntries[0].label} +${displayProductEntries.length - 1} more`
+    : (displayProductEntries[0]?.label || "Not added");
+  const productFullList = displayProductEntries.length
+    ? displayProductEntries
       .map((entry, index) => `${index + 1}. ${entry.serialNumber ? `${entry.label} (SN: ${entry.serialNumber})` : entry.label}`)
       .join(", ")
     : "Not added";
@@ -437,7 +510,9 @@ const OrderDetailModal = ({
       .map((entry, index) => `${index + 1}. ${entry.serialNumber ? `${entry.label} (SN: ${entry.serialNumber})` : entry.label}`)
       .join(", ")
     : "Not added";
-  const productCountLabel = productEntries.length ? `${productEntries.length} product${productEntries.length > 1 ? "s" : ""}` : "No product";
+  const productCountLabel = displayProductEntries.length
+    ? `${displayProductEntries.length} product${displayProductEntries.length > 1 ? "s" : ""}`
+    : "No product";
   const replacementCountLabel = replacementEntries.length
     ? `${replacementEntries.length} replacement item${replacementEntries.length > 1 ? "s" : ""}`
     : "No replacement product";
@@ -451,6 +526,8 @@ const OrderDetailModal = ({
   );
   const companyNames = getCompanyNames(order);
   const companyNamesText = companyNames.length > 0 ? companyNames.join(", ") : "No company selected";
+  const fallbackCompanyName =
+    companyNames.find((name) => !isCompanyIdLabel(name) && String(name || "").trim().length > 0) || "";
   const apiCompanyProductNameMap = (order as Order & {
     company_product_name_map?: Record<string, { company_name?: string; product_names?: string[] | string }>;
   }).company_product_name_map;
@@ -458,13 +535,22 @@ const OrderDetailModal = ({
     apiCompanyProductNameMap && typeof apiCompanyProductNameMap === "object"
       ? Object.values(apiCompanyProductNameMap).map((entry) => {
           const parsedNames = normalizeNames(entry?.product_names || []);
+          const rawCompanyLabel = String(entry?.company_name || "").trim() || "Company";
+          const companyLabel =
+            isCompanyIdLabel(rawCompanyLabel) && fallbackCompanyName
+              ? fallbackCompanyName
+              : rawCompanyLabel;
           return {
-            companyLabel: String(entry?.company_name || "").trim() || "Company",
+            companyLabel,
             productNames: parsedNames,
           };
         })
       : companyIds.map((companyId, index) => {
-          const companyLabel = companyNames[index] || `Company #${companyId}`;
+          const rawCompanyLabel = companyNames[index] || companyNames[0] || `Company #${companyId}`;
+          const companyLabel =
+            isCompanyIdLabel(rawCompanyLabel) && fallbackCompanyName
+              ? fallbackCompanyName
+              : rawCompanyLabel;
           const productNames = (companyProductMap[companyId.toString()] || [])
             .map((productId) => products.find((product) => product.id === productId)?.product_name || `Product #${productId}`);
           return {
@@ -483,6 +569,20 @@ const OrderDetailModal = ({
       return { productId, label, status, tone };
     })
     .filter((entry): entry is RepairingStatusEntry => Boolean(entry));
+  const issueProductIds = Array.from(
+    new Set([
+      ...Object.keys(issueDescriptionMap).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0),
+      ...productIdsForRepairingStatus,
+    ]),
+  );
+  const perProductIssueEntries = issueProductIds
+    .map((pid) => {
+      const text = String(issueDescriptionMap[String(pid)] || "").trim();
+      if (!text) return null;
+      const label = productNameById.get(pid) || products.find((product) => product.id === pid)?.product_name || "Product";
+      return { pid, label, text };
+    })
+    .filter((entry): entry is { pid: number; label: string; text: string } => Boolean(entry));
   const repairingReadyCount = repairingStatusEntries.filter((entry) => entry.status === "ready").length;
   const repairingNotReadyCount = repairingStatusEntries.filter((entry) => entry.status === "not ready").length;
   const repairingReplacementCount = repairingStatusEntries.filter((entry) => entry.status === "replacement").length;
@@ -606,8 +706,21 @@ const OrderDetailModal = ({
               <h3><FiInfo /> Service Summary</h3>
               <div className="detail-stack">
                 <div className="detail-copy-block">
-                  <span className="detail-copy-label">Issue Description</span>
-                  <p>{order.issue_description || "No issue description provided."}</p>
+                  <span className="detail-copy-label">Issue By Product</span>
+                  {perProductIssueEntries.length > 0 ? (
+                    <div className="flow-status-list">
+                      {perProductIssueEntries.map((entry, index) => (
+                        <div key={`service-issue-product-${entry.pid}-${index}`} className="flow-status-card">
+                          <div className="flow-status-head">
+                            <strong>{index + 1}. {entry.label}</strong>
+                          </div>
+                          <div>{entry.text}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p>No per-product issue description added.</p>
+                  )}
                 </div>
                 <div className="detail-copy-grid">
                   <div className="detail-copy-block">
@@ -624,23 +737,43 @@ const OrderDetailModal = ({
 
             <div className="detail-section">
               <h3><FiPackage /> Product Information</h3>
-              <div className="detail-item">
+              <div className="detail-item detail-item-product-list">
                 <span className="detail-label">Main Products</span>
                 <div className="detail-value">
-                  {companyProductLines.length > 0 ? (
-                    renderCompanyProductBlocks(companyProductLines)
-                  ) : (
-                    renderProductCollection(productEntries, "Not added")
-                  )}
+                  {renderProductCollection(displayProductEntries, "Not added")}
                 </div>
               </div>
-              <div className="detail-item"><span className="detail-label">Replacement Products</span>{renderProductCollection(replacementEntries, "No replacement")}</div>
+              <div className="detail-item detail-item-product-list">
+                <span className="detail-label">Replacement Products</span>
+                <div className="detail-value">
+                  {renderProductCollection(replacementEntries, "No replacement")}
+                </div>
+              </div>
               <div className="detail-item"><span className="detail-label">Brand</span><span className="detail-value">{order.product_brand || "N/A"}</span></div>
               <div className="detail-item"><span className="detail-label">Model</span><span className="detail-value">{order.product_model || "N/A"}</span></div>
               <div className="detail-item">
                 <span className="detail-label">Repairing Status</span>
                 <div className="detail-value">
                   {renderRepairingStatusRows(repairingStatusEntries)}
+                </div>
+              </div>
+              <div className="detail-item">
+                <span className="detail-label">Issue By Product</span>
+                <div className="detail-value">
+                  {perProductIssueEntries.length > 0 ? (
+                    <div className="flow-status-list">
+                      {perProductIssueEntries.map((entry, index) => (
+                        <div key={`issue-product-${entry.pid}-${index}`} className="flow-status-card">
+                          <div className="flow-status-head">
+                            <strong>{index + 1}. {entry.label}</strong>
+                          </div>
+                          <div>{entry.text}</div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="order-detail-product-empty">No per-product issue description added</span>
+                  )}
                 </div>
               </div>
               <div className="detail-item">
@@ -715,7 +848,10 @@ const OrderDetailModal = ({
               <h3><FiUsers /> Team & Client</h3>
               <div className="detail-item"><span className="detail-label">Client Phone</span><span className="detail-value">{order.client_phone || "N/A"}</span></div>
               <div className="detail-item"><span className="detail-label">Client Email</span><span className="detail-value">{order.client_email || "N/A"}</span></div>
-              <div className="detail-item"><span className="detail-label">Companies</span><span className="detail-value">{companyNamesText}</span></div>
+              <div className="detail-item">
+                <span className="detail-label">Companies</span>
+                <span className="detail-value companies-value" title={companyNamesText}>{companyNamesText}</span>
+              </div>
               <div className="detail-item">
                 <span className="detail-label">Company Products</span>
                 <div className="detail-value">

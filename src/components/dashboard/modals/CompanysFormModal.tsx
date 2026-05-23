@@ -83,7 +83,7 @@ const CompanysFormModal = ({
           </motion.button>
         </div>
 
-        <form onSubmit={onSubmit} className="service-form-enhanced client-form-enhanced">
+        <form autoComplete="off" onSubmit={onSubmit} className="service-form-enhanced client-form-enhanced">
           <div className="client-form-shell">
             <aside className="client-form-aside">
               <div className="client-progress-card">
@@ -245,28 +245,13 @@ const CompanysFormModal = ({
               <section className="client-form-panel">
                 <div className="client-form-panel-header">
                   <div>
-                    <h3>Reference</h3>
-                    <p>Source tracking and team notes.</p>
+                    <h3>Notes</h3>
+                    <p>Internal team notes and remarks.</p>
                   </div>
                   <span className="client-form-badge soft">Internal</span>
                 </div>
 
                 <div className="form-grid client-form-grid">
-                  <div className="form-group client-form-group">
-                    <label htmlFor="source_pdf">
-                      <FiFileText /> Source PDF
-                    </label>
-                    <input
-                      id="source_pdf"
-                      name="source_pdf"
-                      value={companyForm.source_pdf}
-                      onChange={onChange}
-                      type="text"
-                      placeholder="SERVICE COMPANY LIST.pdf"
-                      className="client-input"
-                    />
-                  </div>
-
                   <div className="form-group client-form-group full-width">
                     <label htmlFor="notes">
                       <FiFileText /> Notes

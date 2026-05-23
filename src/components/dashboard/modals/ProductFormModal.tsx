@@ -10,7 +10,6 @@ import {
   FiFileText,
   FiLayers,
   FiPackage,
-  FiPlus,
   FiSave,
   FiTag,
   FiX,
@@ -35,13 +34,26 @@ interface ProductIdentityPair {
 }
 
 const PDF_CATEGORY_OPTIONS = [
-  "cctv",
-  "harddisk",
+  "CAMERA",
   "DVR",
-  "wificamer",
-  "others",
+  "NVR",
+  "HARDDISK",
+  "SOLAR CAMERA",
+  "PTCAMERA",
+  "SD CARD",
+  "SSD",
+  "POWER SUPPLY",
+  "MONITOR",
+  "EXTENDER",
+  "MEDIA CONVERTER",
+  "PTZCAMERA",
+  "POE SWITCH",
+  "DESKTOP SWITCH",
+  "TV",
+  "UPS",
+  "OTHERS",
 ];
-
+ 
 const ProductFormModal = ({
   show,
   editMode,
@@ -65,8 +77,11 @@ const ProductFormModal = ({
     } as ChangeEvent<HTMLInputElement>);
 
   const safeProductForm: ProductForm = {
+    id: productForm?.id,
     product_name: asText(productForm?.product_name),
     serial_number: asText(productForm?.serial_number),
+    stock_quantity: asText(productForm?.stock_quantity) || "1",
+    product_rows_json: asText(productForm?.product_rows_json),
     is_spare_product: Boolean(productForm?.is_spare_product),
     brand: asText(productForm?.brand),
     model: asText(productForm?.model),
@@ -190,24 +205,6 @@ const ProductFormModal = ({
     });
   };
 
-  const addProductPair = () => {
-    setProductPairs((prev) => {
-      const nextIndex = prev.length;
-      const next = [
-        ...prev,
-        {
-          id: pairSeedRef.current++,
-          productName: "",
-          serialNumber: "",
-        },
-      ];
-      syncFormFromPairs(next);
-      window.setTimeout(() => {
-        productNameInputRefs.current[nextIndex]?.focus();
-      }, 160);
-      return next;
-    });
-  };
   const removeProductPair = (indexToRemove: number) => {
     setProductPairs((prev) => {
       if (prev.length <= 1) {
@@ -289,7 +286,7 @@ const ProductFormModal = ({
             </motion.button>
           </div>
 
-          <form onSubmit={onSubmit} className="service-form-enhanced product-form-enhanced">
+          <form onSubmit={onSubmit} className="service-form-enhanced product-form-enhanced" autoComplete="off">
             <div className="product-form-shell">
               <aside className="product-form-aside">
                 <div className="product-identity-card">
@@ -436,19 +433,31 @@ const ProductFormModal = ({
 
                     {!editMode && (
                       <div className="form-group full-width product-form-group">
-                        <button
-                          type="button"
-                          className="btn-secondary-enhanced"
-                          onClick={addProductPair}
-                        >
-                          <FiPlus />
-                          Add Product Name
-                        </button>
                         <small className="product-field-help">
-                          Use one box for many serials, or click Add Product Name to create another Product Name box.
+                          Use one box for many serials.
                         </small>
                       </div>
                     )}
+
+                    <div className="form-group product-form-group">
+                      <label htmlFor="stock_quantity">
+                        <FiPackage /> Quantity
+                      </label>
+                      <div className="product-input-wrap">
+                        <FiPackage className="product-input-icon" />
+                        <input
+                          type="number"
+                          id="stock_quantity"
+                          name="stock_quantity"
+                          value={safeProductForm.stock_quantity}
+                          onChange={onChange}
+                          placeholder="1"
+                          min="0"
+                          step="1"
+                          className="product-input has-icon"
+                        />
+                      </div>
+                    </div>
 
                     <div className="form-group full-width product-form-group">
                       <label className="product-checkbox-card">
@@ -693,7 +702,7 @@ const ProductFormModal = ({
               <FiX />
             </button>
           </div>
-          <form onSubmit={onSubmit} className="service-form-enhanced product-form-enhanced">
+          <form onSubmit={onSubmit} className="service-form-enhanced product-form-enhanced" autoComplete="off">
             <div className="form-grid product-form-grid">
               <div className="form-group product-form-group">
                 <label htmlFor="product_name_fallback">Product Name *</label>
@@ -717,6 +726,19 @@ const ProductFormModal = ({
                   onChange={onChange}
                   min="0"
                   step="0.01"
+                />
+              </div>
+              <div className="form-group product-form-group">
+                <label htmlFor="stock_quantity_fallback">Quantity</label>
+                <input
+                  id="stock_quantity_fallback"
+                  name="stock_quantity"
+                  type="number"
+                  className="product-input"
+                  value={safeProductForm.stock_quantity}
+                  onChange={onChange}
+                  min="0"
+                  step="1"
                 />
               </div>
             </div>

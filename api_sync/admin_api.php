@@ -1,5 +1,5 @@
 <?php
-// C:\xampp\htdocs\raj_communication\api\admin_api.php
+// C:\xampp\htdocs\sun_computers\api\admin_api.php
 
 // Enable CORS
 header("Access-Control-Allow-Origin: *");
@@ -236,6 +236,89 @@ class AdminAPI {
     private function tableHasColumn(string $table, string $column): bool {
         $columns = $this->getTableColumns($table);
         return isset($columns[$column]);
+    }
+
+    private function ensureDeliveriesSerialColumn(): void {
+        try {
+            if ($this->tableHasColumn('deliveries', 'serial_number')) {
+                return;
+            }
+            $this->conn->exec("ALTER TABLE deliveries ADD COLUMN serial_number VARCHAR(255) NULL AFTER product_id");
+            unset($this->tableColumnCache['deliveries']);
+        } catch (Exception $e) {
+            // Do not hard-fail; update_order can still proceed in DBs without this trigger dependency.
+        }
+    }
+
+    private function parseJsonArraySafe($value): array {
+        if (is_array($value)) return $value;
+        if (!is_string($value)) return [];
+        $trimmed = trim($value);
+        if ($trimmed === '') return [];
+        $decoded = json_decode($trimmed, true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) return $decoded;
+        return array_map('trim', explode(',', $trimmed));
+    }
+
+    private function normalizeStatusMapSafe($value): array {
+        if (is_array($value)) return $value;
+        if (!is_string($value)) return [];
+        $trimmed = trim($value);
+        if ($trimmed === '') return [];
+        $decoded = json_decode($trimmed, true);
+        if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) return $decoded;
+        return [];
+    }
+
+    private function syncDeliveryItemsForOrder(int $orderId): void {
+        // Build item-level delivery data from service order arrays/maps for Delivery Tracking UI.
+        $stmt = $this->conn->prepare("SELECT id, product_ids, product_serial_numbers, product_status_map FROM service_orders WHERE id = :id LIMIT 1");
+        $stmt->bindValue(':id', $orderId, PDO::PARAM_INT);
+        $stmt->execute();
+        $order = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$order) return;
+
+        $productIds = array_values(array_filter(array_map('intval', $this->parseJsonArraySafe($order['product_ids'] ?? '')), fn($id) => $id > 0));
+        $serials = array_map(fn($v) => trim((string)$v), $this->parseJsonArraySafe($order['product_serial_numbers'] ?? ''));
+        $statusMapRaw = $this->normalizeStatusMapSafe($order['product_status_map'] ?? '');
+
+        $statusByProduct = [];
+        foreach ($statusMapRaw as $pid => $status) {
+            $statusByProduct[(int)$pid] = strtolower(trim((string)$status));
+        }
+
+        // Choose a delivery row for this order to attach items (latest delivered preferred).
+        $deliveryStmt = $this->conn->prepare("
+            SELECT id FROM deliveries
+            WHERE order_id = :order_id
+            ORDER BY CASE WHEN status = 'delivered' THEN 0 ELSE 1 END, id DESC
+            LIMIT 1
+        ");
+        $deliveryStmt->bindValue(':order_id', $orderId, PDO::PARAM_INT);
+        $deliveryStmt->execute();
+        $deliveryRow = $deliveryStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$deliveryRow) return;
+        $deliveryId = (int)$deliveryRow['id'];
+
+        $deleteStmt = $this->conn->prepare("DELETE FROM delivery_items WHERE delivery_id = :delivery_id");
+        $deleteStmt->bindValue(':delivery_id', $deliveryId, PDO::PARAM_INT);
+        $deleteStmt->execute();
+
+        $insertStmt = $this->conn->prepare("
+            INSERT INTO delivery_items (delivery_id, product_id, serial_number, created_at)
+            VALUES (:delivery_id, :product_id, :serial_number, NOW())
+        ");
+
+        foreach ($productIds as $index => $productId) {
+            $status = $statusByProduct[$productId] ?? 'pending';
+            if ($status !== 'deliveryed' && $status !== 'delivered') continue;
+            $serial = $serials[$index] ?? null;
+            $serial = is_string($serial) && trim($serial) !== '' ? trim($serial) : null;
+            $insertStmt->bindValue(':delivery_id', $deliveryId, PDO::PARAM_INT);
+            $insertStmt->bindValue(':product_id', $productId, PDO::PARAM_INT);
+            $insertStmt->bindValue(':serial_number', $serial, $serial === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+            $insertStmt->execute();
+        }
     }
 
     private function normalizeExistingCompanyId($value): ?int {
@@ -1078,6 +1161,7 @@ class AdminAPI {
     private function updateOrder() {
         try {
             $data = json_decode(file_get_contents("php://input"), true);
+            $this->ensureDeliveriesSerialColumn();
             $serviceOrdersHasCompanyId = $this->tableHasColumn('service_orders', 'company_id');
             
             if (empty($data['id'])) {
@@ -1215,6 +1299,9 @@ class AdminAPI {
                     if ($replacementIdsProvided) {
                         $this->syncOrderProducts((int)$data['id'], $new_replacement_product_ids ?? [], true);
                     }
+
+                    // Keep delivery_items in sync for multi-product + serial rendering in Delivery page.
+                    $this->syncDeliveryItemsForOrder((int)$data['id']);
 
                     // Check if payment status changed and create payment record if needed
                     if ($new_payment_status !== $existingOrder['payment_status'] || 
@@ -1664,11 +1751,11 @@ class AdminAPI {
 
                 $query = "INSERT INTO products (
                             product_code, serial_number, is_spare_product, product_name, brand, model, category,
-                            claim_type, specifications, purchase_date, warranty_period, price, status, created_at
+                            claim_type, specifications, purchase_date, warranty_period, price, stock_quantity, status, created_at
                           )
                           VALUES (
                             :product_code, :serial_number, :is_spare_product, :product_name, :brand, :model, :category,
-                            :claim_type, :specifications, :purchase_date, :warranty_period, :price, :status, NOW()
+                            :claim_type, :specifications, :purchase_date, :warranty_period, :price, :stock_quantity, :status, NOW()
                           )";
 
                 $stmt = $this->conn->prepare($query);
@@ -1684,6 +1771,7 @@ class AdminAPI {
                 $stmt->bindValue(':purchase_date', isset($row['purchase_date']) && trim((string)$row['purchase_date']) !== '' ? $row['purchase_date'] : date('Y-m-d'), PDO::PARAM_STR);
                 $stmt->bindValue(':warranty_period', isset($row['warranty_period']) && trim((string)$row['warranty_period']) !== '' ? trim((string)$row['warranty_period']) : '1 year', PDO::PARAM_STR);
                 $stmt->bindValue(':price', isset($row['price']) ? (float)$row['price'] : 0);
+                $stmt->bindValue(':stock_quantity', isset($row['stock_quantity']) ? max(0, intval($row['stock_quantity'])) : 1, PDO::PARAM_INT);
                 $stmt->bindValue(':status', $status, PDO::PARAM_STR);
 
                 if (!$stmt->execute()) {
@@ -1784,16 +1872,29 @@ class AdminAPI {
     
     private function updateProduct() {
         try {
-            $data = json_decode(file_get_contents("php://input"), true);
+            $rawInput = file_get_contents("php://input");
+            $data = json_decode($rawInput, true);
             if (!is_array($data)) {
                 $data = [];
             }
             $data = $this->normalizeProductPayload($data);
-            
-            if (empty($data['id'])) {
+
+            $resolvedId = null;
+            if (!empty($_GET['id'])) {
+                $resolvedId = $_GET['id'];
+            } elseif (!empty($_REQUEST['id'])) {
+                $resolvedId = $_REQUEST['id'];
+            } elseif (!empty($data['id'])) {
+                $resolvedId = $data['id'];
+            } elseif (!empty($data['product_id'])) {
+                $resolvedId = $data['product_id'];
+            }
+
+            if (empty($resolvedId) || intval($resolvedId) <= 0) {
                 $this->sendError("Product ID is required", 400);
                 return;
             }
+            $data['id'] = intval($resolvedId);
             
             // Check if product exists
             $checkQuery = "SELECT * FROM products WHERE id = :id";
@@ -1840,6 +1941,7 @@ class AdminAPI {
                 $status = 'active';
             }
             
+            $hasStockQuantityColumn = $this->tableHasColumn('products', 'stock_quantity');
             $query = "UPDATE products
                      SET product_name = :product_name,
                          serial_number = :serial_number,
@@ -1851,7 +1953,9 @@ class AdminAPI {
                          specifications = :specifications,
                          purchase_date = :purchase_date,
                          warranty_period = :warranty_period,
-                         price = :price,
+                         price = :price," .
+                         ($hasStockQuantityColumn ? "
+                         stock_quantity = :stock_quantity," : "") . "
                          status = :status,
                          updated_at = NOW()
                      WHERE id = :id";
@@ -1869,12 +1973,58 @@ class AdminAPI {
             $stmt->bindValue(':purchase_date', isset($data['purchase_date']) && trim((string)$data['purchase_date']) !== '' ? $data['purchase_date'] : ($existingProduct['purchase_date'] ?? date('Y-m-d')), PDO::PARAM_STR);
             $stmt->bindValue(':warranty_period', isset($data['warranty_period']) && trim((string)$data['warranty_period']) !== '' ? trim((string)$data['warranty_period']) : (string)($existingProduct['warranty_period'] ?? '1 year'), PDO::PARAM_STR);
             $stmt->bindValue(':price', isset($data['price']) ? (float)$data['price'] : (float)($existingProduct['price'] ?? 0));
+            if ($hasStockQuantityColumn) {
+                $stockQuantity = isset($data['stock_quantity']) ? max(0, intval($data['stock_quantity'])) : intval($existingProduct['stock_quantity'] ?? 1);
+                $stmt->bindValue(':stock_quantity', $stockQuantity, PDO::PARAM_INT);
+            }
             $stmt->bindValue(':status', $status, PDO::PARAM_STR);
             
-            if ($stmt->execute()) {
-                $this->sendSuccess(['message' => 'Product updated successfully']);
-            } else {
-                $this->sendError("Failed to update product", 500);
+            try {
+                if ($stmt->execute()) {
+                    $this->sendSuccess(['message' => 'Product updated successfully']);
+                } else {
+                    $this->sendError("Failed to update product", 500);
+                }
+            } catch (PDOException $e) {
+                $errorText = strtolower($e->getMessage());
+                if ($hasStockQuantityColumn && strpos($errorText, "unknown column 'stock_quantity'") !== false) {
+                    $fallbackQuery = "UPDATE products
+                                     SET product_name = :product_name,
+                                         serial_number = :serial_number,
+                                         is_spare_product = :is_spare_product,
+                                         brand = :brand,
+                                         model = :model,
+                                         category = :category,
+                                         claim_type = :claim_type,
+                                         specifications = :specifications,
+                                         purchase_date = :purchase_date,
+                                         warranty_period = :warranty_period,
+                                         price = :price,
+                                         status = :status,
+                                         updated_at = NOW()
+                                     WHERE id = :id";
+                    $fallbackStmt = $this->conn->prepare($fallbackQuery);
+                    $fallbackStmt->bindValue(':id', $data['id'], PDO::PARAM_INT);
+                    $fallbackStmt->bindValue(':product_name', isset($data['product_name']) && trim((string)$data['product_name']) !== '' ? trim((string)$data['product_name']) : (string)$existingProduct['product_name'], PDO::PARAM_STR);
+                    $fallbackStmt->bindValue(':serial_number', $serialNumber !== '' ? $serialNumber : null, PDO::PARAM_STR);
+                    $fallbackStmt->bindValue(':is_spare_product', isset($data['is_spare_product']) ? (!empty($data['is_spare_product']) ? 1 : 0) : (int)($existingProduct['is_spare_product'] ?? 0), PDO::PARAM_INT);
+                    $fallbackStmt->bindValue(':brand', isset($data['brand']) ? trim((string)$data['brand']) : (string)($existingProduct['brand'] ?? ''), PDO::PARAM_STR);
+                    $fallbackStmt->bindValue(':model', isset($data['model']) ? trim((string)$data['model']) : (string)($existingProduct['model'] ?? ''), PDO::PARAM_STR);
+                    $fallbackStmt->bindValue(':category', $category, PDO::PARAM_STR);
+                    $fallbackStmt->bindValue(':claim_type', $claimType, PDO::PARAM_STR);
+                    $fallbackStmt->bindValue(':specifications', isset($data['specifications']) ? trim((string)$data['specifications']) : (string)($existingProduct['specifications'] ?? ''), PDO::PARAM_STR);
+                    $fallbackStmt->bindValue(':purchase_date', isset($data['purchase_date']) && trim((string)$data['purchase_date']) !== '' ? $data['purchase_date'] : ($existingProduct['purchase_date'] ?? date('Y-m-d')), PDO::PARAM_STR);
+                    $fallbackStmt->bindValue(':warranty_period', isset($data['warranty_period']) && trim((string)$data['warranty_period']) !== '' ? trim((string)$data['warranty_period']) : (string)($existingProduct['warranty_period'] ?? '1 year'), PDO::PARAM_STR);
+                    $fallbackStmt->bindValue(':price', isset($data['price']) ? (float)$data['price'] : (float)($existingProduct['price'] ?? 0));
+                    $fallbackStmt->bindValue(':status', $status, PDO::PARAM_STR);
+                    if ($fallbackStmt->execute()) {
+                        $this->sendSuccess(['message' => 'Product updated successfully']);
+                    } else {
+                        $this->sendError("Failed to update product", 500);
+                    }
+                    return;
+                }
+                throw $e;
             }
             
         } catch (Exception $e) {
@@ -1944,11 +2094,24 @@ class AdminAPI {
             $date_from = isset($_GET['date_from']) ? $_GET['date_from'] : '';
             $date_to = isset($_GET['date_to']) ? $_GET['date_to'] : '';
             
-            $query = "SELECT d.*, o.order_code, c.full_name as client_name, p.product_name
+            $query = "SELECT d.*,
+                             d.serial_number AS delivery_serial_number,
+                             COALESCE(NULLIF(TRIM(d.serial_number), ''), p.serial_number) AS serial_number,
+                             o.order_code,
+                             c.full_name as client_name,
+                             p.product_name,
+                             p.serial_number AS product_serial_number,
+                             p.model AS product_model,
+                             p.brand AS product_brand,
+                             GROUP_CONCAT(DISTINCT di.product_id ORDER BY di.id SEPARATOR ',') AS delivery_item_product_ids,
+                             GROUP_CONCAT(DISTINCT pdi.product_name ORDER BY di.id SEPARATOR '||') AS delivery_item_product_names,
+                             GROUP_CONCAT(DISTINCT di.serial_number ORDER BY di.id SEPARATOR '||') AS delivery_item_serial_numbers
                      FROM deliveries d
                      LEFT JOIN service_orders o ON d.order_id = o.id
                      LEFT JOIN clients c ON o.client_id = c.id
-                     LEFT JOIN products p ON o.product_id = p.id
+                     LEFT JOIN products p ON COALESCE(d.product_id, o.product_id) = p.id
+                     LEFT JOIN delivery_items di ON di.delivery_id = d.id
+                     LEFT JOIN products pdi ON pdi.id = di.product_id
                      WHERE 1=1";
             
             $params = [];
@@ -1972,7 +2135,7 @@ class AdminAPI {
                 $types[':date_to'] = PDO::PARAM_STR;
             }
             
-            $query .= " ORDER BY d.scheduled_date DESC, d.scheduled_time DESC";
+            $query .= " GROUP BY d.id ORDER BY d.scheduled_date DESC, d.scheduled_time DESC";
             
             $stmt = $this->conn->prepare($query);
             
