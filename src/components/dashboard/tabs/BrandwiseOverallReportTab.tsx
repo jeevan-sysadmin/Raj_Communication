@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FiBarChart2, FiClock, FiDownload, FiLayers, FiPackage, FiPrinter, FiShoppingBag, FiTruck } from "react-icons/fi";
 import { exportStyledPdfReport } from "../pdfExport";
 
@@ -141,6 +141,16 @@ const BrandwiseOverallReportTab = ({ orders, products, deliveries, loading = fal
   const totalRevenue = useMemo(() => rows.reduce((sum, item) => sum + item.revenue, 0), [rows]);
   const topBrand = rows[0];
   const maxServiceOrders = useMemo(() => rows.reduce((max, item) => Math.max(max, item.serviceOrders), 0), [rows]);
+  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
+  const selectedRows = useMemo(() => rows.filter((row) => selectedBrands.includes(row.brand)), [rows, selectedBrands]);
+  const exportRows = selectedRows.length > 0 ? selectedRows : rows;
+  const isAllSelected = rows.length > 0 && rows.every((row) => selectedBrands.includes(row.brand));
+  const selectedLabel = selectedRows.length > 0 ? `${selectedRows.length} selected` : "All brands";
+
+  useEffect(() => {
+    setSelectedBrands((prev) => prev.filter((brand) => rows.some((row) => row.brand === brand)));
+  }, [rows]);
+
   const formatAmount = (value: number) => `Rs. ${value.toLocaleString("en-IN")}`;
   const today = new Date().toISOString().split("T")[0];
 
@@ -156,7 +166,7 @@ const BrandwiseOverallReportTab = ({ orders, products, deliveries, loading = fal
   };
 
   const exportCsv = () => {
-    if (rows.length === 0) return;
+    if (exportRows.length === 0) return;
     const header = [
       "brand",
       "service_orders",
@@ -169,7 +179,7 @@ const BrandwiseOverallReportTab = ({ orders, products, deliveries, loading = fal
       "avg_revenue_per_order",
     ];
 
-    const csvRows = rows.map((row) => {
+    const csvRows = exportRows.map((row) => {
       const avg = row.serviceOrders ? row.revenue / row.serviceOrders : 0;
       const values = [
         row.brand,
@@ -189,19 +199,19 @@ const BrandwiseOverallReportTab = ({ orders, products, deliveries, loading = fal
   };
 
   const exportPdf = () => {
-    if (rows.length === 0) return;
+    if (exportRows.length === 0) return;
     exportStyledPdfReport({
       filename: `brandwise_overall_report_${today}.pdf`,
       title: "Brandwise Overall Report",
       subtitle: "Complete brand performance across service, replacements, deliveries, and revenue.",
-      scopeLabel: `${rows.length} brands`,
+      scopeLabel: `${exportRows.length} brands (${selectedLabel})`,
       accentColor: "#0f766e",
       orientation: "landscape",
       metrics: [
-        { label: "Brands", value: `${rows.length}` },
-        { label: "Service Orders", value: `${totalOrders}` },
-        { label: "Deliveries", value: `${totalDeliveryRows}` },
-        { label: "Revenue", value: formatAmount(totalRevenue) },
+        { label: "Brands", value: `${exportRows.length}` },
+        { label: "Service Orders", value: `${exportRows.reduce((sum, item) => sum + item.serviceOrders, 0)}` },
+        { label: "Deliveries", value: `${exportRows.reduce((sum, item) => sum + item.deliveryRows, 0)}` },
+        { label: "Revenue", value: formatAmount(exportRows.reduce((sum, item) => sum + item.revenue, 0)) },
       ],
       head: [[
         "Brand",
@@ -214,7 +224,7 @@ const BrandwiseOverallReportTab = ({ orders, products, deliveries, loading = fal
         "Total Revenue",
         "Avg Revenue / Order",
       ]],
-      body: rows.map((row) => {
+      body: exportRows.map((row) => {
         const avg = row.serviceOrders ? row.revenue / row.serviceOrders : 0;
         return [
           row.brand,
@@ -232,11 +242,11 @@ const BrandwiseOverallReportTab = ({ orders, products, deliveries, loading = fal
   };
 
   const printReport = () => {
-    if (rows.length === 0) return;
+    if (exportRows.length === 0) return;
     const printWindow = window.open("", "_blank", "width=1200,height=900");
     if (!printWindow) return;
 
-    const bodyRows = rows
+    const bodyRows = exportRows
       .map((row) => {
         const avg = row.serviceOrders ? row.revenue / row.serviceOrders : 0;
         return `
@@ -270,7 +280,7 @@ const BrandwiseOverallReportTab = ({ orders, products, deliveries, loading = fal
         </head>
         <body>
           <h1>Brandwise Overall Report</h1>
-          <p>Generated on ${new Date().toLocaleString("en-IN")}</p>
+          <p>Generated on ${new Date().toLocaleString("en-IN")} - ${selectedLabel}</p>
           <table>
             <thead>
               <tr>
@@ -317,6 +327,9 @@ const BrandwiseOverallReportTab = ({ orders, products, deliveries, loading = fal
             <FiPrinter /> Print
           </button>
         </div>
+      </div>
+      <div style={{ marginBottom: 10, color: "#475569", fontSize: 13 }}>
+        Export/print uses selected brands first. Current scope: <strong>{selectedLabel}</strong>.
       </div>
 
       <div className="stats-grid-small brand-stats-grid">
@@ -384,6 +397,21 @@ const BrandwiseOverallReportTab = ({ orders, products, deliveries, loading = fal
         <table className="data-table brand-report-table">
           <thead>
             <tr>
+              <th style={{ width: 48, textAlign: "center" }}>
+                <input
+                  type="checkbox"
+                  className="row-checkbox"
+                  checked={isAllSelected}
+                  onChange={(event) => {
+                    if (event.target.checked) {
+                      setSelectedBrands(rows.map((row) => row.brand));
+                    } else {
+                      setSelectedBrands([]);
+                    }
+                  }}
+                  aria-label="Select all brands"
+                />
+              </th>
               <th>Brand</th>
               <th>Service Orders</th>
               <th>Replacements</th>
@@ -398,7 +426,7 @@ const BrandwiseOverallReportTab = ({ orders, products, deliveries, loading = fal
           <tbody>
             {!loading && rows.length === 0 ? (
               <tr>
-                <td colSpan={9} style={{ textAlign: "center", padding: "20px" }}>
+                <td colSpan={10} style={{ textAlign: "center", padding: "20px" }}>
                   No brandwise data available.
                 </td>
               </tr>
@@ -406,8 +434,23 @@ const BrandwiseOverallReportTab = ({ orders, products, deliveries, loading = fal
               rows.map((row) => {
                 const avg = row.serviceOrders ? row.revenue / row.serviceOrders : 0;
                 const serviceIntensity = maxServiceOrders ? Math.round((row.serviceOrders / maxServiceOrders) * 100) : 0;
+                const isSelected = selectedBrands.includes(row.brand);
                 return (
-                  <tr key={row.brand}>
+                  <tr key={row.brand} className={isSelected ? "selected-row" : ""}>
+                    <td style={{ textAlign: "center" }}>
+                      <input
+                        type="checkbox"
+                        className="row-checkbox"
+                        checked={isSelected}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setSelectedBrands((prev) =>
+                            checked ? [...prev, row.brand] : prev.filter((brand) => brand !== row.brand),
+                          );
+                        }}
+                        aria-label={`Select brand ${row.brand}`}
+                      />
+                    </td>
                     <td>
                       <div className="brand-name-cell">
                         <span className="brand-name">{row.brand}</span>

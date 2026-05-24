@@ -21,7 +21,7 @@ import type { Company, CompanyForm, DateRange } from "../types";
 import { formatDisplayDate } from "../utils";
 
 const ITEMS_PER_PAGE = 20;
-const COMPANY_API_URL = "http://localhost/raj_communication/api/companys.php";
+const COMPANY_API_URL = "http://162.141.0.9/raj_communication/api/companys.php";
 const SERVICE_COMPANY_PDF = "SERVICE COMPANY LIST.pdf";
 
 const emptyForm: CompanyForm = {

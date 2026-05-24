@@ -94,7 +94,7 @@ interface RevenueResponse {
   message?: string;
 }
 
-const API_BASE_URL = "http://localhost/raj_communication/api";
+const API_BASE_URL = "http://162.141.0.9/raj_communication/api";
 const serviceTypeOptions = ["all", "general", "repair", "sales", "water", "inverter"];
 
 const todayString = () => new Date().toISOString().split("T")[0];
@@ -215,8 +215,8 @@ const RevenueTab = () => {
       ["Period", data.summary.period_label],
       ["Date From", data.summary.date_range.from],
       ["Date To", data.summary.date_range.to],
-      ["Total Income", data.summary.total_income],
-      ["Payment Income", data.summary.payment_income],
+      ["Service Order Revenue", data.summary.total_income],
+      ["Service Order Amount", data.summary.payment_income],
       ["Manual Income", data.summary.manual_income_total],
       ["Manual Income Entries", data.summary.manual_income_count],
       ["Total Expenses", data.summary.total_expenses],
@@ -289,7 +289,7 @@ const RevenueTab = () => {
       subtitle: data.summary.period_label,
       scopeLabel: scopeParts.join(" · "),
       metrics: [
-        { label: "Total Income", value: formatCurrency(data.summary.total_income) },
+        { label: "Service Order Revenue", value: formatCurrency(data.summary.total_income) },
         { label: "Total Expenses", value: formatCurrency(data.summary.total_expenses) },
         { label: "Total Salaries", value: formatCurrency(data.summary.total_salaries) },
         { label: "Net Profit", value: formatCurrency(data.summary.net_profit) },
@@ -376,7 +376,7 @@ const RevenueTab = () => {
           <p>${escapeHtml(data.summary.period_label)}</p>
           <p>Printed on ${escapeHtml(new Date().toLocaleString("en-IN"))}</p>
           <div class="summary">
-            <div class="card"><span>Total Income</span><strong>${escapeHtml(formatCurrency(data.summary.total_income))}</strong></div>
+            <div class="card"><span>Service Order Revenue</span><strong>${escapeHtml(formatCurrency(data.summary.total_income))}</strong></div>
             <div class="card"><span>Total Expenses</span><strong>${escapeHtml(formatCurrency(data.summary.total_expenses))}</strong></div>
             <div class="card"><span>Total Salaries</span><strong>${escapeHtml(formatCurrency(data.summary.total_salaries))}</strong></div>
             <div class="card"><span>Net Profit</span><strong>${escapeHtml(formatCurrency(data.summary.net_profit))}</strong></div>
@@ -466,7 +466,7 @@ const RevenueTab = () => {
 
   const summaryCards = data
     ? [
-        ["Total Income", formatCurrency(data.summary.total_income), <FiDollarSign />, "linear-gradient(135deg, #10b981, #34d399)"],
+        ["Service Order Revenue", formatCurrency(data.summary.total_income), <FiDollarSign />, "linear-gradient(135deg, #10b981, #34d399)"],
         ["Final Cost", formatCurrency(data.summary.total_final_cost), <FiBarChart2 />, "linear-gradient(135deg, #0f766e, #14b8a6)"],
         ["Deposit Amount", formatCurrency(data.summary.total_deposit_amount), <FiCreditCard />, "linear-gradient(135deg, #2563eb, #60a5fa)"],
         ["Manual Income", formatCurrency(data.summary.manual_income_total), <FiPlus />, "linear-gradient(135deg, #0ea5e9, #38bdf8)"],
@@ -502,7 +502,7 @@ const RevenueTab = () => {
             Revenue Dashboard
           </h3>
           <p style={{ fontSize: "15px", lineHeight: 1.7, color: "#64748b", margin: 0 }}>
-            Review paid-order revenue together with manual income, staff salaries, and operating expenses across each service type.
+            Review revenue from service order amounts only, together with staff salaries and operating expenses across each service type.
           </p>
         </div>
 
@@ -639,7 +639,7 @@ const RevenueTab = () => {
                   <div style={{ fontSize: "18px", fontWeight: 800, color: "#0f172a" }}>{data.summary.manual_income_count}</div>
                 </div>
                 <div style={{ padding: "12px", borderRadius: "14px", background: "#f8fafc" }}>
-                  <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "6px" }}>Paid Order Income</div>
+                  <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "6px" }}>Service Order Revenue</div>
                   <div style={{ fontSize: "18px", fontWeight: 800, color: "#0f172a" }}>{formatCurrency(data.summary.payment_income)}</div>
                 </div>
               </div>

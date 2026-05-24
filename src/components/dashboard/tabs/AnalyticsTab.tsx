@@ -149,7 +149,7 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
   const updatedAt = new Date().toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
   const statCards = [
-    { label: "Tracked Revenue", value: totalRevenue ? money(totalRevenue) : "Rs. 0", hint: revenueDelta !== null ? `${revenueDelta >= 0 ? "+" : ""}${revenueDelta.toFixed(1)}% vs previous month` : "Latest revenue periods", icon: <FiTrendingUp />, bg: "linear-gradient(135deg,#0f766e,#14b8a6)" },
+    { label: "Tracked Profit", value: totalRevenue ? money(totalRevenue) : "Rs. 0", hint: revenueDelta !== null ? `${revenueDelta >= 0 ? "+" : ""}${revenueDelta.toFixed(1)}% vs previous month` : "Latest profit periods", icon: <FiTrendingUp />, bg: "linear-gradient(135deg,#0f766e,#14b8a6)" },
     { label: "Orders In Scope", value: totalOrders.toLocaleString(), hint: `${trends.reduce((a, b) => a + b.orders, 0).toLocaleString()} in trend window`, icon: <FiPackage />, bg: "linear-gradient(135deg,#2563eb,#38bdf8)" },
     { label: "Closure Rate", value: `${closedRate.toFixed(1)}%`, hint: `${(delivered + completed).toLocaleString()} closed orders`, icon: <FiCheckCircle />, bg: "linear-gradient(135deg,#ea580c,#f59e0b)" },
     { label: "Urgent Pressure", value: `${urgentRate.toFixed(1)}%`, hint: `${urgent.toLocaleString()} urgent orders`, icon: <FiAlertTriangle />, bg: "linear-gradient(135deg,#be123c,#fb7185)" },
@@ -159,15 +159,15 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
     if (!analyticsData || !hasData) return;
 
     const lines: Array<Array<string | number>> = [
-      ["Tracked Revenue", totalRevenue],
+      ["Tracked Profit", totalRevenue],
       ["Total Orders", totalOrders],
       ["Closure Rate", `${closedRate.toFixed(1)}%`],
       ["Urgent Pressure", `${urgentRate.toFixed(1)}%`],
       ["Average Daily Orders", avgDailyOrders.toFixed(1)],
       ["Health Score", healthScore],
       [],
-      ["Monthly Revenue"],
-      ["Month", "Revenue"],
+      ["Monthly Profit"],
+      ["Month", "Profit"],
       ...revenue.map((item) => [item.month, item.revenue]),
       [],
       ["Order Trends"],
@@ -211,10 +211,10 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
   const exportAnalyticsPdf = () => {
     if (!analyticsData || !hasData) return;
 
-    const tableTitle = revenue.length ? "Monthly Revenue" : trends.length ? "Order Trends" : "Status Distribution";
+    const tableTitle = revenue.length ? "Monthly Profit" : trends.length ? "Order Trends" : "Status Distribution";
     const head =
       revenue.length
-        ? ["Month", "Revenue"]
+        ? ["Month", "Profit"]
         : trends.length
           ? ["Date", "Orders"]
           : ["Status", "Orders"];
@@ -231,7 +231,7 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
       subtitle: tableTitle,
       scopeLabel: `${totalOrders.toLocaleString()} orders in scope`,
       metrics: [
-        { label: "Tracked Revenue", value: money(totalRevenue) },
+        { label: "Tracked Profit", value: money(totalRevenue) },
         { label: "Closure Rate", value: `${closedRate.toFixed(1)}%` },
         { label: "Urgent Pressure", value: `${urgentRate.toFixed(1)}%` },
         { label: "Health Score", value: `${healthScore}` },
@@ -302,14 +302,14 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
           <h1>Analytics & Performance</h1>
           <p>Printed on ${escapeHtml(updatedAt)}</p>
           <div class="summary">
-            <div class="card"><span>Tracked Revenue</span><strong>${escapeHtml(money(totalRevenue))}</strong></div>
+            <div class="card"><span>Tracked Profit</span><strong>${escapeHtml(money(totalRevenue))}</strong></div>
             <div class="card"><span>Total Orders</span><strong>${escapeHtml(totalOrders)}</strong></div>
             <div class="card"><span>Closure Rate</span><strong>${escapeHtml(closedRate.toFixed(1))}%</strong></div>
             <div class="card"><span>Urgent Pressure</span><strong>${escapeHtml(urgentRate.toFixed(1))}%</strong></div>
           </div>
-          <h3>Monthly Revenue</h3>
+          <h3>Monthly Profit</h3>
           <table>
-            <thead><tr><th>Month</th><th>Revenue</th></tr></thead>
+            <thead><tr><th>Month</th><th>Profit</th></tr></thead>
             <tbody>${revenueRows || "<tr><td colspan='2'>No data</td></tr>"}</tbody>
           </table>
           <h3>Order Trends</h3>
@@ -342,7 +342,7 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
             </div>
             <h3 style={{ fontSize: 30, lineHeight: 1.08, marginBottom: 10, color: "#0f172a" }}>Analytics & Performance</h3>
             <p style={{ fontSize: 15, lineHeight: 1.7, color: "#64748b", margin: 0 }}>
-              Read service momentum, revenue, queue pressure, and category demand from one cleaner analytics workspace.
+              Read service momentum, service profit (Final Cost - Deposit Amount), queue pressure, and category demand from one cleaner analytics workspace.
             </p>
           </div>
           <div className="table-controls" style={{ alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
@@ -383,13 +383,13 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
               <div style={panel}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 16 }}>
                   <div>
-                    <h4 style={{ margin: "0 0 6px 0", fontSize: 22, color: "#0f172a" }}>Revenue Momentum</h4>
-                    <p style={{ margin: 0, color: "#64748b", lineHeight: 1.7 }}>Follow month-over-month earnings and identify the strongest billing period quickly.</p>
+                    <h4 style={{ margin: "0 0 6px 0", fontSize: 22, color: "#0f172a" }}>Profit Momentum</h4>
+                    <p style={{ margin: 0, color: "#64748b", lineHeight: 1.7 }}>Follow month-over-month service profit and identify the strongest billing period quickly.</p>
                   </div>
                   <div style={{ padding: "14px 16px", borderRadius: 18, background: "linear-gradient(135deg, rgba(15,118,110,0.08), rgba(20,184,166,0.14))", minWidth: 190 }}>
                     <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em", color: "#0f766e", marginBottom: 6 }}>Best Month</div>
                     <div style={{ fontSize: 22, fontWeight: 800, color: "#0f172a", marginBottom: 4 }}>{bestMonth ? bestMonth.month : "No data"}</div>
-                    <div style={{ fontSize: 13, color: "#0f766e", fontWeight: 700 }}>{bestMonth ? money(bestMonth.revenue) : "Revenue unavailable"}</div>
+                    <div style={{ fontSize: 13, color: "#0f766e", fontWeight: 700 }}>{bestMonth ? money(bestMonth.revenue) : "Profit unavailable"}</div>
                   </div>
                 </div>
                 <div style={{ height: 320 }}>
@@ -405,11 +405,11 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
                         <CartesianGrid stroke="rgba(148,163,184,0.18)" vertical={false} />
                         <XAxis dataKey="month" tickLine={false} axisLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
                         <YAxis tickFormatter={(v) => `Rs. ${compact(Number(v))}`} tickLine={false} axisLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-                        <Tooltip contentStyle={tipStyle} labelStyle={{ color: "#e2e8f0", fontWeight: 700 }} itemStyle={{ color: "#f8fafc" }} formatter={(v) => [money(num(v)), "Revenue"]} />
+                        <Tooltip contentStyle={tipStyle} labelStyle={{ color: "#e2e8f0", fontWeight: 700 }} itemStyle={{ color: "#f8fafc" }} formatter={(v) => [money(num(v)), "Profit"]} />
                         <Area type="monotone" dataKey="revenue" stroke="#0f766e" strokeWidth={3} fill="url(#analyticsRevenueFill)" />
                       </AreaChart>
                     </ResponsiveContainer>
-                  ) : <div className="no-chart-data" style={{ height: "100%", borderRadius: 22, border: "1px dashed rgba(148,163,184,0.45)", background: "linear-gradient(180deg, rgba(248,250,252,0.95), rgba(241,245,249,0.9))" }}>No revenue trend available yet.</div>}
+                  ) : <div className="no-chart-data" style={{ height: "100%", borderRadius: 22, border: "1px dashed rgba(148,163,184,0.45)", background: "linear-gradient(180deg, rgba(248,250,252,0.95), rgba(241,245,249,0.9))" }}>No profit trend available yet.</div>}
                 </div>
               </div>
 
@@ -516,7 +516,7 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
           <div className="no-data" style={{ marginTop: 24, padding: "54px 24px", borderRadius: 26, border: "1px dashed rgba(148,163,184,0.42)", background: "linear-gradient(180deg, rgba(248,250,252,0.95), rgba(241,245,249,0.9))", textAlign: "center" }}>
             <div style={{ width: 72, height: 72, borderRadius: 24, margin: "0 auto 18px", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, rgba(15,118,110,0.12), rgba(37,99,235,0.14))", color: "#0f766e", fontSize: 30 }}><FiBarChart2 /></div>
             <h3 style={{ fontSize: 26, color: "#0f172a", marginBottom: 10 }}>{loading ? "Loading analytics..." : "No analytics data available"}</h3>
-            <p style={{ maxWidth: 620, margin: "0 auto 22px", lineHeight: 1.8, color: "#64748b" }}>{loading ? "Pulling the latest operational insights from the analytics API." : "Revenue, status, trend, and category insights will appear here as soon as your live service data is available."}</p>
+            <p style={{ maxWidth: 620, margin: "0 auto 22px", lineHeight: 1.8, color: "#64748b" }}>{loading ? "Pulling the latest operational insights from the analytics API." : "Profit, status, trend, and category insights will appear here as soon as your live service data is available."}</p>
             {!loading ? <button className="btn btn-secondary" onClick={onRefresh}><FiRefreshCw /> Refresh Analytics</button> : null}
           </div>
         )}

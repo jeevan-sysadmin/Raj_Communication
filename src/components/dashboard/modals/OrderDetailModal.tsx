@@ -476,6 +476,9 @@ const OrderDetailModal = ({
   const finalAmount = formatCurrency(order.final_cost || order.estimated_cost);
   const depositAmount = formatCurrency(order.deposit_amount);
   const balanceDue = getBalanceDue(order.final_cost, order.estimated_cost, order.deposit_amount);
+  const serviceMargin = formatCurrency(
+    Number(order.final_cost || order.estimated_cost || 0) - Number(order.deposit_amount || 0),
+  );
   const productEntries = buildOrderProductEntries(order, products, false);
   const replacementEntries = buildOrderProductEntries(order, products, true);
   const displayProductEntries = buildDisplayMainProductEntries(productEntries, replacementEntries);
@@ -583,6 +586,7 @@ const OrderDetailModal = ({
       return { pid, label, text };
     })
     .filter((entry): entry is { pid: number; label: string; text: string } => Boolean(entry));
+  const legacyIssueText = String(order.issue_description || "").trim();
   const repairingReadyCount = repairingStatusEntries.filter((entry) => entry.status === "ready").length;
   const repairingNotReadyCount = repairingStatusEntries.filter((entry) => entry.status === "not ready").length;
   const repairingReplacementCount = repairingStatusEntries.filter((entry) => entry.status === "replacement").length;
@@ -665,7 +669,7 @@ const OrderDetailModal = ({
               <div>
                 <span className="order-detail-hero-label">Payment</span>
                 <strong>Rs. {finalAmount}</strong>
-                <p>{prettify(order.payment_status)}</p>
+                <p>{prettify(order.payment_status)} | Balance Rs. {balanceDue}</p>
               </div>
             </div>
             <div className="order-detail-hero-card">
@@ -706,7 +710,7 @@ const OrderDetailModal = ({
               <h3><FiInfo /> Service Summary</h3>
               <div className="detail-stack">
                 <div className="detail-copy-block">
-                  <span className="detail-copy-label">Issue By Product</span>
+                  <span className="detail-copy-label">Issue Description (By Product):</span>
                   {perProductIssueEntries.length > 0 ? (
                     <div className="flow-status-list">
                       {perProductIssueEntries.map((entry, index) => (
@@ -718,6 +722,8 @@ const OrderDetailModal = ({
                         </div>
                       ))}
                     </div>
+                  ) : legacyIssueText ? (
+                    <p>{legacyIssueText}</p>
                   ) : (
                     <p>No per-product issue description added.</p>
                   )}
@@ -758,25 +764,6 @@ const OrderDetailModal = ({
                 </div>
               </div>
               <div className="detail-item">
-                <span className="detail-label">Issue By Product</span>
-                <div className="detail-value">
-                  {perProductIssueEntries.length > 0 ? (
-                    <div className="flow-status-list">
-                      {perProductIssueEntries.map((entry, index) => (
-                        <div key={`issue-product-${entry.pid}-${index}`} className="flow-status-card">
-                          <div className="flow-status-head">
-                            <strong>{index + 1}. {entry.label}</strong>
-                          </div>
-                          <div>{entry.text}</div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="order-detail-product-empty">No per-product issue description added</span>
-                  )}
-                </div>
-              </div>
-              <div className="detail-item">
                 <span className="detail-label">Product Flow Status</span>
                 <div className="detail-value">
                   {productFlowIds.length > 0 ? (
@@ -813,6 +800,7 @@ const OrderDetailModal = ({
               <div className="detail-item"><span className="detail-label">Estimated Cost</span><span className="detail-value">Rs. {formatCurrency(order.estimated_cost)}</span></div>
               <div className="detail-item"><span className="detail-label">Final Cost</span><span className="detail-value">Rs. {finalAmount}</span></div>
               <div className="detail-item"><span className="detail-label">Deposit</span><span className="detail-value">Rs. {depositAmount}</span></div>
+              <div className="detail-item"><span className="detail-label">Service Margin (Final - Deposit)</span><span className="detail-value">Rs. {serviceMargin}</span></div>
               <div className="detail-item"><span className="detail-label">Balance Due</span><span className="detail-value">Rs. {balanceDue}</span></div>
               <div className="detail-item">
                 <span className="detail-label">Payment Status</span>
@@ -885,21 +873,24 @@ const OrderDetailModal = ({
 
             <div className="detail-section full-width">
               <h3><FiInfo /> All Order Data</h3>
-              <div className="all-order-data-grid">
-                {Object.keys(allOrderData)
-                  .sort((a, b) => a.localeCompare(b))
-                  .map((key) => (
-                    <div className="all-order-data-item" key={`all-data-${key}`}>
-                      <span className="all-order-data-key">{prettifyKey(key)}</span>
-                      <span
-                        className="all-order-data-value"
-                        title={formatAnyValue(allOrderData[key])}
-                      >
-                        {formatAnyValue(allOrderData[key])}
-                      </span>
-                    </div>
-                  ))}
-              </div>
+              <details className="all-order-data-collapsible">
+                <summary>Open raw technical fields</summary>
+                <div className="all-order-data-grid">
+                  {Object.keys(allOrderData)
+                    .sort((a, b) => a.localeCompare(b))
+                    .map((key) => (
+                      <div className="all-order-data-item" key={`all-data-${key}`}>
+                        <span className="all-order-data-key">{prettifyKey(key)}</span>
+                        <span
+                          className="all-order-data-value"
+                          title={formatAnyValue(allOrderData[key])}
+                        >
+                          {formatAnyValue(allOrderData[key])}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </details>
             </div>
           </div>
 

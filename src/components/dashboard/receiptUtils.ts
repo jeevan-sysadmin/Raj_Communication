@@ -124,8 +124,71 @@ export const createOrderReceiptMarkup = (order: Order, products: Product[] = [])
   const formatEntryList = (names: string[], serials: string[], fallbackSerial: string) =>
     names.map((name, index) => `${index + 1}. ${name}${serials[index] ? ` (SN: ${serials[index]})` : (index === 0 && fallbackSerial ? ` (SN: ${fallbackSerial})` : "")}`);
 
-  const primaryList = formatEntryList(primaryNames, primarySerials, order.serial_number || "");
   const replacementList = formatEntryList(replacementNames, replacementSerials, order.replacement_serial_number || "");
+  const serialByProductName = new Map<string, string>();
+  const modelByProductName = new Map<string, string>();
+  const serialByProductId = new Map<number, string>();
+  const modelByProductId = new Map<number, string>();
+  primaryNames.forEach((name, index) => {
+    const key = String(name || "").trim().toLowerCase();
+    if (!key) return;
+    const productId = primaryIds[index];
+    const matchedProduct = productId ? products.find((product) => product.id === productId) : undefined;
+    const serial = String(primarySerials[index] || (index === 0 ? order.serial_number || "" : "")).trim();
+    if (serial && !serialByProductName.has(key)) {
+      serialByProductName.set(key, serial);
+    }
+    if (productId && serial && !serialByProductId.has(productId)) {
+      serialByProductId.set(productId, serial);
+    }
+    const model = String(matchedProduct?.model || (index === 0 ? order.product_model || "" : "")).trim();
+    if (model && !modelByProductName.has(key)) {
+      modelByProductName.set(key, model);
+    }
+    if (productId && model && !modelByProductId.has(productId)) {
+      modelByProductId.set(productId, model);
+    }
+  });
+  const renderNumberedProductRows = (
+    names: string[],
+    serials: string[],
+    fallbackSerial: string,
+    fallbackModel: string,
+    ids: number[] = [],
+  ) =>
+    names.length > 0
+      ? names
+          .map((name, index) => {
+            const key = String(name || "").trim().toLowerCase();
+            const id = ids[index];
+            const byNameProduct = products.find(
+              (product) => String(product.product_name || "").trim().toLowerCase() === key,
+            );
+            const serial = String(
+              serials[index] ||
+                (id ? serialByProductId.get(id) || "" : "") ||
+                serialByProductName.get(key) ||
+                byNameProduct?.serial_number ||
+                (index === 0 ? fallbackSerial : "") ||
+                "",
+            ).trim();
+            const model = String(
+              (id ? modelByProductId.get(id) || "" : "") ||
+                modelByProductName.get(key) ||
+                byNameProduct?.model ||
+                (index === 0 ? fallbackModel : "") ||
+                "",
+            ).trim();
+            return `
+              <div style="margin-bottom:8px;">
+                <div style="font-size:14px;line-height:1.55;color:#334155;">${index + 1}. ${escapeReceiptHtml(name)}</div>
+                <div style="font-size:13px;line-height:1.5;color:#64748b;margin-left:16px;">Serial Number: ${escapeReceiptHtml(serial || "N/A")}</div>
+                <div style="font-size:13px;line-height:1.5;color:#64748b;margin-left:16px;">Model Number: ${escapeReceiptHtml(model || "N/A")}</div>
+              </div>
+            `;
+          })
+          .join("")
+      : `<div style="font-size:14px;line-height:1.65;color:#64748b;">Not added</div>`;
   const isReplacementReceipt =
     replacementList.length > 0 ||
     replacementIds.length > 0 ||
@@ -166,9 +229,11 @@ export const createOrderReceiptMarkup = (order: Order, products: Product[] = [])
       ? Object.values(apiCompanyProductNameMap).map((entry) => ({
           companyLabel: String(entry?.company_name || "").trim() || "Company",
           productNames: normalizeNames(entry?.product_names || []),
+          productIds: [],
         }))
       : companyIds.map((companyId) => ({
           companyLabel: companyLabelById.get(companyId) || `Company #${companyId}`,
+          productIds: companyProductMap[companyId.toString()] || [],
           productNames: (companyProductMap[companyId.toString()] || []).map(
             (productId) => primaryProductNameById.get(productId) || `Product #${productId}`,
           ),
@@ -187,8 +252,30 @@ export const createOrderReceiptMarkup = (order: Order, products: Product[] = [])
                     line.productNames.length > 0
                       ? line.productNames
                           .map(
-                            (productName, index) =>
-                              `<div style="font-size:14px;line-height:1.65;color:#334155;">${index + 1}. ${escapeReceiptHtml(productName)}</div>`,
+                            (productName, index) => {
+                              const key = String(productName || "").trim().toLowerCase();
+                              const mappedProductId = line.productIds?.[index];
+                              const byNameProduct = products.find(
+                                (product) => String(product.product_name || "").trim().toLowerCase() === key,
+                              );
+                              const serial =
+                                (mappedProductId ? serialByProductId.get(mappedProductId) || "" : "") ||
+                                serialByProductName.get(key) ||
+                                byNameProduct?.serial_number ||
+                                "";
+                              const model =
+                                (mappedProductId ? modelByProductId.get(mappedProductId) || "" : "") ||
+                                modelByProductName.get(key) ||
+                                byNameProduct?.model ||
+                                "";
+                              return `
+                                <div style="margin-bottom:8px;">
+                                  <div style="font-size:14px;line-height:1.55;color:#334155;">${index + 1}. ${escapeReceiptHtml(productName)}</div>
+                                  <div style="font-size:13px;line-height:1.5;color:#64748b;margin-left:16px;">Serial Number: ${escapeReceiptHtml(serial || "N/A")}</div>
+                                  <div style="font-size:13px;line-height:1.5;color:#64748b;margin-left:16px;">Model Number: ${escapeReceiptHtml(model || "N/A")}</div>
+                                </div>
+                              `;
+                            },
                           )
                           .join("")
                       : `<div style="font-size:14px;line-height:1.65;color:#64748b;">No products</div>`
@@ -199,7 +286,10 @@ export const createOrderReceiptMarkup = (order: Order, products: Product[] = [])
             .join("")}
         </div>
       `
-    : `<div style="font-size:14px;line-height:1.7;color:#334155;margin-bottom:10px;"><strong>Main Products:</strong> ${escapeReceiptHtml(primaryList.length ? primaryList.join(", ") : "Not added")}</div>`;
+    : `
+        <div style="font-size:14px;line-height:1.7;color:#334155;margin-bottom:10px;"><strong>Main Products:</strong></div>
+        <div>${renderNumberedProductRows(primaryNames, primarySerials, order.serial_number || "", order.product_model || "", primaryIds)}</div>
+      `;
 
   const finalAmount = formatCurrency(order.final_cost || order.estimated_cost);
   const depositAmount = formatCurrency(order.deposit_amount);
@@ -258,7 +348,14 @@ export const createOrderReceiptMarkup = (order: Order, products: Product[] = [])
             <div style="font-size:12px;text-transform:uppercase;letter-spacing:1.5px;color:#64748b;margin-bottom:14px;">Device & Issue</div>
             <div style="font-size:22px;font-weight:700;margin-bottom:10px;">${escapeReceiptHtml(primaryNames[0] || order.product_name || "Not added")}</div>
             ${companyWiseProductsMarkup}
-            <div style="font-size:14px;line-height:1.7;color:#334155;margin-bottom:10px;"><strong>Replacement Products:</strong> ${escapeReceiptHtml(replacementList.length ? replacementList.join(", ") : "No replacement")}</div>
+            <div style="font-size:14px;line-height:1.7;color:#334155;margin-bottom:8px;"><strong>Replacement Products:</strong></div>
+            <div style="margin-bottom:10px;">
+              ${
+                replacementNames.length > 0
+                  ? renderNumberedProductRows(replacementNames, replacementSerials, order.replacement_serial_number || "", "", replacementIds)
+                  : `<div style="font-size:14px;line-height:1.65;color:#64748b;">No replacement</div>`
+              }
+            </div>
             <div style="font-size:14px;line-height:1.7;color:#334155;">${escapeReceiptHtml(order.issue_description || "Issue details not provided.")}</div>
             ${
               order.notes

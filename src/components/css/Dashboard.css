@@ -3283,6 +3283,9 @@ html, body, #root {
   border-radius: 24px;
   overflow: hidden;
   box-shadow: 0 28px 80px rgba(15, 23, 42, 0.18);
+  max-height: min(92vh, 980px);
+  display: flex;
+  flex-direction: column;
 }
 
 .client-detail-modal {
@@ -3320,6 +3323,7 @@ html, body, #root {
 
 .order-detail-content {
   padding: 24px;
+  overflow-y: auto;
 }
 
 .order-detail-header {
@@ -3330,6 +3334,10 @@ html, body, #root {
   padding: 24px 24px 18px;
   border-bottom: 1px solid rgba(226, 232, 240, 0.9);
   background: linear-gradient(135deg, rgba(239, 246, 255, 0.95), rgba(248, 250, 252, 0.9));
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  backdrop-filter: blur(6px);
 }
 
 .client-detail-header {
@@ -4025,6 +4033,42 @@ html, body, #root {
   padding-top: 20px;
   border-top: 1px solid #e2e8f0;
   flex-wrap: wrap;
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  background: linear-gradient(180deg, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0.96) 24%, #ffffff 100%);
+  padding-bottom: 6px;
+}
+
+.all-order-data-collapsible {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.all-order-data-collapsible > summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 12px 14px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.all-order-data-collapsible > summary::-webkit-details-marker {
+  display: none;
+}
+
+.all-order-data-collapsible[open] > summary {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.all-order-data-collapsible .all-order-data-grid {
+  padding: 12px;
 }
 
 @media (max-width: 960px) {
@@ -4042,9 +4086,14 @@ html, body, #root {
 }
 
 @media (max-width: 640px) {
+  .order-detail-content {
+    padding: 16px;
+  }
+
   .order-detail-header {
     flex-direction: column;
     align-items: stretch;
+    padding: 16px;
   }
 
   .order-detail-header-actions {
@@ -4077,6 +4126,15 @@ html, body, #root {
   .order-detail-product-list {
     align-items: flex-start;
     justify-content: flex-start;
+  }
+
+  .order-detail-actions {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .order-detail-actions .btn {
+    width: 100%;
   }
 }
 
