@@ -64,7 +64,7 @@ import {
   downloadReceiptPdf,
   openReceiptPrintWindow,
 } from "./dashboard/receiptUtils";
-import { expandProductNameSerialPairs } from "./dashboard/productBatch";
+import { expandProductNameSerialPairs, splitSerialValues } from "./dashboard/productBatch";
 import { formatCurrency, formatDisplayDate, formatISODate } from "./dashboard/utils";
 
 const API_BASE_URL = "http://162.141.0.9/raj_communication/api";
@@ -1490,6 +1490,14 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
     const shouldCreateAnother = !editMode && submitAction === "create_next";
 
     try {
+      const serialCount = splitSerialValues(productForm.serial_number).length;
+      if (serialCount > 0) {
+        const quantity = Number(productForm.stock_quantity || 0);
+        if (!Number.isFinite(quantity) || quantity !== serialCount) {
+          throw new Error(`Quantity (${productForm.stock_quantity || 0}) must equal serial number count (${serialCount}).`);
+        }
+      }
+
       const hasStructuredRows = Boolean(productForm.product_rows_json && productForm.product_rows_json.trim());
       const parseResult = editMode
         ? { pairs: [{ productName: productForm.product_name, serialNumber: productForm.serial_number }] }

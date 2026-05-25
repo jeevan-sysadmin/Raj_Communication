@@ -215,8 +215,8 @@ const RevenueTab = () => {
       ["Period", data.summary.period_label],
       ["Date From", data.summary.date_range.from],
       ["Date To", data.summary.date_range.to],
-      ["Service Order Revenue", data.summary.total_income],
-      ["Service Order Amount", data.summary.payment_income],
+      ["Service Order Revenue (Paid Only)", data.summary.total_income],
+      ["Paid Order Amount", data.summary.payment_income],
       ["Manual Income", data.summary.manual_income_total],
       ["Manual Income Entries", data.summary.manual_income_count],
       ["Total Expenses", data.summary.total_expenses],
@@ -289,7 +289,7 @@ const RevenueTab = () => {
       subtitle: data.summary.period_label,
       scopeLabel: scopeParts.join(" · "),
       metrics: [
-        { label: "Service Order Revenue", value: formatCurrency(data.summary.total_income) },
+        { label: "Service Order Revenue (Paid Only)", value: formatCurrency(data.summary.total_income) },
         { label: "Total Expenses", value: formatCurrency(data.summary.total_expenses) },
         { label: "Total Salaries", value: formatCurrency(data.summary.total_salaries) },
         { label: "Net Profit", value: formatCurrency(data.summary.net_profit) },
@@ -376,7 +376,7 @@ const RevenueTab = () => {
           <p>${escapeHtml(data.summary.period_label)}</p>
           <p>Printed on ${escapeHtml(new Date().toLocaleString("en-IN"))}</p>
           <div class="summary">
-            <div class="card"><span>Service Order Revenue</span><strong>${escapeHtml(formatCurrency(data.summary.total_income))}</strong></div>
+            <div class="card"><span>Service Order Revenue (Paid Only)</span><strong>${escapeHtml(formatCurrency(data.summary.total_income))}</strong></div>
             <div class="card"><span>Total Expenses</span><strong>${escapeHtml(formatCurrency(data.summary.total_expenses))}</strong></div>
             <div class="card"><span>Total Salaries</span><strong>${escapeHtml(formatCurrency(data.summary.total_salaries))}</strong></div>
             <div class="card"><span>Net Profit</span><strong>${escapeHtml(formatCurrency(data.summary.net_profit))}</strong></div>
@@ -466,7 +466,7 @@ const RevenueTab = () => {
 
   const summaryCards = data
     ? [
-        ["Service Order Revenue", formatCurrency(data.summary.total_income), <FiDollarSign />, "linear-gradient(135deg, #10b981, #34d399)"],
+        ["Service Order Revenue (Paid Only)", formatCurrency(data.summary.total_income), <FiDollarSign />, "linear-gradient(135deg, #10b981, #34d399)"],
         ["Final Cost", formatCurrency(data.summary.total_final_cost), <FiBarChart2 />, "linear-gradient(135deg, #0f766e, #14b8a6)"],
         ["Deposit Amount", formatCurrency(data.summary.total_deposit_amount), <FiCreditCard />, "linear-gradient(135deg, #2563eb, #60a5fa)"],
         ["Manual Income", formatCurrency(data.summary.manual_income_total), <FiPlus />, "linear-gradient(135deg, #0ea5e9, #38bdf8)"],

@@ -75,12 +75,19 @@ const ProductFormModal = ({
         value,
       },
     } as ChangeEvent<HTMLInputElement>);
+  const emitFormFieldChange = (name: string, value: string) =>
+    onChange({
+      target: {
+        name,
+        value,
+      },
+    } as ChangeEvent<HTMLInputElement>);
 
   const safeProductForm: ProductForm = {
     id: productForm?.id,
     product_name: asText(productForm?.product_name),
     serial_number: asText(productForm?.serial_number),
-    stock_quantity: asText(productForm?.stock_quantity) || "1",
+    stock_quantity: asText(productForm?.stock_quantity),
     product_rows_json: asText(productForm?.product_rows_json),
     is_spare_product: Boolean(productForm?.is_spare_product),
     brand: asText(productForm?.brand),
@@ -190,6 +197,16 @@ const ProductFormModal = ({
       setProductPairs(buildPairsFromForm());
     }
   }, [show, productPairs, safeProductForm.product_name, safeProductForm.serial_number]);
+
+  useEffect(() => {
+    if (!show || editMode) return;
+    const serialCount = splitSerialValues(safeProductForm.serial_number).length;
+    if (serialCount <= 0) return;
+    const nextQuantity = String(serialCount);
+    if (safeProductForm.stock_quantity !== nextQuantity) {
+      emitFormFieldChange("stock_quantity", nextQuantity);
+    }
+  }, [show, editMode, safeProductForm.serial_number, safeProductForm.stock_quantity]);
 
   const handlePairChange = (
     index: number,

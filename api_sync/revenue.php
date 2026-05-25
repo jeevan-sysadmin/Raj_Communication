@@ -110,20 +110,6 @@ $filters = [
     'to_date' => $period['to_date'],
 ];
 
-$paymentConditions = [
-    "p.payment_status IN ('completed', 'paid')",
-    "DATE(p.created_at) BETWEEN :from_date AND :to_date",
-];
-$paymentParams = [
-    ':from_date' => $period['from_date'],
-    ':to_date' => $period['to_date'],
-];
-
-if ($serviceType !== 'all') {
-    $paymentConditions[] = "COALESCE(NULLIF(TRIM(so.service_type), ''), 'general') = :service_type";
-    $paymentParams[':service_type'] = $serviceType;
-}
-
 $incomeConditions = [
     "i.income_date BETWEEN :from_date AND :to_date",
 ];
@@ -163,6 +149,19 @@ if ($serviceType !== 'all') {
     $salaryParams[':service_type'] = $serviceType;
 }
 
+$serviceOrderConditions = [
+    "DATE(so.created_at) BETWEEN :from_date AND :to_date",
+    "LOWER(TRIM(COALESCE(so.payment_status, ''))) = 'paid'",
+];
+$serviceOrderParams = [
+    ':from_date' => $period['from_date'],
+    ':to_date' => $period['to_date'],
+];
+if ($serviceType !== 'all') {
+    $serviceOrderConditions[] = "COALESCE(NULLIF(TRIM(so.service_type), ''), 'general') = :service_type";
+    $serviceOrderParams[':service_type'] = $serviceType;
+}
+
 $paymentSummary = revenue_statement($db, "
     SELECT
         COALESCE(SUM(COALESCE(so.final_cost, 0)), 0) AS total_income,
@@ -189,18 +188,6 @@ $salarySummary = revenue_statement($db, "
     SELECT COALESCE(SUM(s.net_amount), 0) AS total_salaries
     FROM staff_salaries s
     WHERE " . implode(' AND ', $salaryConditions), $salaryParams)->fetch(PDO::FETCH_ASSOC);
-
-$serviceOrderConditions = [
-    "DATE(so.created_at) BETWEEN :from_date AND :to_date",
-];
-$serviceOrderParams = [
-    ':from_date' => $period['from_date'],
-    ':to_date' => $period['to_date'],
-];
-if ($serviceType !== 'all') {
-    $serviceOrderConditions[] = "COALESCE(NULLIF(TRIM(so.service_type), ''), 'general') = :service_type";
-    $serviceOrderParams[':service_type'] = $serviceType;
-}
 
 $serviceOrderFinancialSummary = revenue_statement($db, "
     SELECT
