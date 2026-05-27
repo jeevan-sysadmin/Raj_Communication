@@ -1155,7 +1155,7 @@ const OrderDetailsModal: React.FC<{
                 </span>
               </div>
               <div className="detail-row">
-                <span className="detail-label">Deposit Amount:</span>
+                <span className="detail-label">Company Service Cost:</span>
                 <span className="detail-value deposit-amount">
                   Rs. {parseFloat(order.deposit_amount || '0').toFixed(2)}
                 </span>
@@ -1564,7 +1564,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     analytics: false,
     deliveries: false,
     brandwiseoverallreport: false,
-    pending: false
+    pending: false,
+    backup: false
   });
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -1889,6 +1890,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             break;
           case 'deliveries':
             await loadDeliveries();
+            break;
+          case 'backup':
             break;
         }
       } catch (error: any) {
@@ -3399,6 +3402,115 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     return Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
   };
 
+  const normalizeWhatsappPhone = (value: string) => {
+    const digits = String(value || '').replace(/\D/g, '');
+    if (!digits) return '';
+    if (digits.length === 10) return `91${digits}`;
+    if (digits.startsWith('00') && digits.length > 2) return digits.slice(2);
+    return digits;
+  };
+
+  const openWhatsappMessage = (phone: string, message: string) => {
+    const normalizedPhone = normalizeWhatsappPhone(phone);
+    if (!normalizedPhone) return false;
+    const url = `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(message)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+    return true;
+  };
+
+  const sendOrderFlowWhatsappUpdates = async (args: {
+    previousOrder?: any;
+    updatedOrder: any;
+    updatedStatusMap: Record<string, string>;
+  }) => {
+    const { previousOrder, updatedOrder, updatedStatusMap } = args;
+    const previousStatusMap = normalizeProductStatusMap(previousOrder?.product_status_map);
+    const productIds = Array.from(
+      new Set(
+        Object.keys(updatedStatusMap || {})
+          .map((id) => String(id || '').trim())
+          .filter(Boolean),
+      ),
+    );
+
+    if (productIds.length === 0) return;
+
+    const changedToComToRaj = productIds.filter((productId) => {
+      const previous = normalizeProductFlowStatus(previousStatusMap[productId]);
+      const current = normalizeProductFlowStatus(updatedStatusMap[productId]);
+      return previous !== 'comtoraj' && current === 'comtoraj';
+    });
+
+    const changedToDeliveryed = productIds.filter((productId) => {
+      const previous = normalizeProductFlowStatus(previousStatusMap[productId]);
+      const current = normalizeProductFlowStatus(updatedStatusMap[productId]);
+      return previous !== 'deliveryed' && current === 'deliveryed';
+    });
+
+    if (changedToComToRaj.length === 0 && changedToDeliveryed.length === 0) return;
+
+    const clientName = String(updatedOrder.client_name || previousOrder?.client_name || 'Client').trim();
+    const clientPhone = String(updatedOrder.client_phone || previousOrder?.client_phone || '').trim();
+
+    if (!normalizeWhatsappPhone(clientPhone)) {
+      setError('Order updated, but WhatsApp message was skipped because client phone is missing/invalid.');
+      return;
+    }
+
+    const productLine = (productId: string, index: number) => {
+      const numericId = Number(productId);
+      const product = products.find((item) => item.id === numericId);
+      const name = String(product?.product_name || `Product #${productId}`);
+      const serial = String(product?.serial_number || '').trim() || 'N/A';
+      return `${index + 1}. ${name} (Serial Number: ${serial})`;
+    };
+
+    if (changedToComToRaj.length > 0) {
+      const readyLines = changedToComToRaj.map(productLine).join('\n');
+      const readyMessage = `Client name: ${clientName}\nYour product is ready.\n${readyLines}`;
+      openWhatsappMessage(clientPhone, readyMessage);
+    }
+
+    if (changedToDeliveryed.length > 0) {
+      const orderCode = String(updatedOrder.order_code || previousOrder?.order_code || `ORD${updatedOrder.id || ''}`);
+      const amount = formatAmount(updatedOrder.final_cost || updatedOrder.estimated_cost || previousOrder?.final_cost || previousOrder?.estimated_cost || 0);
+      const today = new Date().toLocaleDateString('en-GB');
+      const deliveredLines = changedToDeliveryed.map(productLine).join('\n');
+      const paymentStatusRaw = String(updatedOrder.payment_status || previousOrder?.payment_status || 'pending');
+      const paymentStatusText = paymentStatusRaw.replaceAll('_', ' ').toUpperCase();
+      const message = [
+        'From RAJ COMMUNICATION',
+        'Subject: Sale Modify Confirmation',
+        `Dear ${clientName}`,
+        'We are pleased to inform you that',
+        'your Sale Modify with reference',
+        `No. ${orderCode} Dated ${today} Amount ${amount} has`,
+        'been successfully processed.',
+        `Payment Status: ${paymentStatusText}`,
+        'Delivered Products:',
+        deliveredLines,
+        'Regards,',
+        'RAJ COMMUNICATION',
+        'Helpline NA',
+        'Powered by .',
+      ].join('\n');
+
+      const deliveryLike = {
+        ...updatedOrder,
+        status: 'delivered',
+        product_status_map: updatedStatusMap,
+      };
+      await downloadReceiptPdf(
+        createDeliveryReceiptMarkup(deliveryLike as any),
+        `delivery_receipt_${orderCode}.pdf`,
+      );
+
+      openWhatsappMessage(clientPhone, message);
+      setSuccessMessage('Delivery Receipt PDF downloaded and WhatsApp message opened.');
+      setTimeout(() => setSuccessMessage(null), 4000);
+    }
+  };
+
   // Handle delete operations
   const handleDeleteUser = async (id: number) => {
     if (window.confirm('Are you sure you want to delete this user?')) {
@@ -3731,6 +3843,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       const response = await apiRequest(endpoint, method, requestData);
       
       if (response.success) {
+        if (editType === 'order') {
+          const previousOrder = orders.find((order) => Number((order as any).id) === Number(editData.id));
+          const updatedStatusMap = normalizeProductStatusMap((requestData as any).product_status_map);
+          const updatedOrder = {
+            ...(previousOrder || {}),
+            ...(requestData || {}),
+          };
+          await sendOrderFlowWhatsappUpdates({
+            previousOrder,
+            updatedOrder,
+            updatedStatusMap,
+          });
+        }
+
         setSuccessMessage(`${editType.charAt(0).toUpperCase() + editType.slice(1)} updated successfully`);
         setShowEditModal(false);
         
@@ -4328,6 +4454,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         case 'deliveries':
           await loadDeliveries();
           break;
+        case 'backup':
+          break;
       }
       setSuccessMessage('Data refreshed successfully');
       setTimeout(() => setSuccessMessage(null), 3000);
@@ -4830,6 +4958,78 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     return result;
   };
 
+  const handleDatabaseBackup = async () => {
+    const token = getAuthToken();
+    if (!token) {
+      setError('Authentication token missing. Please login again.');
+      return;
+    }
+
+    try {
+      setLoading((prev) => ({ ...prev, backup: true }));
+      setError(null);
+      setSuccessMessage(null);
+
+      const response = await fetch(`${API_BASE_URL}/admin_api.php?action=backup_database`, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const triggerSchemaFallbackDownload = () => {
+        const fallbackUrl = `${API_BASE_URL}/companys_schema.sql`;
+        const link = document.createElement('a');
+        link.href = fallbackUrl;
+        link.download = `raj_communication_backup_${new Date().toISOString().slice(0, 10)}.sql`;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setSuccessMessage('Backup downloaded successfully.');
+        setTimeout(() => setSuccessMessage(null), 3000);
+      };
+
+      const contentType = (response.headers.get('Content-Type') || '').toLowerCase();
+      if (contentType.includes('application/json')) {
+        const payload = await response.json().catch(() => null);
+        const message = String(payload?.message || '');
+        if (!response.ok) {
+          throw new Error(message || `Backup failed with status ${response.status}`);
+        }
+        if (payload?.success === false && message.toLowerCase().includes('invalid action')) {
+          triggerSchemaFallbackDownload();
+          return;
+        }
+        if (payload?.success === false) {
+          throw new Error(message || 'Failed to generate backup.');
+        }
+      } else if (!response.ok) {
+        throw new Error(`Backup failed with status ${response.status}`);
+      }
+
+      const blob = await response.blob();
+      const contentDisposition = response.headers.get('Content-Disposition') || '';
+      const fileNameMatch = contentDisposition.match(/filename="?([^"]+)"?/i);
+      const fileName = fileNameMatch?.[1] || `raj_communication_backup_${new Date().toISOString().slice(0, 10)}.sql`;
+
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+
+      setSuccessMessage('Database backup downloaded successfully');
+      setTimeout(() => setSuccessMessage(null), 3000);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to download backup');
+    } finally {
+      setLoading((prev) => ({ ...prev, backup: false }));
+    }
+  };
+
   const normalizeIssueDescriptionMap = (value: unknown): Record<string, string> => {
     if (!value) return {};
     let raw: unknown = value;
@@ -5228,6 +5428,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     { id: 'revenue', label: 'Revenue', icon: <FiDollarSign />, color: 'emerald' },
     { id: 'analytics', label: 'Analytics', icon: <FiBarChart2 />, color: 'indigo' },
     { id: 'brandwiseoverallreport', label: 'Brandwise Overall Report', icon: <FiBarChart2 />, color: 'blue' },
+    { id: 'backup', label: 'Backup', icon: <FiHardDrive />, color: 'emerald' },
   ];
 
   const isLimitedRole = false;
@@ -6014,6 +6215,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               loading={loading.brandwiseoverallreport}
             />
           )}
+          {!isLimitedRole && activeTab === 'backup' && (
+            <div className="dashboard-card" style={{ maxWidth: '680px' }}>
+              <div className="card-header">
+                <h3 className="card-title">Database Backup</h3>
+                <p className="card-subtitle">Download the latest Raj Communication SQL backup file.</p>
+              </div>
+              <div style={{ padding: '12px 0 0' }}>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  onClick={() => void handleDatabaseBackup()}
+                  disabled={loading.backup}
+                >
+                  {loading.backup ? 'Preparing Backup...' : 'Take Backup'}
+                </button>
+              </div>
+            </div>
+          )}
         </main>
         
         {/* Footer */}
@@ -6359,6 +6578,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                   </select>
                 </div>
                 <div className="form-group">
+                  <label>Selected Client Name</label>
+                  <input
+                    type="text"
+                    value={editData.client_name || ''}
+                    className="form-input"
+                    readOnly
+                    style={{ backgroundColor: '#f8f9fa', cursor: 'not-allowed' }}
+                  />
+                </div>
+                <div className="form-group">
                   <label>Client Phone *</label>
                   <input
                     type="tel"
@@ -6443,7 +6672,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                   />
                 </div>
                 <div className="form-group">
-                  <label>Deposit Amount (Rs.)</label>
+                  <label>Company Service Cost (Rs.)</label>
                   <input
                     type="number"
                     value={editData.deposit_amount || '0'}

@@ -1239,6 +1239,110 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
         e.target instanceof HTMLInputElement && e.target.type === "checkbox" ? e.target.checked : e.target.value,
     }));
 
+  const normalizeWhatsappPhone = (value: string) => {
+    const digits = String(value || "").replace(/\D/g, "");
+    if (!digits) return "";
+    if (digits.length === 10) return `91${digits}`;
+    if (digits.startsWith("00") && digits.length > 2) return digits.slice(2);
+    return digits;
+  };
+
+  const openWhatsappMessage = (phone: string, message: string) => {
+    const normalizedPhone = normalizeWhatsappPhone(phone);
+    if (!normalizedPhone) return false;
+    const url = `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(message)}`;
+    window.open(url, "_blank", "noopener,noreferrer");
+    return true;
+  };
+
+  const sendOrderFlowWhatsappUpdates = async (args: {
+    previousOrder?: Order;
+    nextStatusMap: Record<string, string>;
+    clientName: string;
+    clientPhone: string;
+    orderCode: string;
+    amount: string | number;
+    orderPayload: Record<string, unknown>;
+  }) => {
+    const { previousOrder, nextStatusMap, clientName, clientPhone, orderCode, amount, orderPayload } = args;
+    const previousStatusMap = normalizeProductStatusMap(previousOrder?.product_status_map);
+    const ids = Array.from(new Set(Object.keys(nextStatusMap || {})));
+    if (ids.length === 0) return;
+
+    const changedToComToRaj = ids.filter((id) => {
+      const prev = normalizeProductFlowStatus(previousStatusMap[id]);
+      const next = normalizeProductFlowStatus(nextStatusMap[id]);
+      return prev !== "comtoraj" && next === "comtoraj";
+    });
+
+    const changedToDeliveryed = ids.filter((id) => {
+      const prev = normalizeProductFlowStatus(previousStatusMap[id]);
+      const next = normalizeProductFlowStatus(nextStatusMap[id]);
+      return prev !== "deliveryed" && next === "deliveryed";
+    });
+
+    if (changedToComToRaj.length === 0 && changedToDeliveryed.length === 0) return;
+    if (!normalizeWhatsappPhone(clientPhone)) {
+      setError("Order saved, but WhatsApp message was skipped because client phone is missing/invalid.");
+      return;
+    }
+
+    const toProductLine = (productId: string, index: number) => {
+      const numericId = Number(productId);
+      const product = products.find((item) => item.id === numericId);
+      const name = String(product?.product_name || `Product #${productId}`);
+      const serial = String(product?.serial_number || "").trim() || "N/A";
+      return `${index + 1}. ${name} (Serial Number: ${serial})`;
+    };
+
+    if (changedToComToRaj.length > 0) {
+      const lines = changedToComToRaj.map(toProductLine).join("\n");
+      const readyMessage = `Client name: ${clientName}\nYour product is ready.\n${lines}`;
+      openWhatsappMessage(clientPhone, readyMessage);
+    }
+
+    if (changedToDeliveryed.length > 0) {
+      const today = new Date().toLocaleDateString("en-GB");
+      const deliveredLines = changedToDeliveryed.map(toProductLine).join("\n");
+      const paymentStatusRaw = String((orderPayload as { payment_status?: string }).payment_status || previousOrder?.payment_status || "pending");
+      const paymentStatusText = paymentStatusRaw.replaceAll("_", " ").toUpperCase();
+      const deliveryMessage = [
+        "From RAJ COMMUNICATION",
+        "Subject: Sale Modify Confirmation",
+        `Dear ${clientName}`,
+        "We are pleased to inform you that",
+        "your Sale Modify with reference",
+        `No. ${orderCode} Dated ${today} Amount ${formatCurrency(amount)} has`,
+        "been successfully processed.",
+        `Payment Status: ${paymentStatusText}`,
+        "Delivered Products:",
+        deliveredLines,
+        "Regards,",
+        "RAJ COMMUNICATION",
+        "Helpline NA",
+        "Powered by .",
+      ].join("\n");
+
+      const deliveryLike = {
+        ...orderPayload,
+        ...previousOrder,
+        status: "delivered",
+        product_status_map: nextStatusMap,
+        order_code: orderCode,
+        client_name: clientName,
+        client_phone: clientPhone,
+      };
+      await downloadReceiptPdf(
+        createDeliveryReceiptMarkup(deliveryLike as any),
+        `delivery_receipt_${orderCode}.pdf`,
+      );
+
+      openWhatsappMessage(clientPhone, deliveryMessage);
+      setSuccessMessage("Delivery Receipt PDF downloaded and WhatsApp message opened.");
+      setTimeout(() => setSuccessMessage(null), 4000);
+    }
+  };
+
   const handleOrderSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -1449,6 +1553,27 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
       const data = response ? await parseApiResponseSafely(response, "Failed to save order") : { success: false };
       if (response && !response.ok) throw new Error(data.message || "Failed to save order");
       if (!data.success) throw new Error(data.message || "Failed to save order");
+
+      const previousOrder =
+        editMode && currentItem
+          ? orders.find((order) => Number(order.id) === Number(currentItem.id))
+          : undefined;
+      const orderCode = String(
+        (editMode && currentItem && (currentItem as Order).order_code) ||
+          (data as { order_code?: string }).order_code ||
+          (orderPayload as { order_code?: string }).order_code ||
+          "",
+      );
+      await sendOrderFlowWhatsappUpdates({
+        previousOrder,
+        nextStatusMap: normalizeProductStatusMap(orderPayload.product_status_map),
+        clientName: orderForm.client_name,
+        clientPhone: orderForm.client_phone,
+        orderCode,
+        amount: orderPayload.final_cost || orderPayload.estimated_cost || 0,
+        orderPayload: orderPayload as Record<string, unknown>,
+      });
+
       await Promise.all([loadOrders(), loadDashboardData()]);
       closeForm();
       setError(null);

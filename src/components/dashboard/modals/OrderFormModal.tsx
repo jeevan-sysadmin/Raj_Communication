@@ -192,8 +192,16 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
   }, [orderForm.client_id, clientsForDropdown]);
   
   useEffect(() => {
-    setClientSearchTerm(selectedClient ? `${selectedClient.full_name} - ${selectedClient.phone}` : "");
-  }, [selectedClient]);
+    if (selectedClient) {
+      setClientSearchTerm(`${selectedClient.full_name} - ${selectedClient.phone}`);
+      return;
+    }
+    if (editMode && String(orderForm.client_name || "").trim()) {
+      setClientSearchTerm(String(orderForm.client_name || "").trim());
+      return;
+    }
+    setClientSearchTerm("");
+  }, [selectedClient, editMode, orderForm.client_name]);
   
   useEffect(() => {
     if (!show) {
@@ -770,7 +778,15 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
                         </motion.div>}
                       </AnimatePresence>
                     </div>}
-                    {selectedClient && <div className="selected-info"><div className="info-chip"><FiUsers /><span>{selectedClient.full_name}</span></div>{selectedClient.email && <div className="info-chip"><span>{selectedClient.email}</span></div>}</div>}
+                    {(selectedClient || String(orderForm.client_name || "").trim()) && (
+                      <div className="selected-info">
+                        <div className="info-chip">
+                          <FiUsers />
+                          <span>{selectedClient?.full_name || String(orderForm.client_name || "").trim()}</span>
+                        </div>
+                        {selectedClient?.email && <div className="info-chip"><span>{selectedClient.email}</span></div>}
+                      </div>
+                    )}
                   </div>
 
                   <div className="form-group-enhanced">
@@ -1090,10 +1106,10 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
                   <div className="form-group-enhanced full-width order-section-heading"><div className="summary-title">Financial</div><p>Capture pricing, deposits, and payment status with a clearer breakdown.</p></div>
 
                   <div className="form-group-enhanced"><label className="form-label"><FiDollarSign className="label-icon" /><span>Estimated Cost</span></label><div className="currency-input"><span className="currency-symbol">Rs.</span><input type="number" id="estimated_cost" name="estimated_cost" value={orderForm.estimated_cost} onChange={onChange} placeholder="0.00" min="0" step="0.01" className="enhanced-input currency-field" /></div></div>
-                  <div className="form-group-enhanced"><label className="form-label"><FiCreditCard className="label-icon" /><span>Deposit Amount</span></label><div className="currency-input"><span className="currency-symbol">Rs.</span><input type="number" id="deposit_amount" name="deposit_amount" value={orderForm.deposit_amount} onChange={onChange} placeholder="0.00" min="0" step="0.01" className="enhanced-input currency-field" /></div><div className="input-hint info"><FiCheck /> Advance payment received, if any</div></div>
+                  <div className="form-group-enhanced"><label className="form-label"><FiCreditCard className="label-icon" /><span>Company Service Cost</span></label><div className="currency-input"><span className="currency-symbol">Rs.</span><input type="number" id="deposit_amount" name="deposit_amount" value={orderForm.deposit_amount} onChange={onChange} placeholder="0.00" min="0" step="0.01" className="enhanced-input currency-field" /></div><div className="input-hint info"><FiCheck /> Company service cost amount</div></div>
                   <div className="form-group-enhanced"><label className="form-label"><FiDollarSign className="label-icon" /><span>Final Cost</span></label><div className="currency-input"><span className="currency-symbol">Rs.</span><input type="number" id="final_cost" name="final_cost" value={orderForm.final_cost} onChange={onChange} placeholder="0.00" min="0" step="0.01" className="enhanced-input currency-field" /></div></div>
                   <div className="form-group-enhanced"><label className="form-label"><FiCreditCard className="label-icon" /><span>Payment Status</span></label><div className="enhanced-dropdown"><select id="payment_status" name="payment_status" value={["pending", "paid", "refunded"].includes(String(orderForm.payment_status).toLowerCase()) ? String(orderForm.payment_status).toLowerCase() : "pending"} onChange={onChange} className="enhanced-select"><option value="pending">Pending</option><option value="paid">Paid</option><option value="refunded">Refunded</option></select><FiChevronDown className="dropdown-icon" /></div></div>
-                  <div className="financial-summary order-financial-summary"><div className="summary-title">Payment Summary</div><div className="summary-item"><span>Estimated Cost:</span><strong>Rs. {estimatedCost.toLocaleString()}</strong></div><div className="summary-item"><span>Deposit Paid:</span><strong className="text-success">- Rs. {depositAmount.toLocaleString()}</strong></div><div className="summary-divider"></div><div className="summary-item total"><span>Remaining Balance:</span><strong className="text-warning">Rs. {remainingBalance.toLocaleString()}</strong></div></div>
+                  <div className="financial-summary order-financial-summary"><div className="summary-title">Payment Summary</div><div className="summary-item"><span>Estimated Cost:</span><strong>Rs. {estimatedCost.toLocaleString()}</strong></div><div className="summary-item"><span>Company Service Cost:</span><strong className="text-success">- Rs. {depositAmount.toLocaleString()}</strong></div><div className="summary-divider"></div><div className="summary-item total"><span>Remaining Balance:</span><strong className="text-warning">Rs. {remainingBalance.toLocaleString()}</strong></div></div>
 
                   <div className="form-group-enhanced full-width order-section-heading"><div className="summary-title">Details & Notes</div><p>Describe the issue well so technicians and front-desk staff stay aligned.</p></div>                  <div className="form-group-enhanced full-width"><label className="form-label"><FiPackage className="label-icon" /><span>Additional Notes</span></label><textarea id="notes" name="notes" value={orderForm.notes} onChange={onChange} placeholder="Special instructions, promised accessories, approval notes, or internal comments..." rows={4} className="enhanced-textarea" /></div>
                 </motion.div>

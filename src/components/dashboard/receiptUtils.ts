@@ -63,40 +63,6 @@ export const createOrderReceiptMarkup = (order: Order, products: Product[] = [])
     );
   };
 
-  const normalizeCompanyProductMap = (value: unknown): Record<string, number[]> => {
-    let raw: unknown = value;
-
-    if (typeof raw === "string") {
-      const trimmed = raw.trim();
-      if (!trimmed) return {};
-      const parsedArray = parseJsonArray(trimmed);
-      if (parsedArray) return {};
-      try {
-        raw = JSON.parse(trimmed);
-      } catch {
-        return {};
-      }
-    }
-
-    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
-
-    const map: Record<string, number[]> = {};
-    Object.entries(raw as Record<string, unknown>).forEach(([companyId, productIds]) => {
-      const id = Number(companyId);
-      if (!Number.isInteger(id) || id <= 0) return;
-      map[id.toString()] = normalizeIds(productIds);
-    });
-    return map;
-  };
-
-  const getCompanyNames = () => {
-    const companyIds = normalizeIds([...(normalizeIds(order.company_ids)), ...(normalizeIds(order.company_id))]);
-    const fromArray = normalizeNames(order.company_names);
-    const fromText = normalizeNames((order as Order & { company_names_text?: string }).company_names_text || order.company_name);
-    const names = fromArray.length > 0 ? fromArray : fromText;
-    return names.length > 0 ? names : companyIds.map((id) => `Company #${id}`);
-  };
-
   const withIdFallback = (names: string[], ids: number[], prefix: string) =>
     names.length > 0 ? names : ids.map((id) => `${prefix} #${id}`);
 
@@ -199,100 +165,12 @@ export const createOrderReceiptMarkup = (order: Order, products: Product[] = [])
     : "Professional repair order summary for customer handover and records.";
   const generatedReceiptLabel = isReplacementReceipt ? "replacement order receipt" : "service receipt";
 
-  const primaryProductNameById = new Map<number, string>();
-  primaryIds.forEach((id, index) => {
-    const matchedProduct = products.find((product) => product.id === id);
-    const name = primaryNames[index] || matchedProduct?.product_name || `Product #${id}`;
-    if (!primaryProductNameById.has(id)) {
-      primaryProductNameById.set(id, name);
-    }
-  });
-
-  const companyProductMap = normalizeCompanyProductMap(order.company_product_map || order.companies_products);
-  const companyIds = Array.from(
-    new Set([
-      ...normalizeIds(order.company_ids),
-      ...normalizeIds(order.company_id),
-      ...Object.keys(companyProductMap).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0),
-    ]),
-  );
-  const companyNames = getCompanyNames();
-  const companyLabelById = new Map<number, string>();
-  companyIds.forEach((companyId, index) => {
-    companyLabelById.set(companyId, companyNames[index] || `Company #${companyId}`);
-  });
-  const apiCompanyProductNameMap = (order as Order & {
-    company_product_name_map?: Record<string, { company_name?: string; product_names?: string[] | string }>;
-  }).company_product_name_map;
-  const companyProductLines =
-    apiCompanyProductNameMap && typeof apiCompanyProductNameMap === "object"
-      ? Object.values(apiCompanyProductNameMap).map((entry) => ({
-          companyLabel: String(entry?.company_name || "").trim() || "Company",
-          productNames: normalizeNames(entry?.product_names || []),
-          productIds: [],
-        }))
-      : companyIds.map((companyId) => ({
-          companyLabel: companyLabelById.get(companyId) || `Company #${companyId}`,
-          productIds: companyProductMap[companyId.toString()] || [],
-          productNames: (companyProductMap[companyId.toString()] || []).map(
-            (productId) => primaryProductNameById.get(productId) || `Product #${productId}`,
-          ),
-        }));
-
-  const companyWiseProductsMarkup = companyProductLines.length
-    ? `
-        <div style="font-size:13px;text-transform:uppercase;letter-spacing:1.2px;color:#64748b;margin-bottom:10px;"><strong>Company-wise Products</strong></div>
-        <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:12px;">
-          ${companyProductLines
-            .map(
-              (line) => `
-                <div style="padding:10px 12px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;">
-                  <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:6px;">${escapeReceiptHtml(line.companyLabel)}</div>
-                  ${
-                    line.productNames.length > 0
-                      ? line.productNames
-                          .map(
-                            (productName, index) => {
-                              const key = String(productName || "").trim().toLowerCase();
-                              const mappedProductId = line.productIds?.[index];
-                              const byNameProduct = products.find(
-                                (product) => String(product.product_name || "").trim().toLowerCase() === key,
-                              );
-                              const serial =
-                                (mappedProductId ? serialByProductId.get(mappedProductId) || "" : "") ||
-                                serialByProductName.get(key) ||
-                                byNameProduct?.serial_number ||
-                                "";
-                              const model =
-                                (mappedProductId ? modelByProductId.get(mappedProductId) || "" : "") ||
-                                modelByProductName.get(key) ||
-                                byNameProduct?.model ||
-                                "";
-                              return `
-                                <div style="margin-bottom:8px;">
-                                  <div style="font-size:14px;line-height:1.55;color:#334155;">${index + 1}. ${escapeReceiptHtml(productName)}</div>
-                                  <div style="font-size:13px;line-height:1.5;color:#64748b;margin-left:16px;">Serial Number: ${escapeReceiptHtml(serial || "N/A")}</div>
-                                  <div style="font-size:13px;line-height:1.5;color:#64748b;margin-left:16px;">Model Number: ${escapeReceiptHtml(model || "N/A")}</div>
-                                </div>
-                              `;
-                            },
-                          )
-                          .join("")
-                      : `<div style="font-size:14px;line-height:1.65;color:#64748b;">No products</div>`
-                  }
-                </div>
-              `,
-            )
-            .join("")}
-        </div>
-      `
-    : `
-        <div style="font-size:14px;line-height:1.7;color:#334155;margin-bottom:10px;"><strong>Main Products:</strong></div>
-        <div>${renderNumberedProductRows(primaryNames, primarySerials, order.serial_number || "", order.product_model || "", primaryIds)}</div>
-      `;
+  const companyWiseProductsMarkup = `
+    <div style="font-size:14px;line-height:1.7;color:#334155;margin-bottom:10px;"><strong>Main Products:</strong></div>
+    <div>${renderNumberedProductRows(primaryNames, primarySerials, order.serial_number || "", order.product_model || "", primaryIds)}</div>
+  `;
 
   const finalAmount = formatCurrency(order.final_cost || order.estimated_cost);
-  const depositAmount = formatCurrency(order.deposit_amount);
   const createdDate = formatDisplayDate(order.created_at);
   const deliveryDate = formatDisplayDate(order.estimated_delivery_date);
   const showExpectedDelivery =
@@ -300,9 +178,6 @@ export const createOrderReceiptMarkup = (order: Order, products: Product[] = [])
     deliveryDate.trim() !== "" &&
     deliveryDate.trim() !== "-" &&
     deliveryDate.trim().toLowerCase() !== "n/a";
-  const balanceDue = formatCurrency(
-    Math.max(Number(order.final_cost || order.estimated_cost || 0) - Number(order.deposit_amount || 0), 0),
-  );
 
   return `
     <div style="font-family:Arial,sans-serif;background:linear-gradient(180deg,#eff6ff 0%,#ffffff 28%);padding:32px;color:#0f172a;">
@@ -363,28 +238,20 @@ export const createOrderReceiptMarkup = (order: Order, products: Product[] = [])
                 : ""
             }
           </div>
-          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
+          <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:16px;">
             <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:16px;padding:18px;">
               <div style="font-size:12px;text-transform:uppercase;letter-spacing:1.4px;color:#64748b;margin-bottom:8px;">Estimated Cost</div>
               <div style="font-size:24px;font-weight:700;">Rs. ${escapeReceiptHtml(formatCurrency(order.estimated_cost))}</div>
-            </div>
-            <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:16px;padding:18px;">
-              <div style="font-size:12px;text-transform:uppercase;letter-spacing:1.4px;color:#9a3412;margin-bottom:8px;">Deposit Paid</div>
-              <div style="font-size:24px;font-weight:700;color:#c2410c;">Rs. ${escapeReceiptHtml(depositAmount)}</div>
             </div>
             <div style="background:#ecfdf5;border:1px solid #bbf7d0;border-radius:16px;padding:18px;">
               <div style="font-size:12px;text-transform:uppercase;letter-spacing:1.4px;color:#166534;margin-bottom:8px;">Final Amount</div>
               <div style="font-size:24px;font-weight:700;color:#15803d;">Rs. ${escapeReceiptHtml(finalAmount)}</div>
             </div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:18px;">
+          <div style="display:grid;grid-template-columns:1fr;gap:16px;margin-top:18px;">
             <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:16px;padding:18px;">
               <div style="font-size:12px;text-transform:uppercase;letter-spacing:1.4px;color:#64748b;margin-bottom:8px;">Service Type</div>
               <div style="font-size:18px;font-weight:700;color:#0f172a;">${escapeReceiptHtml((order.service_type || "general").replaceAll("_", " "))}</div>
-            </div>
-            <div style="background:#fffaf0;border:1px solid #fde68a;border-radius:16px;padding:18px;">
-              <div style="font-size:12px;text-transform:uppercase;letter-spacing:1.4px;color:#92400e;margin-bottom:8px;">Balance Due</div>
-              <div style="font-size:18px;font-weight:700;color:#b45309;">Rs. ${escapeReceiptHtml(balanceDue)}</div>
             </div>
           </div>
           <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:18px;margin-top:24px;">
@@ -495,6 +362,12 @@ export const createDeliveryReceiptMarkup = (delivery: Delivery) => {
     delivery.status === "delivered" || (delivery.delivered_date && delivery.delivered_date !== "0000-00-00 00:00:00")
       ? "Delivered"
       : delivery.status || "Pending";
+  const deliveryFinalCost = formatCurrency(
+    (extendedDelivery as Delivery & { final_cost?: string | number; estimated_cost?: string | number; amount?: string | number }).final_cost ||
+      (extendedDelivery as Delivery & { final_cost?: string | number; estimated_cost?: string | number; amount?: string | number }).estimated_cost ||
+      (extendedDelivery as Delivery & { final_cost?: string | number; estimated_cost?: string | number; amount?: string | number }).amount ||
+      0,
+  );
   const primaryProducts = parseNames(extendedDelivery.product_names);
   if (primaryProducts.length === 0 && extendedDelivery.product_name) {
     primaryProducts.push(String(extendedDelivery.product_name));
@@ -520,72 +393,6 @@ export const createDeliveryReceiptMarkup = (delivery: Delivery) => {
   const formatProductLine = (row: { name: string; serial: string }, index: number) =>
     `${index + 1}. ${row.name}${row.serial ? ` (SN: ${row.serial})` : ""}`;
 
-  const companyProductMap = extendedDelivery.company_product_name_map;
-  const companyWiseProductsMarkup =
-    companyProductMap && typeof companyProductMap === "object" && Object.keys(companyProductMap).length > 0
-      ? Object.values(companyProductMap)
-          .map((entry) => {
-            const companyLabel = String(entry?.company_name || "Company").trim();
-            const products = parseNames(entry?.product_names || []);
-            return `
-              <div style="padding:10px 12px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;">
-                <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:6px;">${escapeReceiptHtml(companyLabel)}</div>
-                ${
-                  products.length > 0
-                    ? products
-                        .map(
-                          (productName, index) =>
-                            `<div style="font-size:14px;line-height:1.65;color:#334155;">${index + 1}. ${escapeReceiptHtml(productName)}</div>`,
-                        )
-                        .join("")
-                    : `<div style="font-size:14px;line-height:1.65;color:#64748b;">No products</div>`
-                }
-              </div>
-            `;
-          })
-          .join("")
-      : (() => {
-          const companies = parseNames(extendedDelivery.company_names);
-          if (companies.length === 0 && extendedDelivery.company_name) {
-            companies.push(String(extendedDelivery.company_name));
-          }
-          if (companies.length === 0) {
-            return `
-              <div style="padding:10px 12px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;">
-                <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:6px;">Products</div>
-                ${
-                  primaryProducts.length > 0
-                    ? primaryProducts
-                        .map(
-                          (productName, index) =>
-                            `<div style="font-size:14px;line-height:1.65;color:#334155;">${index + 1}. ${escapeReceiptHtml(productName)}</div>`,
-                        )
-                        .join("")
-                    : `<div style="font-size:14px;line-height:1.65;color:#64748b;">No products</div>`
-                }
-              </div>
-            `;
-          }
-          return companies
-            .map(
-              (company) => `
-              <div style="padding:10px 12px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc;">
-                <div style="font-size:14px;font-weight:700;color:#0f172a;margin-bottom:6px;">${escapeReceiptHtml(company)}</div>
-                ${
-                  primaryProducts.length > 0
-                    ? primaryProducts
-                        .map(
-                          (productName, index) =>
-                            `<div style="font-size:14px;line-height:1.65;color:#334155;">${index + 1}. ${escapeReceiptHtml(productName)}</div>`,
-                        )
-                        .join("")
-                    : `<div style="font-size:14px;line-height:1.65;color:#64748b;">No products</div>`
-                }
-              </div>
-            `,
-            )
-            .join("");
-        })();
 
   return `
     <div style="font-family:Arial,sans-serif;background:linear-gradient(180deg,#f5f3ff 0%,#ffffff 28%);padding:32px;color:#0f172a;">
@@ -621,6 +428,7 @@ export const createDeliveryReceiptMarkup = (delivery: Delivery) => {
               <div style="margin-top:16px;font-size:14px;color:#334155;"><strong>Delivery Person:</strong> ${escapeReceiptHtml(delivery.delivery_person || "Not Assigned")}</div>
               <div style="margin-top:8px;font-size:14px;color:#334155;"><strong>Scheduled Date:</strong> ${escapeReceiptHtml(scheduledDate)}</div>
               <div style="margin-top:8px;font-size:14px;color:#334155;"><strong>Delivered Date:</strong> ${escapeReceiptHtml(deliveredDate)}</div>
+              <div style="margin-top:8px;font-size:14px;color:#334155;"><strong>Final Cost:</strong> Rs. ${escapeReceiptHtml(deliveryFinalCost)}</div>
             </div>
           </div>
           <div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:18px;padding:22px;margin-bottom:22px;">
@@ -657,10 +465,6 @@ export const createDeliveryReceiptMarkup = (delivery: Delivery) => {
                   }
                 </div>
               </div>
-            </div>
-            <div style="margin-top:16px;">
-              <div style="font-size:12px;text-transform:uppercase;letter-spacing:1.2px;color:#64748b;margin-bottom:10px;"><strong>Company-wise Products</strong></div>
-              <div style="display:flex;flex-direction:column;gap:10px;">${companyWiseProductsMarkup}</div>
             </div>
             <div style="margin-top:14px;font-size:14px;line-height:1.7;color:#334155;"><strong>Replacement Products:</strong> ${escapeReceiptHtml(replacementProducts.length > 0 ? replacementProducts.join(", ") : "No replacement")}</div>
           </div>

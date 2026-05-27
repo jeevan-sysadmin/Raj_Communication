@@ -60,6 +60,9 @@ interface DeliveryOrderMeta {
   company_product_map?: Record<string, number[] | string[] | string> | string;
   warranty_status?: string;
   priority?: string;
+  estimated_cost?: string | number;
+  final_cost?: string | number;
+  amount?: string | number;
 }
 type SplitDeliveryRow = Delivery & { __rowKey: string; product_ids?: number[] | string[] | string };
 const isDeliveryCompleted = (delivery: Delivery) => {
@@ -417,6 +420,9 @@ const DeliveryTab = ({
             handover_type_map: order.handover_type_map,
             warranty_status: order.warranty_status,
             priority: order.priority,
+            estimated_cost: (order as any).estimated_cost,
+            final_cost: (order as any).final_cost,
+            amount: (order as any).final_cost || (order as any).estimated_cost || 0,
           };
         });
         setOrderMetaById(map);
@@ -825,6 +831,9 @@ const DeliveryTab = ({
             "",
           product_brand: normalized.product_brand || (orderMeta?.product_brand as any) || delivery.product_brand || "",
           product_model: (orderMeta?.product_model as any) || (delivery as any).product_model || "",
+          estimated_cost: orderMeta?.estimated_cost,
+          final_cost: orderMeta?.final_cost,
+          amount: orderMeta?.final_cost || orderMeta?.estimated_cost || (normalized as any)?.amount || 0,
         } as Delivery);
       } else {
         const fallback = delivery as Delivery & { product_serial_number?: string; product_id?: number };
@@ -853,6 +862,9 @@ const DeliveryTab = ({
             "",
           product_brand: fallback.product_brand || (orderMeta?.product_brand as any) || "",
           product_model: (orderMeta?.product_model as any) || (fallback as any).product_model || "",
+          estimated_cost: orderMeta?.estimated_cost,
+          final_cost: orderMeta?.final_cost,
+          amount: orderMeta?.final_cost || orderMeta?.estimated_cost || (fallback as any)?.amount || 0,
         } as Delivery);
       }
     } catch {
@@ -882,6 +894,9 @@ const DeliveryTab = ({
           "",
         product_brand: fallback.product_brand || (orderMeta?.product_brand as any) || "",
         product_model: (orderMeta?.product_model as any) || (fallback as any).product_model || "",
+        estimated_cost: orderMeta?.estimated_cost,
+        final_cost: orderMeta?.final_cost,
+        amount: orderMeta?.final_cost || orderMeta?.estimated_cost || (fallback as any)?.amount || 0,
       } as Delivery);
     } finally {
       setLoadingDetailData(false);
@@ -1160,6 +1175,9 @@ const DeliveryTab = ({
                   company_name: orderMeta?.company_name,
                   company_names: companyNamesList,
                   company_product_name_map: companyProductNameMap,
+                  estimated_cost: orderMeta?.estimated_cost,
+                  final_cost: orderMeta?.final_cost,
+                  amount: orderMeta?.final_cost || orderMeta?.estimated_cost || (delivery as any)?.amount || 0,
                 };
 
                 return (
