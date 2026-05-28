@@ -453,6 +453,9 @@ class AdminAPI {
             case 'backup_database':
                 $this->backupDatabase();
                 break;
+            case 'get_backup_history':
+                $this->getBackupHistory();
+                break;
                 
             default:
                 $this->sendError("Invalid action", 400);
@@ -2630,7 +2633,21 @@ class AdminAPI {
 
             $dump .= "SET FOREIGN_KEY_CHECKS=1;\n";
 
-            $fileName = 'raj_communication_backup_' . date('Y-m-d_H-i-s') . '.sql';
+            $backupDir = $this->getBackupDirectory(true);
+            if ($backupDir === null) {
+                $this->sendError('Failed to create backup directory', 500);
+                return;
+            }
+
+            $timestamp = date('Ymd_His');
+            $fileName = 'sun_computers-' . $timestamp . '.sql';
+            $filePath = $backupDir . DIRECTORY_SEPARATOR . $fileName;
+            $writeResult = @file_put_contents($filePath, $dump);
+            if ($writeResult === false) {
+                $this->sendError('Failed to save backup file on server', 500);
+                return;
+            }
+
             header_remove('Content-Type');
             header('Content-Type: application/sql');
             header('Content-Disposition: attachment; filename="' . $fileName . '"');
@@ -2642,6 +2659,82 @@ class AdminAPI {
         } catch (Exception $e) {
             $this->sendError('Failed to generate backup: ' . $e->getMessage(), 500);
         }
+    }
+
+    private function getBackupHistory() {
+        try {
+            $backupDir = $this->getBackupDirectory(false);
+            if ($backupDir === null || !is_dir($backupDir)) {
+                $this->sendSuccess(['history' => []]);
+                return;
+            }
+
+            $entries = scandir($backupDir);
+            if ($entries === false) {
+                $this->sendSuccess(['history' => []]);
+                return;
+            }
+
+            $history = [];
+            foreach ($entries as $entry) {
+                if ($entry === '.' || $entry === '..') {
+                    continue;
+                }
+
+                $fullPath = $backupDir . DIRECTORY_SEPARATOR . $entry;
+                if (!is_file($fullPath) || strtolower(pathinfo($entry, PATHINFO_EXTENSION)) !== 'sql') {
+                    continue;
+                }
+
+                $history[] = [
+                    'file_name' => $entry,
+                    'file_size' => filesize($fullPath) ?: 0,
+                    'created_at' => date('Y-m-d H:i:s', filemtime($fullPath) ?: time()),
+                    'created_at_ts' => filemtime($fullPath) ?: 0,
+                ];
+            }
+
+            usort($history, function ($a, $b) {
+                return ((int)$b['created_at_ts']) <=> ((int)$a['created_at_ts']);
+            });
+            $history = array_map(function ($item) {
+                unset($item['created_at_ts']);
+                return $item;
+            }, $history);
+
+            $this->sendSuccess(['history' => $history]);
+        } catch (Exception $e) {
+            $this->sendError('Failed to load backup history: ' . $e->getMessage(), 500);
+        }
+    }
+
+    private function getBackupDirectory($create = false) {
+        $candidates = [
+            __DIR__ . '/../backups',
+            __DIR__ . '/backups'
+        ];
+
+        foreach ($candidates as $candidate) {
+            if (is_dir($candidate)) {
+                $resolved = realpath($candidate);
+                if ($resolved !== false) {
+                    return $resolved;
+                }
+                return $candidate;
+            }
+        }
+
+        if (!$create) {
+            return null;
+        }
+
+        $target = $candidates[0];
+        if (!is_dir($target) && !@mkdir($target, 0775, true) && !is_dir($target)) {
+            return null;
+        }
+
+        $resolved = realpath($target);
+        return $resolved !== false ? $resolved : $target;
     }
     
     private function sendSuccess($data = []) {

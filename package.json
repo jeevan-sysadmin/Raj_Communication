@@ -11,6 +11,7 @@
     "electron-dev": "concurrently \"npm run dev\" \"wait-on http://162.141.0.9:5173 && electron .\"",
     "build": "tsc -b && vite build",
     "dist": "electron-builder",
+    "backup:db": "powershell -ExecutionPolicy Bypass -File ./scripts/backup-db.ps1",
     "lint": "eslint .",
     "preview": "vite preview"
   },

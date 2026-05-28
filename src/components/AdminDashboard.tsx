@@ -92,6 +92,14 @@ interface DashboardStats {
   avg_order_value?: number;
 }
 
+interface BackupHistoryItem {
+  file_name: string;
+  file_size: number;
+  created_at: string;
+}
+
+const BACKUP_HISTORY_STORAGE_KEY = 'backupHistoryLocal';
+
 interface StaffPerformance {
   id: number;
   name: string;
@@ -1583,6 +1591,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [analyticsData, setAnalyticsData] = useState<AnalyticsData | null>(null);
+  const [backupHistory, setBackupHistory] = useState<BackupHistoryItem[]>([]);
+  const [backupHistoryLoading, setBackupHistoryLoading] = useState(false);
   const [staffPerformance, setStaffPerformance] = useState<StaffPerformance[]>([]);
   const [selectedStaffOrders, setSelectedStaffOrders] = useState<Order[]>([]);
   const notificationDropdownRef = useRef<HTMLDivElement | null>(null);
@@ -4958,6 +4968,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     return result;
   };
 
+  const persistBackupHistory = useCallback((items: BackupHistoryItem[]) => {
+    try {
+      localStorage.setItem(BACKUP_HISTORY_STORAGE_KEY, JSON.stringify(items));
+    } catch {
+      // Ignore storage errors in restricted environments.
+    }
+  }, []);
+
+  const loadBackupHistoryFromStorage = useCallback((): BackupHistoryItem[] => {
+    try {
+      const raw = localStorage.getItem(BACKUP_HISTORY_STORAGE_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }, []);
+
+  const getAdminApiCandidates = useCallback(() => {
+    const primary = `${API_BASE_URL}/admin_api.php`;
+    const secondary = `${API_BASE_URL.replace(/\/api$/i, '/api_sync')}/admin_api.php`;
+    const relativePrimary = '/raj_communication/api/admin_api.php';
+    const relativeSecondary = '/raj_communication/api_sync/admin_api.php';
+    return Array.from(new Set([primary, secondary, relativePrimary, relativeSecondary]));
+  }, []);
+
   const handleDatabaseBackup = async () => {
     const token = getAuthToken();
     if (!token) {
@@ -4970,36 +5007,51 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       setError(null);
       setSuccessMessage(null);
 
-      const response = await fetch(`${API_BASE_URL}/admin_api.php?action=backup_database`, {
-        method: 'GET',
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      let response: Response | null = null;
+      for (const endpoint of getAdminApiCandidates()) {
+        let attempt: Response;
+        try {
+          attempt = await fetch(`${endpoint}?action=backup_database`, {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+        } catch {
+          continue;
+        }
 
-      const triggerSchemaFallbackDownload = () => {
-        const fallbackUrl = `${API_BASE_URL}/companys_schema.sql`;
-        const link = document.createElement('a');
-        link.href = fallbackUrl;
-        link.download = `raj_communication_backup_${new Date().toISOString().slice(0, 10)}.sql`;
-        document.body.appendChild(link);
-        link.click();
-        link.remove();
-        setSuccessMessage('Backup downloaded successfully.');
-        setTimeout(() => setSuccessMessage(null), 3000);
-      };
+        const contentType = (attempt.headers.get('Content-Type') || '').toLowerCase();
+        if (contentType.includes('application/json')) {
+          const payload = await attempt.clone().json().catch(() => null);
+          const message = String(payload?.message || '').toLowerCase();
+          if (message.includes('invalid action')) {
+            continue;
+          }
+        }
+
+        response = attempt;
+        break;
+      }
+
+      if (!response) {
+        throw new Error('Unable to reach backup server. Please check API server is running.');
+      }
 
       const contentType = (response.headers.get('Content-Type') || '').toLowerCase();
       if (contentType.includes('application/json')) {
         const payload = await response.json().catch(() => null);
         const message = String(payload?.message || '');
+        const normalizedMessage = message.toLowerCase();
+
+        if (normalizedMessage.includes('invalid action')) {
+          throw new Error('Backup API is not enabled on the server. Please update api/admin_api.php to include action=backup_database.');
+        }
+
         if (!response.ok) {
           throw new Error(message || `Backup failed with status ${response.status}`);
         }
-        if (payload?.success === false && message.toLowerCase().includes('invalid action')) {
-          triggerSchemaFallbackDownload();
-          return;
-        }
+
         if (payload?.success === false) {
           throw new Error(message || 'Failed to generate backup.');
         }
@@ -5010,7 +5062,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       const blob = await response.blob();
       const contentDisposition = response.headers.get('Content-Disposition') || '';
       const fileNameMatch = contentDisposition.match(/filename="?([^"]+)"?/i);
-      const fileName = fileNameMatch?.[1] || `raj_communication_backup_${new Date().toISOString().slice(0, 10)}.sql`;
+      const fileName = fileNameMatch?.[1] || 'raj_communication.sql';
+      const createdAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
 
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -5021,7 +5074,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       link.remove();
       window.URL.revokeObjectURL(downloadUrl);
 
+      // Show the latest backup immediately in UI after successful download.
+      setBackupHistory((prev) => {
+        const nextItem: BackupHistoryItem = {
+          file_name: fileName,
+          file_size: blob.size || 0,
+          created_at: createdAt,
+        };
+        const withoutDuplicate = prev.filter(
+          (item) => !(item.file_name === nextItem.file_name && item.created_at === nextItem.created_at)
+        );
+        const nextHistory = [nextItem, ...withoutDuplicate];
+        persistBackupHistory(nextHistory);
+        return nextHistory;
+      });
+
       setSuccessMessage('Database backup downloaded successfully');
+      void fetchBackupHistory();
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Failed to download backup');
@@ -5029,6 +5098,95 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       setLoading((prev) => ({ ...prev, backup: false }));
     }
   };
+
+  const fetchBackupHistory = useCallback(async () => {
+    const token = getAuthToken();
+    if (!token) {
+      setBackupHistory([]);
+      setError('Authentication token missing. Please login again.');
+      return;
+    }
+
+    try {
+      setBackupHistoryLoading(true);
+      let response: Response | null = null;
+      let payload: any = null;
+      for (const endpoint of getAdminApiCandidates()) {
+        let attempt: Response;
+        try {
+          attempt = await fetch(`${endpoint}?action=get_backup_history`, {
+            method: 'GET',
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          });
+        } catch {
+          continue;
+        }
+        const attemptPayload = await attempt.clone().json().catch(() => null);
+        const message = String(attemptPayload?.message || '').toLowerCase();
+        if (message.includes('invalid action')) {
+          continue;
+        }
+        response = attempt;
+        payload = attemptPayload;
+        break;
+      }
+
+      if (!response) {
+        throw new Error('Unable to reach backup history API.');
+      }
+      if (!response.ok || payload?.success === false) {
+        throw new Error(String(payload?.message || `Failed to load backup history (${response.status})`));
+      }
+
+      const serverHistory = Array.isArray(payload?.history) ? payload.history : [];
+      const localHistory = loadBackupHistoryFromStorage();
+      const mergedMap = new Map<string, BackupHistoryItem>();
+
+      [...serverHistory, ...localHistory].forEach((item) => {
+        const key = `${item?.file_name || ''}__${item?.created_at || ''}`;
+        if (!key.trim()) return;
+        mergedMap.set(key, {
+          file_name: String(item.file_name || ''),
+          file_size: Number(item.file_size || 0),
+          created_at: String(item.created_at || ''),
+        });
+      });
+
+      const mergedHistory = Array.from(mergedMap.values()).sort((a, b) => {
+        const at = new Date(String(a.created_at).replace(' ', 'T')).getTime();
+        const bt = new Date(String(b.created_at).replace(' ', 'T')).getTime();
+        return bt - at;
+      });
+
+      setBackupHistory(mergedHistory);
+      persistBackupHistory(mergedHistory);
+    } catch (historyError) {
+      const message = historyError instanceof Error ? historyError.message : 'Failed to load backup history';
+      const localHistory = loadBackupHistoryFromStorage();
+      if (localHistory.length > 0) {
+        setBackupHistory(localHistory);
+        // Local history is a valid fallback; avoid noisy API-not-enabled error.
+        if (!message.toLowerCase().includes('not enabled')) setError(message);
+      } else {
+        setError(message);
+        setBackupHistory([]);
+      }
+    } finally {
+      setBackupHistoryLoading(false);
+    }
+  }, [getAdminApiCandidates, loadBackupHistoryFromStorage, persistBackupHistory]);
+
+  useEffect(() => {
+    if (activeTab === 'backup') {
+      const localHistory = loadBackupHistoryFromStorage();
+      if (localHistory.length > 0) {
+        setBackupHistory(localHistory);
+      }
+      void fetchBackupHistory();
+    }
+  }, [activeTab, fetchBackupHistory, loadBackupHistoryFromStorage]);
 
   const normalizeIssueDescriptionMap = (value: unknown): Record<string, string> => {
     if (!value) return {};
@@ -6216,12 +6374,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             />
           )}
           {!isLimitedRole && activeTab === 'backup' && (
-            <div className="dashboard-card" style={{ maxWidth: '680px' }}>
+            <div className="dashboard-card" style={{ maxWidth: '820px' }}>
               <div className="card-header">
                 <h3 className="card-title">Database Backup</h3>
                 <p className="card-subtitle">Download the latest Raj Communication SQL backup file.</p>
               </div>
-              <div style={{ padding: '12px 0 0' }}>
+              <div style={{ padding: '12px 0 0', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                 <button
                   type="button"
                   className="btn btn-primary"
@@ -6230,6 +6388,48 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 >
                   {loading.backup ? 'Preparing Backup...' : 'Take Backup'}
                 </button>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={() => void fetchBackupHistory()}
+                  disabled={backupHistoryLoading}
+                >
+                  {backupHistoryLoading ? 'Refreshing...' : 'Refresh History'}
+                </button>
+              </div>
+              <div style={{ marginTop: '18px' }}>
+                <h4 style={{ margin: '0 0 10px', fontSize: '16px', color: '#0f172a' }}>Backup History</h4>
+                {backupHistoryLoading ? (
+                  <p style={{ margin: 0, color: '#64748b' }}>Loading backup history...</p>
+                ) : backupHistory.length === 0 ? (
+                  <p style={{ margin: 0, color: '#64748b' }}>No backup history found.</p>
+                ) : (
+                  <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden' }}>
+                    {backupHistory.map((item) => (
+                      <div
+                        key={`${item.file_name}-${item.created_at}`}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          gap: '12px',
+                          padding: '10px 12px',
+                          borderBottom: '1px solid #f1f5f9',
+                        }}
+                      >
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontWeight: 600, color: '#0f172a', wordBreak: 'break-all' }}>{item.file_name}</div>
+                          <div style={{ fontSize: '12px', color: '#64748b' }}>
+                            {new Date(String(item.created_at).replace(' ', 'T')).toLocaleString()}
+                          </div>
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#334155', whiteSpace: 'nowrap' }}>
+                          {(Number(item.file_size || 0) / (1024 * 1024)).toFixed(2)} MB
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
           )}
