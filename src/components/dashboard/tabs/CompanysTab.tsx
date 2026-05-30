@@ -724,6 +724,7 @@ const CompanysTab = () => {
         companyForm={companyForm}
         onClose={closeFormModal}
         onChange={onCompanyFormChange}
+        isSubmitting={savingCompany}
         onSubmit={(event) => {
           void onCompanyFormSubmit(event);
         }}

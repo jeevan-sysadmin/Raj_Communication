@@ -1655,6 +1655,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [showCreateOrder, setShowCreateOrder] = useState(false);
   const [showCreateClient, setShowCreateClient] = useState(false);
   const [showCreateProduct, setShowCreateProduct] = useState(false);
+  const [createSubmitting, setCreateSubmitting] = useState({
+    user: false,
+    staff: false,
+    order: false,
+    client: false,
+    product: false,
+  });
   const [showEditModal, setShowEditModal] = useState(false);
   const [editData, setEditData] = useState<any>(null);
   const [editType, setEditType] = useState<'user' | 'order' | 'client' | 'product' | 'delivery'>('user');
@@ -3131,6 +3138,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   
   // Handle create user
   const handleCreateUser = async () => {
+    const submitKey = newUser.role === 'admin' ? 'user' : 'staff';
+    if (createSubmitting[submitKey]) return;
+    setCreateSubmitting((prev) => ({ ...prev, [submitKey]: true }));
     try {
       if (!newUser.name || !newUser.email || !newUser.password) {
         setError('Please fill in all required fields (Name, Email, Password)');
@@ -3163,11 +3173,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       }
     } catch (error: any) {
       setError(error.message || 'Failed to create user');
+    } finally {
+      setCreateSubmitting((prev) => ({ ...prev, [submitKey]: false }));
     }
   };
   
   // Handle create order
   const handleCreateOrder = async () => {
+    if (createSubmitting.order) return;
+    setCreateSubmitting((prev) => ({ ...prev, order: true }));
     try {
       const hasProducts = (newOrder.product_ids?.length || 0) > 0 || !!newOrder.product_id || !!newOrder.product_name;
       if (!newOrder.client_name || !newOrder.client_phone || !hasProducts) {
@@ -3256,11 +3270,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       }
     } catch (error: any) {
       setError(error.message || 'Failed to create order');
+    } finally {
+      setCreateSubmitting((prev) => ({ ...prev, order: false }));
     }
   };
   
   // Handle create client
   const handleCreateClient = async () => {
+    if (createSubmitting.client) return;
+    setCreateSubmitting((prev) => ({ ...prev, client: true }));
     try {
       const clientData = {
         full_name: newClient.full_name.trim(),
@@ -3303,11 +3321,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       }
     } catch (error: any) {
       setError(error.message || 'Failed to create client');
+    } finally {
+      setCreateSubmitting((prev) => ({ ...prev, client: false }));
     }
   };
   
   // Handle create product
   const handleCreateProduct = async (options?: { keepOpen?: boolean }) => {
+    if (createSubmitting.product) return;
+    setCreateSubmitting((prev) => ({ ...prev, product: true }));
     try {
       const parseResult = expandProductNameSerialPairs(newProduct.product_name, newProduct.serial_number);
       if (parseResult.error || parseResult.pairs.length === 0) {
@@ -3395,6 +3417,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error: any) {
       setError(error.message || 'Failed to create product');
+    } finally {
+      setCreateSubmitting((prev) => ({ ...prev, product: false }));
     }
   };
   
@@ -6480,6 +6504,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         onChange={handleUserFormChange}
         onImageChange={handleUserImageChange}
         onSubmit={submitUserForm}
+        isSubmitting={createSubmitting.user}
       />
       
       {/* Staff Form Modal */}
@@ -6497,6 +6522,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         onChange={handleUserFormChange}
         onImageChange={handleUserImageChange}
         onSubmit={submitUserForm}
+        isSubmitting={createSubmitting.staff}
       />
       
       {/* User Detail Modal */}
@@ -6538,6 +6564,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         onProductsChange={updateNewOrderProducts}
         onReplacementProductsChange={updateNewOrderReplacementProducts}
         onSubmit={submitNewOrderForm}
+        isSubmitting={createSubmitting.order}
       />
 
       <OrderFormModal
@@ -6595,6 +6622,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         onClose={() => setShowCreateClient(false)}
         onChange={handleNewClientChange}
         onSubmit={submitNewClientForm}
+        isSubmitting={createSubmitting.client}
       />
       
       {/* Create Product Modal */}
@@ -6608,6 +6636,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         }}
         onChange={handleNewProductChange}
         onSubmit={submitCreateProductForm}
+        isSubmitting={createSubmitting.product}
       />
 
       {/* Edit Product Modal */}

@@ -5649,6 +5649,19 @@ html, body, #root {
   transform: translateY(-1px);
 }
 
+.btn-loading-spinner {
+  width: 16px;
+  height: 16px;
+  animation: spin 0.9s linear infinite;
+}
+
+.btn-primary-enhanced:disabled,
+.btn-secondary-enhanced:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
 /* Client Form Modal */
 .client-modal-content {
   max-width: 1080px;

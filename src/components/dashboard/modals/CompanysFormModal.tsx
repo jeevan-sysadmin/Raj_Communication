@@ -2,6 +2,7 @@ import type { ChangeEvent, FormEvent } from "react";
 import { motion } from "framer-motion";
 import {
   FiFileText,
+  FiLoader,
   FiMail,
   FiMapPin,
   FiPhone,
@@ -19,6 +20,7 @@ interface CompanysFormModalProps {
   onClose: () => void;
   onChange: (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
   onSubmit: (e: FormEvent<HTMLFormElement>) => void;
+  isSubmitting?: boolean;
 }
 
 const CompanysFormModal = ({
@@ -28,6 +30,7 @@ const CompanysFormModal = ({
   onClose,
   onChange,
   onSubmit,
+  isSubmitting = false,
 }: CompanysFormModalProps) => {
   if (!show) return null;
 
@@ -281,6 +284,7 @@ const CompanysFormModal = ({
                 type="button"
                 className="btn-secondary-enhanced"
                 onClick={onClose}
+                disabled={isSubmitting}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
               >
@@ -289,11 +293,12 @@ const CompanysFormModal = ({
               <motion.button
                 type="submit"
                 className="btn-primary-enhanced"
+                disabled={isSubmitting}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
               >
-                <FiSave />
-                {editMode ? "Update Company" : "Create Company"}
+                {isSubmitting ? <FiLoader className="btn-loading-spinner" /> : <FiSave />}
+                {isSubmitting ? "Saving..." : editMode ? "Update Company" : "Create Company"}
               </motion.button>
             </div>
           </div>

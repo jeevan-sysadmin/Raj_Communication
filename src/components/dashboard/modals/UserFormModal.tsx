@@ -5,6 +5,7 @@ import {
   FiCamera,
   FiCheckSquare,
   FiLock,
+  FiLoader,
   FiMail,
   FiPhone,
   FiSave,
@@ -36,6 +37,7 @@ interface UserFormModalProps {
   onChange: (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
   onImageChange: (file: File, previewUrl: string) => void;
   onSubmit: (e: FormEvent<HTMLFormElement>) => void;
+  isSubmitting?: boolean;
 }
 
 const UserFormModal = ({
@@ -50,6 +52,7 @@ const UserFormModal = ({
   onChange,
   onImageChange,
   onSubmit,
+  isSubmitting = false,
 }: UserFormModalProps) => {
   const profileLabel = userForm.name.trim() || "New User";
   const initials =
@@ -364,6 +367,7 @@ const UserFormModal = ({
                 type="button"
                 className="btn-secondary-enhanced"
                 onClick={onClose}
+                disabled={isSubmitting}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
               >
@@ -372,11 +376,12 @@ const UserFormModal = ({
               <motion.button
                 type="submit"
                 className="btn-primary-enhanced"
+                disabled={isSubmitting}
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
               >
-                <FiSave />
-                {editMode ? "Update User" : "Create User"}
+                {isSubmitting ? <FiLoader className="btn-loading-spinner" /> : <FiSave />}
+                {isSubmitting ? "Saving..." : editMode ? "Update User" : "Create User"}
               </motion.button>
             </div>
           </div>

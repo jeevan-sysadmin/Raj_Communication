@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { FiAlertCircle, FiBriefcase, FiCalendar, FiCheck, FiChevronDown, FiClock, FiCreditCard, FiDollarSign, FiPackage, FiPhone, FiPlus, FiSave, FiSearch, FiStar, FiUser, FiUsers, FiX } from "react-icons/fi";
+import { FiAlertCircle, FiBriefcase, FiCalendar, FiCheck, FiChevronDown, FiClock, FiCreditCard, FiDollarSign, FiLoader, FiPackage, FiPhone, FiPlus, FiSave, FiSearch, FiStar, FiUser, FiUsers, FiX } from "react-icons/fi";
 import type { Client, Company, OrderForm, Product, User } from "../types";
 
 interface OrderFormModalProps {
@@ -17,6 +17,7 @@ interface OrderFormModalProps {
   onProductsChange: (productIds: string[]) => void;
   onReplacementProductsChange: (productIds: string[]) => void;
   onSubmit: (e: FormEvent<HTMLFormElement>) => void;
+  isSubmitting?: boolean;
 }
 
 const isSpareProduct = (product: Product) => {
@@ -160,7 +161,7 @@ const parseJsonResponseSafely = async <T,>(response: Response): Promise<T | null
   }
 };
 
-const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, products, loadingClientsForDropdown, onClose, onChange, onProductsChange, onReplacementProductsChange, onSubmit }: OrderFormModalProps) => {
+const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, products, loadingClientsForDropdown, onClose, onChange, onProductsChange, onReplacementProductsChange, onSubmit, isSubmitting = false }: OrderFormModalProps) => {
   void users;
   const [clientSearchTerm, setClientSearchTerm] = useState("");
   const [showClientDropdown, setShowClientDropdown] = useState(false);
@@ -1122,8 +1123,8 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
               <input type="hidden" name="issue_description_map" value={JSON.stringify(issueDescriptionMapState)} />
               <div className="order-form-actions-note">Required: client, phone, and product. The remaining fields help with service quality, internal clarity, and billing.</div>
               <div className="order-form-actions-buttons">
-                <motion.button type="button" className="btn-secondary-enhanced" onClick={onClose} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>Cancel</motion.button>
-                <motion.button type="submit" className="btn-primary-enhanced" whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}><FiSave />{editMode ? "Update Order" : "Create Order"}</motion.button>
+                <motion.button type="button" className="btn-secondary-enhanced" onClick={onClose} disabled={isSubmitting} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>Cancel</motion.button>
+                <motion.button type="submit" className="btn-primary-enhanced" disabled={isSubmitting} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>{isSubmitting ? <FiLoader className="btn-loading-spinner" /> : <FiSave />}{isSubmitting ? "Saving..." : editMode ? "Update Order" : "Create Order"}</motion.button>
               </div>
             </div>
           </form>

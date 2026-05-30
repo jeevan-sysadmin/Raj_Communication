@@ -8,6 +8,7 @@ import {
   FiCreditCard,
   FiDisc,
   FiFileText,
+  FiLoader,
   FiLayers,
   FiPackage,
   FiSave,
@@ -25,6 +26,7 @@ interface ProductFormModalProps {
   onClose: () => void;
   onChange: (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => void;
   onSubmit: (e: FormEvent<HTMLFormElement>) => void;
+  isSubmitting?: boolean;
 }
 
 interface ProductIdentityPair {
@@ -61,6 +63,7 @@ const ProductFormModal = ({
   onClose,
   onChange,
   onSubmit,
+  isSubmitting = false,
 }: ProductFormModalProps) => {
   const serialInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const productNameInputRefs = useRef<Array<HTMLInputElement | null>>([]);
@@ -670,6 +673,7 @@ const ProductFormModal = ({
                   type="button"
                   className="btn-secondary-enhanced"
                   onClick={onClose}
+                  disabled={isSubmitting}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                 >
@@ -679,6 +683,7 @@ const ProductFormModal = ({
                   <motion.button
                     type="submit"
                     className="btn-secondary-enhanced"
+                    disabled={isSubmitting}
                     whileHover={{ scale: 1.02 }}
                     whileTap={{ scale: 0.98 }}
                     name="submit_action"
@@ -691,13 +696,14 @@ const ProductFormModal = ({
                 <motion.button
                   type="submit"
                   className="btn-primary-enhanced"
+                  disabled={isSubmitting}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   name="submit_action"
                   value={editMode ? "update" : "create_close"}
                 >
-                  <FiSave />
-                  {editMode ? "Update Product" : "Create Product"}
+                  {isSubmitting ? <FiLoader className="btn-loading-spinner" /> : <FiSave />}
+                  {isSubmitting ? "Saving..." : editMode ? "Update Product" : "Create Product"}
                 </motion.button>
               </div>
             </div>
