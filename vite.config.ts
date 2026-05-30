@@ -24,7 +24,7 @@ export default defineConfig({
     // Proxy for API requests
     proxy: {
       '/api': {
-        target: 'http://localhost/sun_computers/api',
+        target: 'http://cloud.anyrdp.in:3001/sun_computers/api',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
       }

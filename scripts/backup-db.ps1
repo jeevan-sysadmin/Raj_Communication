@@ -17,7 +17,7 @@ Get-Content -LiteralPath $envFile | ForEach-Object {
     }
 }
 
-$dbHost = if ($envMap.ContainsKey("DB_HOST")) { $envMap["DB_HOST"] } else { "localhost" }
+$dbHost = if ($envMap.ContainsKey("DB_HOST")) { $envMap["DB_HOST"] } else { "cloud.anyrdp.in"3001" }
 $dbUser = if ($envMap.ContainsKey("DB_USER")) { $envMap["DB_USER"] } else { "root" }
 $dbPass = if ($envMap.ContainsKey("DB_PASSWORD")) { $envMap["DB_PASSWORD"] } else { "" }
 $dbName = if ($envMap.ContainsKey("DB_NAME")) { $envMap["DB_NAME"] } else { "" }

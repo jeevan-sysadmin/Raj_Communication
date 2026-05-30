@@ -28,8 +28,8 @@ const isSpareProduct = (product: Product) => {
 };
 
 const COMPANY_API_CANDIDATES = [
-  "http://localhost/raj_communication/api/companys.php",
-  "http://localhost/raj_communication/api/companys.php",
+  "http://cloud.anyrdp.in:3001/raj_communication/api/companys.php",
+  "http://cloud.anyrdp.in:3001/raj_communication/api/companys.php",
 ];
 
 const normalizeCompany = (row: any): Company => ({
