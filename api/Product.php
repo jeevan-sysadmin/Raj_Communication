@@ -95,7 +95,7 @@ function normalizeProductPayloadAliases($row) {
 
 // Database class
 class Database {
-    private $host = "cloud.anyrdp.in";
+    private $host = "localhost";
     private $db_name = "raj communication";
     private $username = "root";
     private $password = "";

@@ -5,7 +5,6 @@ import {
   FiCamera,
   FiCheckSquare,
   FiLock,
-  FiLoader,
   FiMail,
   FiPhone,
   FiSave,
@@ -30,6 +29,7 @@ interface UserFormState {
 interface UserFormModalProps {
   show: boolean;
   editMode: boolean;
+  isSubmitting?: boolean;
   title?: string;
   subtitle?: string;
   userForm: UserFormState;
@@ -37,12 +37,12 @@ interface UserFormModalProps {
   onChange: (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
   onImageChange: (file: File, previewUrl: string) => void;
   onSubmit: (e: FormEvent<HTMLFormElement>) => void;
-  isSubmitting?: boolean;
 }
 
 const UserFormModal = ({
   show,
   editMode,
+  isSubmitting = false,
   title = editMode ? "Edit User" : "Create New User",
   subtitle = editMode
     ? "Update access, identity, and contact details in one clean workspace."
@@ -52,7 +52,6 @@ const UserFormModal = ({
   onChange,
   onImageChange,
   onSubmit,
-  isSubmitting = false,
 }: UserFormModalProps) => {
   const profileLabel = userForm.name.trim() || "New User";
   const initials =
@@ -82,7 +81,10 @@ const UserFormModal = ({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      onClick={onClose}
+      onClick={() => {
+        if (isSubmitting) return;
+        onClose();
+      }}
     >
       <motion.div
         className="modal-content-enhanced user-modal-content"
@@ -106,7 +108,11 @@ const UserFormModal = ({
           </div>
           <motion.button
             className="close-btn-enhanced"
-            onClick={onClose}
+            onClick={() => {
+              if (isSubmitting) return;
+              onClose();
+            }}
+            disabled={isSubmitting}
             whileHover={{ rotate: 90 }}
             whileTap={{ scale: 0.9 }}
           >
@@ -380,8 +386,8 @@ const UserFormModal = ({
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
               >
-                {isSubmitting ? <FiLoader className="btn-loading-spinner" /> : <FiSave />}
-                {isSubmitting ? "Saving..." : editMode ? "Update User" : "Create User"}
+                {isSubmitting ? <FiUpload className="spinning" /> : <FiSave />}
+                {isSubmitting ? (editMode ? "Updating User..." : "Creating User...") : (editMode ? "Update User" : "Create User")}
               </motion.button>
             </div>
           </div>

@@ -21,7 +21,7 @@ import type { Company, CompanyForm, DateRange } from "../types";
 import { formatDisplayDate } from "../utils";
 
 const ITEMS_PER_PAGE = 20;
-const COMPANY_API_URL = "http://cloud.anyrdp.in:3001/raj_communication/api/companys.php";
+const COMPANY_API_URL = "http://localhost/raj_communication/api/companys.php";
 const SERVICE_COMPANY_PDF = "SERVICE COMPANY LIST.pdf";
 
 const emptyForm: CompanyForm = {
@@ -203,6 +203,7 @@ const CompanysTab = () => {
   };
 
   const closeFormModal = () => {
+    if (savingCompany) return;
     setShowFormModal(false);
     setEditCompany(null);
     setCompanyForm(emptyForm);
@@ -721,10 +722,10 @@ const CompanysTab = () => {
       <CompanysFormModal
         show={showFormModal}
         editMode={Boolean(editCompany)}
+        isSubmitting={savingCompany}
         companyForm={companyForm}
         onClose={closeFormModal}
         onChange={onCompanyFormChange}
-        isSubmitting={savingCompany}
         onSubmit={(event) => {
           void onCompanyFormSubmit(event);
         }}

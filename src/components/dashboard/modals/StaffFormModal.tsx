@@ -15,18 +15,19 @@ interface StaffFormState {
 interface StaffFormModalProps {
   show: boolean;
   editMode: boolean;
+  isSubmitting?: boolean;
   staffForm: StaffFormState;
   onClose: () => void;
   onChange: (e: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => void;
   onImageChange: (file: File, previewUrl: string) => void;
   onSubmit: (e: FormEvent<HTMLFormElement>) => void;
-  isSubmitting?: boolean;
 }
 
-const StaffFormModal = ({ show, editMode, staffForm, onClose, onChange, onImageChange, onSubmit, isSubmitting = false }: StaffFormModalProps) => (
+const StaffFormModal = ({ show, editMode, isSubmitting = false, staffForm, onClose, onChange, onImageChange, onSubmit }: StaffFormModalProps) => (
   <UserFormModal
     show={show}
     editMode={editMode}
+    isSubmitting={isSubmitting}
     title={editMode ? "Edit Staff" : "Create Staff"}
     subtitle={
       editMode
@@ -38,7 +39,6 @@ const StaffFormModal = ({ show, editMode, staffForm, onClose, onChange, onImageC
     onChange={onChange}
     onImageChange={onImageChange}
     onSubmit={onSubmit}
-    isSubmitting={isSubmitting}
   />
 );
 

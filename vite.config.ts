@@ -19,12 +19,12 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
-    open: false,
+    open: true,
     cors: true,
     // Proxy for API requests
     proxy: {
       '/api': {
-        target: 'http://cloud.anyrdp.in:3001/sun_computers/api',
+        target: 'http://localhost/sun_computers/api',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
       }
@@ -35,17 +35,13 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     sourcemap: false,
-    cssCodeSplit: true,
-    target: 'es2018',
     rollupOptions: {
       output: {
         manualChunks: {
           vendor: ['react', 'react-dom', 'react-router-dom'],
           charts: ['recharts'],
           three: ['three', '@react-three/fiber', '@react-three/drei'],
-          motion: ['framer-motion'],
-          icons: ['react-icons'],
-          utils: ['file-saver']
+          utils: ['framer-motion', 'file-saver']
         }
       }
     }

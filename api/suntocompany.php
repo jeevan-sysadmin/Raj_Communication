@@ -15,7 +15,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 class Database {
-    private $host = "cloud.anyrdp.in";
+    private $host = "localhost";
     private $db_name = "raj communication";
     private $username = "root";
     private $password = "";

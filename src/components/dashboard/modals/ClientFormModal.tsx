@@ -6,21 +6,21 @@ import type { ClientForm } from "../types";
 interface ClientFormModalProps {
   show: boolean;
   editMode: boolean;
+  isSubmitting?: boolean;
   clientForm: ClientForm;
   onClose: () => void;
   onChange: (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => void;
   onSubmit: (e: FormEvent<HTMLFormElement>) => void;
-  isSubmitting?: boolean;
 }
 
 const ClientFormModal = ({
   show,
   editMode,
+  isSubmitting = false,
   clientForm,
   onClose,
   onChange,
   onSubmit,
-  isSubmitting = false,
 }: ClientFormModalProps) => {
   if (!show) return null;
 
@@ -51,7 +51,10 @@ const ClientFormModal = ({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      onClick={onClose}
+      onClick={() => {
+        if (isSubmitting) return;
+        onClose();
+      }}
     >
       <motion.div
         className="modal-content-enhanced client-modal-content"
@@ -79,7 +82,11 @@ const ClientFormModal = ({
           </div>
           <motion.button
             className="close-btn-enhanced"
-            onClick={onClose}
+            onClick={() => {
+              if (isSubmitting) return;
+              onClose();
+            }}
+            disabled={isSubmitting}
             whileHover={{ rotate: 90 }}
             whileTap={{ scale: 0.9 }}
           >
@@ -320,8 +327,8 @@ const ClientFormModal = ({
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
               >
-                {isSubmitting ? <FiLoader className="btn-loading-spinner" /> : <FiSave />}
-                {isSubmitting ? "Saving..." : editMode ? "Update Client" : "Create Client"}
+                {isSubmitting ? <FiLoader className="spinning" /> : <FiSave />}
+                {isSubmitting ? (editMode ? "Updating Client..." : "Creating Client...") : (editMode ? "Update Client" : "Create Client")}
               </motion.button>
             </div>
           </div>

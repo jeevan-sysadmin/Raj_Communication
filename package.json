@@ -8,7 +8,7 @@
   "scripts": {
     "dev": "vite",
     "electron": "electron .",
-    "electron-dev": "concurrently \"npm run dev\" \"wait-on http://cloud.anyrdp.in:5173 && electron .\"",
+    "electron-dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "tsc -b && vite build",
     "dist": "electron-builder",
     "backup:db": "powershell -ExecutionPolicy Bypass -File ./scripts/backup-db.ps1",

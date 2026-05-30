@@ -3629,6 +3629,26 @@
 
 /* Mobile */
 @media (max-width: 768px) {
+  .dashboard-sidebar {
+    width: min(88vw, 320px);
+  }
+
+  .sidebar-navigation {
+    padding: 0.75rem;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .nav-item {
+    min-height: 44px;
+    padding: 0.75rem;
+  }
+
+  .nav-label {
+    white-space: normal;
+    line-height: 1.2;
+  }
+
   .dashboard-main-content {
     padding: 0.75rem;
   }
@@ -3652,6 +3672,26 @@
   .orders-table,
   .data-table {
     min-width: 760px;
+  }
+
+  .table-content,
+  .table-responsive,
+  .table-container,
+  .data-table-wrapper {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+  }
+
+  .modal-tabs {
+    display: flex;
+    gap: 0.5rem;
+    overflow-x: auto;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .modal-tabs .tab-btn {
+    flex: 0 0 auto;
   }
 
   .modal-content-enhanced,

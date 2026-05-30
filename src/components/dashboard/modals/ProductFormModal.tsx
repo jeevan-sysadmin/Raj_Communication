@@ -8,8 +8,8 @@ import {
   FiCreditCard,
   FiDisc,
   FiFileText,
-  FiLoader,
   FiLayers,
+  FiLoader,
   FiPackage,
   FiSave,
   FiTag,
@@ -22,11 +22,11 @@ import { splitBatchValues, splitSerialValues } from "../productBatch";
 interface ProductFormModalProps {
   show: boolean;
   editMode: boolean;
+  isSubmitting?: boolean;
   productForm: ProductForm;
   onClose: () => void;
   onChange: (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => void;
   onSubmit: (e: FormEvent<HTMLFormElement>) => void;
-  isSubmitting?: boolean;
 }
 
 interface ProductIdentityPair {
@@ -59,11 +59,11 @@ const PDF_CATEGORY_OPTIONS = [
 const ProductFormModal = ({
   show,
   editMode,
+  isSubmitting = false,
   productForm,
   onClose,
   onChange,
   onSubmit,
-  isSubmitting = false,
 }: ProductFormModalProps) => {
   const serialInputRef = useRef<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const productNameInputRefs = useRef<Array<HTMLInputElement | null>>([]);
@@ -270,7 +270,10 @@ const ProductFormModal = ({
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        onClick={onClose}
+        onClick={() => {
+          if (isSubmitting) return;
+          onClose();
+        }}
       >
         <motion.div
           className="modal-content-enhanced product-modal-content"
@@ -298,7 +301,11 @@ const ProductFormModal = ({
             </div>
             <motion.button
               className="close-btn-enhanced"
-              onClick={onClose}
+              onClick={() => {
+                if (isSubmitting) return;
+                onClose();
+              }}
+              disabled={isSubmitting}
               whileHover={{ rotate: 90 }}
               whileTap={{ scale: 0.9 }}
             >
@@ -695,15 +702,15 @@ const ProductFormModal = ({
                 )}
                 <motion.button
                   type="submit"
-                  className="btn-primary-enhanced"
-                  disabled={isSubmitting}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  name="submit_action"
-                  value={editMode ? "update" : "create_close"}
+                    className="btn-primary-enhanced"
+                    disabled={isSubmitting}
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    name="submit_action"
+                    value={editMode ? "update" : "create_close"}
                 >
-                  {isSubmitting ? <FiLoader className="btn-loading-spinner" /> : <FiSave />}
-                  {isSubmitting ? "Saving..." : editMode ? "Update Product" : "Create Product"}
+                  {isSubmitting ? <FiLoader className="spinning" /> : <FiSave />}
+                  {isSubmitting ? (editMode ? "Updating Product..." : "Creating Product...") : (editMode ? "Update Product" : "Create Product")}
                 </motion.button>
               </div>
             </div>

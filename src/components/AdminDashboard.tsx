@@ -21,14 +21,6 @@ import { useNavigate } from 'react-router-dom';
 import './css/AdminDashboard.css';
 import './css/Dashboard.css';
 import NotificationDropdown from './dashboard/NotificationDropdown';
-import ReceiptActionModal from './dashboard/modals/ReceiptActionModal';
-import OrderFormModal from './dashboard/modals/OrderFormModal';
-import ClientFormModal from './dashboard/modals/ClientFormModal';
-import ProductFormModal from './dashboard/modals/ProductFormModal';
-import UserFormModal from './dashboard/modals/UserFormModal';
-import StaffFormModal from './dashboard/modals/StaffFormModal';
-import UserDetailModal from './dashboard/modals/UserDetailModal';
-import StaffDetailModal from './dashboard/modals/StaffDetailModal';
 import {
   createDeliveryReceiptMarkup,
   createOrderReceiptMarkup,
@@ -57,6 +49,14 @@ const SunToCompanyTab = React.lazy(() => import('./dashboard/tabs/SunToCompanyTa
 const CompanyToSunTab = React.lazy(() => import('./dashboard/tabs/CompanyToSunTab'));
 const BrandwiseOverallReportTab = React.lazy(() => import('./dashboard/tabs/BrandwiseOverallReportTab'));
 const PendingTab = React.lazy(() => import('./dashboard/tabs/PendingTab'));
+const ReceiptActionModal = React.lazy(() => import('./dashboard/modals/ReceiptActionModal'));
+const OrderFormModal = React.lazy(() => import('./dashboard/modals/OrderFormModal'));
+const ClientFormModal = React.lazy(() => import('./dashboard/modals/ClientFormModal'));
+const ProductFormModal = React.lazy(() => import('./dashboard/modals/ProductFormModal'));
+const UserFormModal = React.lazy(() => import('./dashboard/modals/UserFormModal'));
+const StaffFormModal = React.lazy(() => import('./dashboard/modals/StaffFormModal'));
+const UserDetailModal = React.lazy(() => import('./dashboard/modals/UserDetailModal'));
+const StaffDetailModal = React.lazy(() => import('./dashboard/modals/StaffDetailModal'));
 
 // Enhanced Type Definitions
 interface User {
@@ -276,6 +276,15 @@ interface AdminDashboardProps {
 type ReceiptTarget =
   | { kind: 'order'; order: Order }
   | { kind: 'delivery'; delivery: Delivery };
+
+const LazySectionLoader = () => (
+  <div className="loading-overlay-content">
+    <div className="loading-spinner">
+      <div className="spinner-ring"></div>
+    </div>
+    <p className="loading-text">Loading section...</p>
+  </div>
+);
 
 // Alert Component
 const AlertMessage: React.FC<{
@@ -1655,13 +1664,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [showCreateOrder, setShowCreateOrder] = useState(false);
   const [showCreateClient, setShowCreateClient] = useState(false);
   const [showCreateProduct, setShowCreateProduct] = useState(false);
-  const [createSubmitting, setCreateSubmitting] = useState({
-    user: false,
-    staff: false,
-    order: false,
-    client: false,
-    product: false,
-  });
   const [showEditModal, setShowEditModal] = useState(false);
   const [editData, setEditData] = useState<any>(null);
   const [editType, setEditType] = useState<'user' | 'order' | 'client' | 'product' | 'delivery'>('user');
@@ -1678,6 +1680,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<Order | null>(null);
   const [deleteOrderTarget, setDeleteOrderTarget] = useState<DashboardOrder | Order | null>(null);
   const [deleteOrderPending, setDeleteOrderPending] = useState(false);
+  const [createSubmitState, setCreateSubmitState] = useState({
+    user: false,
+    order: false,
+    client: false,
+    product: false,
+  });
   
   // Form States
   const [newUser, setNewUser] = useState({
@@ -1808,7 +1816,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [newProduct, setNewProduct] = useState(getDefaultNewProduct);
   
   // API Configuration
-  const API_BASE_URL = "http://cloud.anyrdp.in:3001/raj_communication/api";
+  const API_BASE_URL = "http://localhost/raj_communication/api";
   
   // Check authentication and role
   useEffect(() => {
@@ -3138,9 +3146,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   
   // Handle create user
   const handleCreateUser = async () => {
-    const submitKey = newUser.role === 'admin' ? 'user' : 'staff';
-    if (createSubmitting[submitKey]) return;
-    setCreateSubmitting((prev) => ({ ...prev, [submitKey]: true }));
+    if (createSubmitState.user) return;
+    setCreateSubmitState((prev) => ({ ...prev, user: true }));
     try {
       if (!newUser.name || !newUser.email || !newUser.password) {
         setError('Please fill in all required fields (Name, Email, Password)');
@@ -3174,14 +3181,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     } catch (error: any) {
       setError(error.message || 'Failed to create user');
     } finally {
-      setCreateSubmitting((prev) => ({ ...prev, [submitKey]: false }));
+      setCreateSubmitState((prev) => ({ ...prev, user: false }));
     }
   };
   
   // Handle create order
   const handleCreateOrder = async () => {
-    if (createSubmitting.order) return;
-    setCreateSubmitting((prev) => ({ ...prev, order: true }));
+    if (createSubmitState.order) return;
+    setCreateSubmitState((prev) => ({ ...prev, order: true }));
     try {
       const hasProducts = (newOrder.product_ids?.length || 0) > 0 || !!newOrder.product_id || !!newOrder.product_name;
       if (!newOrder.client_name || !newOrder.client_phone || !hasProducts) {
@@ -3271,14 +3278,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     } catch (error: any) {
       setError(error.message || 'Failed to create order');
     } finally {
-      setCreateSubmitting((prev) => ({ ...prev, order: false }));
+      setCreateSubmitState((prev) => ({ ...prev, order: false }));
     }
   };
   
   // Handle create client
   const handleCreateClient = async () => {
-    if (createSubmitting.client) return;
-    setCreateSubmitting((prev) => ({ ...prev, client: true }));
+    if (createSubmitState.client) return;
+    setCreateSubmitState((prev) => ({ ...prev, client: true }));
     try {
       const clientData = {
         full_name: newClient.full_name.trim(),
@@ -3322,14 +3329,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     } catch (error: any) {
       setError(error.message || 'Failed to create client');
     } finally {
-      setCreateSubmitting((prev) => ({ ...prev, client: false }));
+      setCreateSubmitState((prev) => ({ ...prev, client: false }));
     }
   };
   
   // Handle create product
   const handleCreateProduct = async (options?: { keepOpen?: boolean }) => {
-    if (createSubmitting.product) return;
-    setCreateSubmitting((prev) => ({ ...prev, product: true }));
+    if (createSubmitState.product) return;
+    setCreateSubmitState((prev) => ({ ...prev, product: true }));
     try {
       const parseResult = expandProductNameSerialPairs(newProduct.product_name, newProduct.serial_number);
       if (parseResult.error || parseResult.pairs.length === 0) {
@@ -3418,7 +3425,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     } catch (error: any) {
       setError(error.message || 'Failed to create product');
     } finally {
-      setCreateSubmitting((prev) => ({ ...prev, product: false }));
+      setCreateSubmitState((prev) => ({ ...prev, product: false }));
     }
   };
   
@@ -6064,14 +6071,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             </div>
           </div>
           
-          <React.Suspense
-            fallback={
-              <div className="loading-container">
-                <FiLoader className="loading-spinner" />
-                <p className="loading-text">Loading page...</p>
-              </div>
-            }
-          >
+          <React.Suspense fallback={<LazySectionLoader />}>
           {/* Dashboard Tab */}
           {activeTab === 'dashboard' && (
             <div className="dashboard-tab">
@@ -6488,13 +6488,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       </div>
       
       {/* Modals */}
-      
+      <React.Suspense fallback={<LazySectionLoader />}>
       {/* User Form Modal */}
       <UserFormModal
         show={showCreateUser || (showEditModal && editType === 'user' && editData?.role === 'admin')}
         editMode={showEditModal && editType === 'user' && editData?.role === 'admin'}
+        isSubmitting={createSubmitState.user}
         userForm={((showEditModal && editType === 'user' && editData?.role === 'admin') ? editData : newUser) as any}
         onClose={() => {
+          if (createSubmitState.user) return;
           setShowCreateUser(false);
           if (showEditModal && editType === 'user') {
             setShowEditModal(false);
@@ -6504,15 +6506,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         onChange={handleUserFormChange}
         onImageChange={handleUserImageChange}
         onSubmit={submitUserForm}
-        isSubmitting={createSubmitting.user}
       />
       
       {/* Staff Form Modal */}
       <StaffFormModal
         show={showCreateStaff || (showEditModal && editType === 'user' && editData?.role !== 'admin')}
         editMode={showEditModal && editType === 'user' && editData?.role !== 'admin'}
+        isSubmitting={createSubmitState.user}
         staffForm={((showEditModal && editType === 'user' && editData?.role !== 'admin') ? editData : newUser) as any}
         onClose={() => {
+          if (createSubmitState.user) return;
           setShowCreateStaff(false);
           if (showEditModal && editType === 'user') {
             setShowEditModal(false);
@@ -6522,7 +6525,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         onChange={handleUserFormChange}
         onImageChange={handleUserImageChange}
         onSubmit={submitUserForm}
-        isSubmitting={createSubmitting.staff}
       />
       
       {/* User Detail Modal */}
@@ -6548,6 +6550,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       <OrderFormModal
         show={showCreateOrder}
         editMode={false}
+        isSubmitting={createSubmitState.order}
         orderForm={{
           ...newOrder,
           payment_status: newOrder.payment_status === 'partially_paid' ? 'partial' : newOrder.payment_status,
@@ -6557,6 +6560,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         products={products as any}
         loadingClientsForDropdown={loading.clients}
         onClose={() => {
+          if (createSubmitState.order) return;
           setShowCreateOrder(false);
           setNewOrder(getDefaultNewOrder());
         }}
@@ -6564,7 +6568,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         onProductsChange={updateNewOrderProducts}
         onReplacementProductsChange={updateNewOrderReplacementProducts}
         onSubmit={submitNewOrderForm}
-        isSubmitting={createSubmitting.order}
       />
 
       <OrderFormModal
@@ -6618,25 +6621,29 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       <ClientFormModal
         show={showCreateClient}
         editMode={false}
+        isSubmitting={createSubmitState.client}
         clientForm={newClient}
-        onClose={() => setShowCreateClient(false)}
+        onClose={() => {
+          if (createSubmitState.client) return;
+          setShowCreateClient(false);
+        }}
         onChange={handleNewClientChange}
         onSubmit={submitNewClientForm}
-        isSubmitting={createSubmitting.client}
       />
       
       {/* Create Product Modal */}
       <ProductFormModal
         show={showCreateProduct}
         editMode={false}
+        isSubmitting={createSubmitState.product}
         productForm={newProduct}
         onClose={() => {
+          if (createSubmitState.product) return;
           setShowCreateProduct(false);
           setNewProduct(getDefaultNewProduct());
         }}
         onChange={handleNewProductChange}
         onSubmit={submitCreateProductForm}
-        isSubmitting={createSubmitting.product}
       />
 
       {/* Edit Product Modal */}
@@ -7274,6 +7281,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           setSearchTerm(staff.name);
         }}
       />
+      </React.Suspense>
       
       {/* Order Details Modal */}
       <OrderDetailsModal

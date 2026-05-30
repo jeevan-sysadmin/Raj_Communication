@@ -84,8 +84,8 @@ const escapeHtml = (value: string | number) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
-const COMPANY_API_URL = "http://cloud.anyrdp.in:3001/raj_communication/api/companys.php";
-const ORDER_API_URL = "http://cloud.anyrdp.in:3001/raj_communication/api/Order.php";
+const COMPANY_API_URL = "http://localhost/raj_communication/api/companys.php";
+const ORDER_API_URL = "http://localhost/raj_communication/api/Order.php";
 
 const toIsoDate = (date: Date) => date.toISOString().split("T")[0];
 

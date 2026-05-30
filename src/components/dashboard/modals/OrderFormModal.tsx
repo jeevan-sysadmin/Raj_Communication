@@ -7,6 +7,7 @@ import type { Client, Company, OrderForm, Product, User } from "../types";
 interface OrderFormModalProps {
   show: boolean;
   editMode: boolean;
+  isSubmitting?: boolean;
   orderForm: OrderForm;
   users: User[];
   clientsForDropdown: Client[];
@@ -17,7 +18,6 @@ interface OrderFormModalProps {
   onProductsChange: (productIds: string[]) => void;
   onReplacementProductsChange: (productIds: string[]) => void;
   onSubmit: (e: FormEvent<HTMLFormElement>) => void;
-  isSubmitting?: boolean;
 }
 
 const isSpareProduct = (product: Product) => {
@@ -28,8 +28,8 @@ const isSpareProduct = (product: Product) => {
 };
 
 const COMPANY_API_CANDIDATES = [
-  "http://cloud.anyrdp.in:3001/raj_communication/api/companys.php",
-  "http://cloud.anyrdp.in:3001/raj_communication/api/companys.php",
+  "http://localhost/raj_communication/api/companys.php",
+  "http://localhost/raj_communication/api/companys.php",
 ];
 
 const normalizeCompany = (row: any): Company => ({
@@ -161,7 +161,7 @@ const parseJsonResponseSafely = async <T,>(response: Response): Promise<T | null
   }
 };
 
-const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, products, loadingClientsForDropdown, onClose, onChange, onProductsChange, onReplacementProductsChange, onSubmit, isSubmitting = false }: OrderFormModalProps) => {
+const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users, clientsForDropdown, products, loadingClientsForDropdown, onClose, onChange, onProductsChange, onReplacementProductsChange, onSubmit }: OrderFormModalProps) => {
   void users;
   const [clientSearchTerm, setClientSearchTerm] = useState("");
   const [showClientDropdown, setShowClientDropdown] = useState(false);
@@ -1123,8 +1123,8 @@ const OrderFormModal = ({ show, editMode, orderForm, users, clientsForDropdown, 
               <input type="hidden" name="issue_description_map" value={JSON.stringify(issueDescriptionMapState)} />
               <div className="order-form-actions-note">Required: client, phone, and product. The remaining fields help with service quality, internal clarity, and billing.</div>
               <div className="order-form-actions-buttons">
-                <motion.button type="button" className="btn-secondary-enhanced" onClick={onClose} disabled={isSubmitting} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>Cancel</motion.button>
-                <motion.button type="submit" className="btn-primary-enhanced" disabled={isSubmitting} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>{isSubmitting ? <FiLoader className="btn-loading-spinner" /> : <FiSave />}{isSubmitting ? "Saving..." : editMode ? "Update Order" : "Create Order"}</motion.button>
+              <motion.button type="button" className="btn-secondary-enhanced" onClick={onClose} disabled={isSubmitting} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>Cancel</motion.button>
+                <motion.button type="submit" className="btn-primary-enhanced" disabled={isSubmitting} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>{isSubmitting ? <FiLoader className="spinning" /> : <FiSave />}{isSubmitting ? (editMode ? "Updating Order..." : "Creating Order...") : (editMode ? "Update Order" : "Create Order")}</motion.button>
               </div>
             </div>
           </form>

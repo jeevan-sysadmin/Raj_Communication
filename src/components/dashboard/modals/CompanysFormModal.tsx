@@ -16,21 +16,21 @@ import type { CompanyForm } from "../types";
 interface CompanysFormModalProps {
   show: boolean;
   editMode: boolean;
+  isSubmitting?: boolean;
   companyForm: CompanyForm;
   onClose: () => void;
   onChange: (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void;
   onSubmit: (e: FormEvent<HTMLFormElement>) => void;
-  isSubmitting?: boolean;
 }
 
 const CompanysFormModal = ({
   show,
   editMode,
+  isSubmitting = false,
   companyForm,
   onClose,
   onChange,
   onSubmit,
-  isSubmitting = false,
 }: CompanysFormModalProps) => {
   if (!show) return null;
 
@@ -50,7 +50,10 @@ const CompanysFormModal = ({
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      onClick={onClose}
+      onClick={() => {
+        if (isSubmitting) return;
+        onClose();
+      }}
     >
       <motion.div
         className="modal-content-enhanced client-modal-content"
@@ -78,7 +81,11 @@ const CompanysFormModal = ({
           </div>
           <motion.button
             className="close-btn-enhanced"
-            onClick={onClose}
+            onClick={() => {
+              if (isSubmitting) return;
+              onClose();
+            }}
+            disabled={isSubmitting}
             whileHover={{ rotate: 90 }}
             whileTap={{ scale: 0.9 }}
           >
@@ -297,8 +304,8 @@ const CompanysFormModal = ({
                 whileHover={{ scale: 1.02 }}
                 whileTap={{ scale: 0.98 }}
               >
-                {isSubmitting ? <FiLoader className="btn-loading-spinner" /> : <FiSave />}
-                {isSubmitting ? "Saving..." : editMode ? "Update Company" : "Create Company"}
+                {isSubmitting ? <FiLoader className="spinning" /> : <FiSave />}
+                {isSubmitting ? (editMode ? "Updating Company..." : "Creating Company...") : (editMode ? "Update Company" : "Create Company")}
               </motion.button>
             </div>
           </div>

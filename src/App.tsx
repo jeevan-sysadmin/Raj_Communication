@@ -1,8 +1,9 @@
-import React, { Suspense } from 'react';
+import { lazy, Suspense, useState } from 'react';
+import type { ReactNode } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 
-const Login = React.lazy(() => import('./components/Login'));
-const AdminDashboard = React.lazy(() => import('./components/AdminDashboard'));
+const Login = lazy(() => import('./components/Login'));
+const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
 
 type UserRole = 'user' | 'admin';
 type RequiredRole = UserRole | 'both';
@@ -13,15 +14,19 @@ const normalizeRole = (rawRole: string | null | undefined): UserRole => {
   return 'user';
 };
 
-const PageLoader = () => (
+const FullscreenLoader = () => (
   <div
     style={{
       minHeight: '100vh',
-      display: 'grid',
-      placeItems: 'center',
-      fontFamily: 'Segoe UI, sans-serif',
-      color: '#334155',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
       background: '#f8fafc',
+      color: '#334155',
+      fontFamily: 'Segoe UI, sans-serif',
+      fontSize: '0.95rem',
+      padding: '1rem',
+      textAlign: 'center',
     }}
   >
     Loading...
@@ -29,7 +34,7 @@ const PageLoader = () => (
 );
 
 function App() {
-  const [authState, setAuthState] = React.useState(() => {
+  const [authState, setAuthState] = useState(() => {
     const token = localStorage.getItem('authToken') || localStorage.getItem('token');
     const userData = localStorage.getItem('userData');
     const loggedInFlag = localStorage.getItem('isLoggedIn');
@@ -73,7 +78,7 @@ function App() {
     children,
     requiredRole = 'user',
   }: {
-    children: React.ReactNode;
+    children: ReactNode;
     requiredRole?: RequiredRole;
   }) => {
     const token = localStorage.getItem('authToken') || localStorage.getItem('token');
@@ -98,7 +103,7 @@ function App() {
   return (
     <Router>
       <div className="App">
-        <Suspense fallback={<PageLoader />}>
+        <Suspense fallback={<FullscreenLoader />}>
           <Routes>
             <Route
               path="/login"
