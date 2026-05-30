@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import Login from "./components/Login";
-import AdminDashboard from "./components/AdminDashboard";
+
+const Login = React.lazy(() => import('./components/Login'));
+const AdminDashboard = React.lazy(() => import('./components/AdminDashboard'));
 
 type UserRole = 'user' | 'admin';
 type RequiredRole = UserRole | 'both';
@@ -11,6 +12,21 @@ const normalizeRole = (rawRole: string | null | undefined): UserRole => {
   if (role === 'admin') return 'admin';
   return 'user';
 };
+
+const PageLoader = () => (
+  <div
+    style={{
+      minHeight: '100vh',
+      display: 'grid',
+      placeItems: 'center',
+      fontFamily: 'Segoe UI, sans-serif',
+      color: '#334155',
+      background: '#f8fafc',
+    }}
+  >
+    Loading...
+  </div>
+);
 
 function App() {
   const [authState, setAuthState] = React.useState(() => {
@@ -82,49 +98,51 @@ function App() {
   return (
     <Router>
       <div className="App">
-        <Routes>
-          <Route
-            path="/login"
-            element={
-              authState.isLoggedIn ? (
-                <Navigate to="/admin-dashboard" replace />
-              ) : (
-                <Login onLoginSuccess={handleLoginSuccess} />
-              )
-            }
-          />
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route
+              path="/login"
+              element={
+                authState.isLoggedIn ? (
+                  <Navigate to="/admin-dashboard" replace />
+                ) : (
+                  <Login onLoginSuccess={handleLoginSuccess} />
+                )
+              }
+            />
 
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute requiredRole="both">
-                <Navigate to="/admin-dashboard" replace />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/dashboard"
+              element={
+                <ProtectedRoute requiredRole="both">
+                  <Navigate to="/admin-dashboard" replace />
+                </ProtectedRoute>
+              }
+            />
 
-          <Route
-            path="/admin-dashboard"
-            element={
-              <ProtectedRoute requiredRole="both">
-                <AdminDashboard onLogout={handleLogout} />
-              </ProtectedRoute>
-            }
-          />
+            <Route
+              path="/admin-dashboard"
+              element={
+                <ProtectedRoute requiredRole="both">
+                  <AdminDashboard onLogout={handleLogout} />
+                </ProtectedRoute>
+              }
+            />
 
-          <Route
-            path="/"
-            element={
-              authState.isLoggedIn ? (
-                <Navigate to="/admin-dashboard" replace />
-              ) : (
-                <Navigate to="/login" replace />
-              )
-            }
-          />
+            <Route
+              path="/"
+              element={
+                authState.isLoggedIn ? (
+                  <Navigate to="/admin-dashboard" replace />
+                ) : (
+                  <Navigate to="/login" replace />
+                )
+              }
+            />
 
-          <Route path="*" element={<Navigate to="/login" replace />} />
-        </Routes>
+            <Route path="*" element={<Navigate to="/login" replace />} />
+          </Routes>
+        </Suspense>
       </div>
     </Router>
   );

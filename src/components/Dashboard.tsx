@@ -68,7 +68,7 @@ import {
 import { expandProductNameSerialPairs, splitSerialValues } from "./dashboard/productBatch";
 import { formatCurrency, formatDisplayDate, formatISODate } from "./dashboard/utils";
 
-const API_BASE_URL = "http://162.141.0.9/raj_communication/api";
+const API_BASE_URL = "http://cloud.anyrdp.in:3001/raj_communication/api";
 
 const createDefaultOrderForm = (): OrderForm => ({
   company_id: "",

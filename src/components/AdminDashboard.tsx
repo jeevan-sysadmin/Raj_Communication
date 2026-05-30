@@ -20,16 +20,8 @@ import {
 import { useNavigate } from 'react-router-dom';
 import './css/AdminDashboard.css';
 import './css/Dashboard.css';
-import OrdersTab from './dashboard/tabs/OrdersTab';
-import UserTab from './dashboard/tabs/UserTab';
-import StaffTab from './dashboard/tabs/StaffTab';
-import RevenueTab from './dashboard/tabs/RevenueTab';
-import AnalyticsTab from './dashboard/tabs/AnalyticsTab';
 import NotificationDropdown from './dashboard/NotificationDropdown';
 import ReceiptActionModal from './dashboard/modals/ReceiptActionModal';
-import ClientsTab from './dashboard/tabs/ClientsTab';
-import ProductsTab from './dashboard/tabs/ProductsTab';
-import DeliveryTab from './dashboard/tabs/DeliveryTab';
 import OrderFormModal from './dashboard/modals/OrderFormModal';
 import ClientFormModal from './dashboard/modals/ClientFormModal';
 import ProductFormModal from './dashboard/modals/ProductFormModal';
@@ -37,15 +29,6 @@ import UserFormModal from './dashboard/modals/UserFormModal';
 import StaffFormModal from './dashboard/modals/StaffFormModal';
 import UserDetailModal from './dashboard/modals/UserDetailModal';
 import StaffDetailModal from './dashboard/modals/StaffDetailModal';
-import ReplacementOrdersTab from './dashboard/tabs/ReplacementOrdersTab';
-import SpareProductsTab from './dashboard/tabs/SpareProductsTab';
-import ShopclaimTab from './dashboard/tabs/ShopclaimTab';
-import CompanyClaimTab from './dashboard/tabs/CompanyClaimTab';
-import CompanysTab from './dashboard/tabs/CompanysTab';
-import SunToCompanyTab from './dashboard/tabs/SunToCompanyTab';
-import CompanyToSunTab from './dashboard/tabs/CompanyToSunTab';
-import BrandwiseOverallReportTab from './dashboard/tabs/BrandwiseOverallReportTab';
-import PendingTab from './dashboard/tabs/PendingTab';
 import {
   createDeliveryReceiptMarkup,
   createOrderReceiptMarkup,
@@ -56,6 +39,24 @@ import { exportStyledPdfReport } from './dashboard/pdfExport';
 import { expandProductNameSerialPairs } from './dashboard/productBatch';
 import ConfirmDeleteModal from './dashboard/modals/ConfirmDeleteModal';
 import type { Order as DashboardOrder } from './dashboard/types';
+
+const OrdersTab = React.lazy(() => import('./dashboard/tabs/OrdersTab'));
+const UserTab = React.lazy(() => import('./dashboard/tabs/UserTab'));
+const StaffTab = React.lazy(() => import('./dashboard/tabs/StaffTab'));
+const RevenueTab = React.lazy(() => import('./dashboard/tabs/RevenueTab'));
+const AnalyticsTab = React.lazy(() => import('./dashboard/tabs/AnalyticsTab'));
+const ClientsTab = React.lazy(() => import('./dashboard/tabs/ClientsTab'));
+const ProductsTab = React.lazy(() => import('./dashboard/tabs/ProductsTab'));
+const DeliveryTab = React.lazy(() => import('./dashboard/tabs/DeliveryTab'));
+const ReplacementOrdersTab = React.lazy(() => import('./dashboard/tabs/ReplacementOrdersTab'));
+const SpareProductsTab = React.lazy(() => import('./dashboard/tabs/SpareProductsTab'));
+const ShopclaimTab = React.lazy(() => import('./dashboard/tabs/ShopclaimTab'));
+const CompanyClaimTab = React.lazy(() => import('./dashboard/tabs/CompanyClaimTab'));
+const CompanysTab = React.lazy(() => import('./dashboard/tabs/CompanysTab'));
+const SunToCompanyTab = React.lazy(() => import('./dashboard/tabs/SunToCompanyTab'));
+const CompanyToSunTab = React.lazy(() => import('./dashboard/tabs/CompanyToSunTab'));
+const BrandwiseOverallReportTab = React.lazy(() => import('./dashboard/tabs/BrandwiseOverallReportTab'));
+const PendingTab = React.lazy(() => import('./dashboard/tabs/PendingTab'));
 
 // Enhanced Type Definitions
 interface User {
@@ -1800,7 +1801,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [newProduct, setNewProduct] = useState(getDefaultNewProduct);
   
   // API Configuration
-  const API_BASE_URL = "http://162.141.0.9/raj_communication/api";
+  const API_BASE_URL = "http://cloud.anyrdp.in:3001/raj_communication/api";
   
   // Check authentication and role
   useEffect(() => {
@@ -6039,6 +6040,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             </div>
           </div>
           
+          <React.Suspense
+            fallback={
+              <div className="loading-container">
+                <FiLoader className="loading-spinner" />
+                <p className="loading-text">Loading page...</p>
+              </div>
+            }
+          >
           {/* Dashboard Tab */}
           {activeTab === 'dashboard' && (
             <div className="dashboard-tab">
@@ -6433,6 +6442,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               </div>
             </div>
           )}
+          </React.Suspense>
         </main>
         
         {/* Footer */}

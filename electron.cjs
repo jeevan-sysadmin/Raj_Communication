@@ -7,7 +7,7 @@ function createWindow() {
     show: false,
   });
 
-  win.loadURL('http://162.141.0.9:5173');
+  win.loadURL('http://cloud.anyrdp.in:5173');
   win.once('ready-to-show', () => {
     win.maximize();
     win.show();

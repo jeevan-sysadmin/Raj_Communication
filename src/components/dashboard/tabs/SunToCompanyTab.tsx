@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import OrdersTab from "./OrdersTab";
 import type { DateRange, Order, Product } from "../types";
 
-const API_BASE_URL = "http://162.141.0.9/raj_communication/api";
+const API_BASE_URL = "http://cloud.anyrdp.in:3001/raj_communication/api";
 
 interface SunToCompanyApiResponse {
   success?: boolean;
