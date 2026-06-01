@@ -123,7 +123,7 @@ const createDefaultProductForm = (): ProductForm => ({
   is_spare_product: false,
   brand: "",
   model: "",
-  category: "laptop",
+  category: "",
   claim_type: "none",
   specifications: "",
   purchase_date: "",
@@ -1402,6 +1402,7 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
               purchase_date: new Date().toISOString().split("T")[0],
               warranty_period: "1 year",
               price: orderForm.estimated_cost || "0",
+              stock_quantity: "1",
               status: "active",
             }),
           });
@@ -1641,7 +1642,10 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
               ...productForm,
               product_name: String(row.product_name || "").trim(),
               serial_number: String(row.serial_number || "").trim(),
-              stock_quantity: String(row.stock_quantity ?? productForm.stock_quantity ?? "1"),
+              stock_quantity:
+                String(row.serial_number || "").trim().length > 0
+                  ? "1"
+                  : String(row.stock_quantity ?? productForm.stock_quantity ?? "1"),
             }));
         } catch {
           throw new Error("Invalid product rows data. Please re-enter product names and quantities.");
@@ -1654,11 +1658,15 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
           ...productForm,
           product_name: pair.productName,
           serial_number: pair.serialNumber,
-          stock_quantity: productForm.stock_quantity || "1",
+          stock_quantity: String(pair.serialNumber || "").trim().length > 0 ? "1" : (productForm.stock_quantity || "1"),
         }));
       }
       if (requestRows.length === 0) {
         throw new Error("Product name is required");
+      }
+      const hasMissingCategory = requestRows.some((row) => !String(row.category || "").trim());
+      if (hasMissingCategory) {
+        throw new Error("Category is required");
       }
       const requestBody =
         !editMode && requestRows.length > 1
@@ -1847,7 +1855,7 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
       is_spare_product: Boolean(Number(product.is_spare_product || 0)),
       brand: product.brand || "",
       model: product.model || "",
-      category: product.category || "laptop",
+      category: product.category || "",
       claim_type: product.claim_type || "none",
       specifications: product.specifications || "",
       purchase_date: product.purchase_date || "",
@@ -2282,14 +2290,12 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
 
   const getFilteredProducts = () =>
     products.filter((product) => {
+      const normalizedSearch = searchTerm.trim().toLowerCase();
       const matchesSearch =
-        !searchTerm ||
-        [product.product_name, product.brand, product.model, product.product_code, product.category].some(
-          (value) => value?.toLowerCase().includes(searchTerm.toLowerCase()),
-        ) ||
-        [product.serial_number, product.claim_type].some(
-          (value) => value?.toLowerCase().includes(searchTerm.toLowerCase()),
-        );
+        !normalizedSearch ||
+        String(product.serial_number ?? "")
+          .toLowerCase()
+          .includes(normalizedSearch);
       const matchesStatus = filterStatus === "all" || product.status === filterStatus;
       const createdDate = formatISODate(product.created_at);
       const matchesDate =

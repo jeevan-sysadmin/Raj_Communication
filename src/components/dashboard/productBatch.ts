@@ -4,7 +4,7 @@ export interface ProductNameSerialPair {
 }
 
 const MULTI_VALUE_SEPARATOR = /[\r\n\t,;|]+/;
-const SERIAL_VALUE_SEPARATOR = /[\s,;|]+/;
+const SERIAL_VALUE_SEPARATOR = /[\r\n]+/;
 
 export const splitBatchValues = (value: string): string[] =>
   value

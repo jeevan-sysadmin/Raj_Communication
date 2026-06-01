@@ -345,7 +345,7 @@ const ProductsTab = ({
           <FiSearch className="search-filter-icon" />
           <input
             type="text"
-            placeholder="Search products by name, serial, brand, model..."
+            placeholder="Search products by serial number..."
             className="search-filter-input"
             value={searchTerm}
             onChange={(e) => onSearchChange(e.target.value)}
@@ -524,4 +524,3 @@ const ProductsTab = ({
 };
 
 export default ProductsTab;
-

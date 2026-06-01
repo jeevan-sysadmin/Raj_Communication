@@ -69,6 +69,8 @@ function expandProductRowsBySerial($row) {
     foreach ($serials as $serial) {
         $copy = $row;
         $copy['serial_number'] = $serial;
+        // Each unique serial is a single physical unit.
+        $copy['stock_quantity'] = 1;
         $expandedRows[] = $copy;
     }
 
@@ -85,6 +87,16 @@ function normalizeProductPayloadAliases($row) {
         foreach ($aliasKeys as $aliasKey) {
             if (isset($row[$aliasKey]) && trim((string)$row[$aliasKey]) !== '') {
                 $row['product_name'] = trim((string)$row[$aliasKey]);
+                break;
+            }
+        }
+    }
+
+    if (!isset($row['stock_quantity']) || $row['stock_quantity'] === '' || $row['stock_quantity'] === null) {
+        $stockAliasKeys = ['stockQuantity', 'quantity', 'qty'];
+        foreach ($stockAliasKeys as $aliasKey) {
+            if (array_key_exists($aliasKey, $row) && $row[$aliasKey] !== '' && $row[$aliasKey] !== null) {
+                $row['stock_quantity'] = $row[$aliasKey];
                 break;
             }
         }
@@ -116,8 +128,12 @@ class Database {
         }
 
         if (!isset($existing['stock_quantity'])) {
-            $conn->exec("ALTER TABLE products ADD COLUMN stock_quantity INT(10) UNSIGNED NOT NULL DEFAULT 1 AFTER price");
+            $conn->exec("ALTER TABLE products ADD COLUMN stock_quantity INT(10) UNSIGNED NOT NULL AFTER price");
         }
+
+        // Enforce a safe DB default so inserts that omit stock_quantity do not become 0.
+        $conn->exec("ALTER TABLE products MODIFY stock_quantity INT(10) UNSIGNED NOT NULL DEFAULT 1");
+        $conn->exec("UPDATE products SET stock_quantity = 1 WHERE stock_quantity IS NULL OR stock_quantity <= 0");
     }
 
     public function getConnection() {
@@ -163,7 +179,26 @@ class Product {
     
     // Valid claim types
     private $valid_claim_types = ['none', 'shop_claim', 'company_claim', 'sun_to_company', 'company_to_sun'];
-    private $valid_categories = ['cctv', 'harddisk', 'DVR', 'wificamer', 'others'];
+    private $valid_categories = [
+        'CAMERA',
+        'DVR',
+        'NVR',
+        'HARDDISK',
+        'SOLAR CAMERA',
+        'PTCAMERA',
+        'SD CARD',
+        'SSD',
+        'POWER SUPPLY',
+        'MONITOR',
+        'EXTENDER',
+        'MEDIA CONVERTER',
+        'PTZCAMERA',
+        'POE SWITCH',
+        'DESKTOP SWITCH',
+        'TV',
+        'UPS',
+        'OTHERS',
+    ];
     private $valid_statuses = ['active', 'inactive', 'discontinued', 'out_of_stock'];
 
     public $id;
@@ -206,7 +241,7 @@ class Product {
 
     private function normalizeStockQuantity($stock_quantity) {
         if ($stock_quantity === null || $stock_quantity === '') {
-            return 1;
+            return null;
         }
 
         $value = intval($stock_quantity);
@@ -231,6 +266,31 @@ class Product {
         $exists = $count > 0;
         $this->columnExistsCache[$columnName] = $exists;
         return $exists;
+    }
+
+    private function getCategoryEnumValues(): array {
+        try {
+            $query = "SELECT COLUMN_TYPE
+                      FROM INFORMATION_SCHEMA.COLUMNS
+                      WHERE TABLE_SCHEMA = DATABASE()
+                        AND TABLE_NAME = :table_name
+                        AND COLUMN_NAME = 'category'
+                      LIMIT 1";
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(':table_name', $this->table);
+            $stmt->execute();
+            $columnType = (string)($stmt->fetch()['COLUMN_TYPE'] ?? '');
+            if (!preg_match("/^enum\\((.*)\\)$/i", $columnType, $matches)) {
+                return [];
+            }
+
+            preg_match_all("/'((?:[^'\\\\]|\\\\.)*)'/", $matches[1], $valueMatches);
+            return array_map(static function ($raw) {
+                return str_replace("\\'", "'", $raw);
+            }, $valueMatches[1] ?? []);
+        } catch (Throwable $e) {
+            return [];
+        }
     }
 
     private function productCodeExists($product_code) {
@@ -265,13 +325,33 @@ class Product {
     
     // Validate category
     private function validateCategory($category) {
-        if (empty($category)) {
-            return 'cctv';
+        $normalized = trim((string)$category);
+        $dbEnumValues = $this->getCategoryEnumValues();
+        $allowed = count($dbEnumValues) > 0 ? $dbEnumValues : $this->valid_categories;
+        $fallback = in_array('OTHERS', $allowed, true) ? 'OTHERS' : ($allowed[0] ?? 'OTHERS');
+
+        if ($normalized === '') return $fallback;
+
+        foreach ($allowed as $allowedCategory) {
+            if (strcasecmp($normalized, $allowedCategory) === 0) {
+                return $allowedCategory;
+            }
         }
-        if (in_array($category, $this->valid_categories)) {
-            return $category;
+
+        // Handle common typo alias from legacy schema dump.
+        if (strcasecmp($normalized, 'MEDIA CONVERTER') === 0) {
+            foreach ($allowed as $allowedCategory) {
+                if (strcasecmp($allowedCategory, 'EDIA CONVERTER') === 0) return $allowedCategory;
+            }
         }
-        return 'cctv';
+
+        if (strcasecmp($normalized, 'OTHER') === 0) {
+            foreach ($allowed as $allowedCategory) {
+                if (strcasecmp($allowedCategory, 'OTHERS') === 0) return $allowedCategory;
+            }
+        }
+
+        return $fallback;
     }
     
     // Validate status
@@ -386,6 +466,9 @@ class Product {
         $this->warranty_period = !empty($this->warranty_period) ? trim($this->warranty_period) : null;
         $this->price = !empty($this->price) ? floatval($this->price) : 0;
         $this->stock_quantity = $this->normalizeStockQuantity($this->stock_quantity);
+        if ($this->stock_quantity <= 0) {
+            return ['success' => false, 'message' => 'Quantity must be greater than 0'];
+        }
         $this->status = $this->validateStatus($this->status);
         $this->is_spare_product = !empty($this->is_spare_product) ? 1 : 0;
         
@@ -486,6 +569,9 @@ class Product {
         $this->warranty_period = !empty($this->warranty_period) ? trim($this->warranty_period) : null;
         $this->price = !empty($this->price) ? floatval($this->price) : 0;
         $this->stock_quantity = $this->normalizeStockQuantity($this->stock_quantity);
+        if ($this->stock_quantity <= 0) {
+            return ['success' => false, 'message' => 'Quantity must be greater than 0'];
+        }
         $this->status = $this->validateStatus($this->status);
         $this->is_spare_product = !empty($this->is_spare_product) ? 1 : 0;
         
@@ -695,7 +781,7 @@ try {
                     $product->product_name = $row['product_name'];
                     $product->brand = isset($row['brand']) ? $row['brand'] : '';
                     $product->model = isset($row['model']) ? $row['model'] : '';
-                    $product->category = isset($row['category']) ? $row['category'] : 'cctv';
+                    $product->category = isset($row['category']) ? $row['category'] : 'OTHERS';
                     $product->claim_type = isset($row['claim_type']) ? $row['claim_type'] : 'none';
                     $product->specifications = isset($row['specifications']) ? $row['specifications'] : '';
                     $product->purchase_date = isset($row['purchase_date']) ? $row['purchase_date'] : null;
@@ -764,7 +850,7 @@ try {
             $product->product_name = $input['product_name'];
             $product->brand = isset($input['brand']) ? $input['brand'] : '';
             $product->model = isset($input['model']) ? $input['model'] : '';
-            $product->category = isset($input['category']) ? $input['category'] : 'cctv';
+            $product->category = isset($input['category']) ? $input['category'] : 'OTHERS';
             $product->claim_type = isset($input['claim_type']) ? $input['claim_type'] : 'none';
             $product->specifications = isset($input['specifications']) ? $input['specifications'] : '';
             $product->purchase_date = isset($input['purchase_date']) ? $input['purchase_date'] : null;
@@ -858,13 +944,13 @@ try {
             $product->product_name = isset($input['product_name']) ? $input['product_name'] : $existingProduct['product_name'];
             $product->brand = isset($input['brand']) ? $input['brand'] : ($existingProduct['brand'] ?? '');
             $product->model = isset($input['model']) ? $input['model'] : ($existingProduct['model'] ?? '');
-            $product->category = isset($input['category']) ? $input['category'] : ($existingProduct['category'] ?? 'cctv');
+            $product->category = isset($input['category']) ? $input['category'] : ($existingProduct['category'] ?? 'OTHERS');
             $product->claim_type = isset($input['claim_type']) ? $input['claim_type'] : ($existingProduct['claim_type'] ?? 'none');
             $product->specifications = isset($input['specifications']) ? $input['specifications'] : ($existingProduct['specifications'] ?? '');
             $product->purchase_date = isset($input['purchase_date']) ? $input['purchase_date'] : ($existingProduct['purchase_date'] ?? null);
             $product->warranty_period = isset($input['warranty_period']) ? $input['warranty_period'] : ($existingProduct['warranty_period'] ?? '');
             $product->price = isset($input['price']) ? $input['price'] : ($existingProduct['price'] ?? 0);
-            $product->stock_quantity = isset($input['stock_quantity']) ? $input['stock_quantity'] : ($existingProduct['stock_quantity'] ?? 1);
+            $product->stock_quantity = isset($input['stock_quantity']) ? $input['stock_quantity'] : ($existingProduct['stock_quantity'] ?? null);
             $product->status = isset($input['status']) ? $input['status'] : ($existingProduct['status'] ?? 'active');
             
             $result = $product->update();

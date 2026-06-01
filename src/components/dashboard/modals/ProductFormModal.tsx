@@ -95,7 +95,7 @@ const ProductFormModal = ({
     is_spare_product: Boolean(productForm?.is_spare_product),
     brand: asText(productForm?.brand),
     model: asText(productForm?.model),
-    category: asText(productForm?.category) || "cctv",
+    category: asText(productForm?.category),
     claim_type: asText(productForm?.claim_type) || "none",
     specifications: asText(productForm?.specifications),
     purchase_date: asText(productForm?.purchase_date),
@@ -204,9 +204,9 @@ const ProductFormModal = ({
   useEffect(() => {
     if (!show || editMode) return;
     const serialCount = splitSerialValues(safeProductForm.serial_number).length;
-    if (serialCount <= 0) return;
+    if (serialCount <= 0) return; // No serials: user can set quantity manually.
     const nextQuantity = String(serialCount);
-    if (safeProductForm.stock_quantity !== nextQuantity) {
+    if (safeProductForm.stock_quantity.trim() !== nextQuantity) {
       emitFormFieldChange("stock_quantity", nextQuantity);
     }
   }, [show, editMode, safeProductForm.serial_number, safeProductForm.stock_quantity]);
@@ -436,14 +436,14 @@ const ProductFormModal = ({
                               id={`serial_number_${pair.id}`}
                               value={pair.serialNumber}
                               onChange={(e) => handlePairChange(index, "serialNumber", e.target.value)}
-                              placeholder={`Serial Number ${index + 1} (space, comma, or new line for multiple)`}
+                              placeholder={`Serial Number ${index + 1} (press Enter for next serial)`}
                               autoComplete="off"
                               rows={2}
                               className="product-input product-textarea has-icon scanner-input"
                             />
                           </div>
                           <small className="product-field-help">
-                            Add multiple serial numbers in this box using space, comma, semicolon, or new line.
+                            Add multiple serial numbers in this box using new line (press Enter).
                           </small>
                           <button
                             type="button"
@@ -479,7 +479,7 @@ const ProductFormModal = ({
                           value={safeProductForm.stock_quantity}
                           onChange={onChange}
                           placeholder="1"
-                          min="0"
+                          min="1"
                           step="1"
                           className="product-input has-icon"
                         />
@@ -560,10 +560,12 @@ const ProductFormModal = ({
                       <select
                         id="category"
                         name="category"
-                        value={safeProductForm.category || "cctv"}
+                        value={safeProductForm.category || ""}
                         onChange={onChange}
                         className="product-input"
+                        required
                       >
+                        <option value="">Select category</option>
                         {PDF_CATEGORY_OPTIONS.map((option) => (
                           <option key={option} value={option}>
                             {option}

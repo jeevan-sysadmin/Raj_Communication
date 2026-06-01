@@ -933,6 +933,7 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
                                 <div className="selected-product-meta">
                                   {product.product_code && <span>Code: {product.product_code}</span>}
                                   {product.serial_number && <span>SN: {product.serial_number}</span>}
+                                  <span>Qty: {Number(product.stock_quantity ?? 0)}</span>
                                   {product.brand && <span>{product.brand}</span>}
                                   {product.model && <span>{product.model}</span>}
                                 </div>
@@ -1056,6 +1057,7 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
                                 <div className="selected-product-meta">
                                   {product.product_code && <span>Code: {product.product_code}</span>}
                                   {product.serial_number && <span>SN: {product.serial_number}</span>}
+                                  <span>Qty: {Number(product.stock_quantity ?? 0)}</span>
                                   {product.brand && <span>{product.brand}</span>}
                                   {product.model && <span>{product.model}</span>}
                                   <span>Spare</span>

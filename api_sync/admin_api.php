@@ -36,9 +36,23 @@ class AdminAPI {
             $this->sendError("Database connection failed", 500);
             exit();
         }
+
+        $this->ensureProductsStockQuantityDefaults();
         
         // Verify authentication
         $this->verifyAuth();
+    }
+
+    private function ensureProductsStockQuantityDefaults(): void {
+        try {
+            if (!$this->tableHasColumn('products', 'stock_quantity')) {
+                return;
+            }
+            $this->conn->exec("ALTER TABLE products MODIFY stock_quantity INT(10) UNSIGNED NOT NULL DEFAULT 1");
+            $this->conn->exec("UPDATE products SET stock_quantity = 1 WHERE stock_quantity IS NULL OR stock_quantity <= 0");
+        } catch (Throwable $e) {
+            // Non-fatal hardening: creation/update flow should continue even if schema patch is not allowed.
+        }
     }
     
     private function verifyAuth() {
@@ -111,7 +125,74 @@ class AdminAPI {
             }
         }
 
+        if ((!isset($row['stock_quantity']) || $row['stock_quantity'] === '' || $row['stock_quantity'] === null)) {
+            $stockAliasKeys = ['stockQuantity', 'quantity', 'qty'];
+            foreach ($stockAliasKeys as $aliasKey) {
+                if (array_key_exists($aliasKey, $row) && $row[$aliasKey] !== '' && $row[$aliasKey] !== null) {
+                    $row['stock_quantity'] = $row[$aliasKey];
+                    break;
+                }
+            }
+        }
+
         return $row;
+    }
+
+    private function getProductCategoryEnumValues(): array {
+        try {
+            $query = "SELECT COLUMN_TYPE
+                      FROM INFORMATION_SCHEMA.COLUMNS
+                      WHERE TABLE_SCHEMA = DATABASE()
+                        AND TABLE_NAME = 'products'
+                        AND COLUMN_NAME = 'category'
+                      LIMIT 1";
+            $stmt = $this->conn->query($query);
+            $columnType = (string)($stmt->fetch(PDO::FETCH_ASSOC)['COLUMN_TYPE'] ?? '');
+            if (!preg_match("/^enum\\((.*)\\)$/i", $columnType, $matches)) {
+                return [];
+            }
+
+            preg_match_all("/'((?:[^'\\\\]|\\\\.)*)'/", $matches[1], $valueMatches);
+            return array_map(static function ($raw) {
+                return str_replace("\\'", "'", $raw);
+            }, $valueMatches[1] ?? []);
+        } catch (Throwable $e) {
+            return [];
+        }
+    }
+
+    private function normalizeDbCategoryValue(string $rawCategory, ?string $existingCategory = null): string {
+        $allowed = $this->getProductCategoryEnumValues();
+        if (count($allowed) === 0) {
+            $allowed = [
+                'CAMERA', 'DVR', 'NVR', 'HARDDISK', 'SOLAR CAMERA', 'PTCAMERA', 'SD CARD', 'SSD',
+                'POWER SUPPLY', 'MONITOR', 'EXTENDER', 'MEDIA CONVERTER', 'PTZCAMERA', 'POE SWITCH',
+                'DESKTOP SWITCH', 'TV', 'UPS', 'OTHERS'
+            ];
+        }
+        $fallback = in_array('OTHERS', $allowed, true) ? 'OTHERS' : ($allowed[0] ?? 'OTHERS');
+
+        $normalized = trim($rawCategory);
+        if ($normalized === '') {
+            return ($existingCategory && trim($existingCategory) !== '') ? $existingCategory : $fallback;
+        }
+
+        foreach ($allowed as $allowedCategory) {
+            if (strcasecmp($normalized, $allowedCategory) === 0) return $allowedCategory;
+        }
+
+        if (strcasecmp($normalized, 'MEDIA CONVERTER') === 0) {
+            foreach ($allowed as $allowedCategory) {
+                if (strcasecmp($allowedCategory, 'EDIA CONVERTER') === 0) return $allowedCategory;
+            }
+        }
+        if (strcasecmp($normalized, 'OTHER') === 0) {
+            foreach ($allowed as $allowedCategory) {
+                if (strcasecmp($allowedCategory, 'OTHERS') === 0) return $allowedCategory;
+            }
+        }
+
+        return $fallback;
     }
 
     private function syncOrderProducts(int $orderId, array $productIds, bool $isReplacement): void {
@@ -1012,11 +1093,14 @@ class AdminAPI {
                     } else {
                         // Create placeholder product
                         $product_code = 'PRD' . date('Ymd') . strtoupper(substr(uniqid(), -6));
-                        $productInsert = "INSERT INTO products (product_code, product_name, category, price, status, created_at) 
-                                        VALUES (:product_code, :product_name, 'other', 0, 'active', NOW())";
+                        $defaultCategory = $this->normalizeDbCategoryValue('OTHERS');
+                        $productInsert = "INSERT INTO products (product_code, product_name, category, price, stock_quantity, status, created_at) 
+                                        VALUES (:product_code, :product_name, :category, 0, :stock_quantity, 'active', NOW())";
                         $productInsertStmt = $this->conn->prepare($productInsert);
                         $productInsertStmt->bindValue(':product_code', $product_code, PDO::PARAM_STR);
                         $productInsertStmt->bindValue(':product_name', $product_name, PDO::PARAM_STR);
+                        $productInsertStmt->bindValue(':category', $defaultCategory, PDO::PARAM_STR);
+                        $productInsertStmt->bindValue(':stock_quantity', 1, PDO::PARAM_INT);
                         
                         if ($productInsertStmt->execute()) {
                             $product_id = $this->conn->lastInsertId();
@@ -1721,7 +1805,8 @@ class AdminAPI {
             $validClaimTypes = ['none', 'shop_claim', 'company_claim', 'sun_to_company', 'company_to_sun'];
             $validStatuses = ['active', 'inactive', 'discontinued', 'out_of_stock'];
 
-            $insertProduct = function(array $row) use ($validClaimTypes, $validStatuses): array {
+            $requestDefaultStockQuantity = isset($data['stock_quantity']) ? max(0, intval($data['stock_quantity'])) : null;
+            $insertProduct = function(array $row) use ($validClaimTypes, $validStatuses, $requestDefaultStockQuantity): array {
                 $row = $this->normalizeProductPayload($row);
 
                 if (empty($row['product_name']) || trim((string)$row['product_name']) === '') {
@@ -1729,6 +1814,10 @@ class AdminAPI {
                 }
 
                 $productName = trim((string)$row['product_name']);
+                $resolvedStockQuantity = isset($row['stock_quantity']) ? max(0, intval($row['stock_quantity'])) : $requestDefaultStockQuantity;
+                if ($resolvedStockQuantity === null || $resolvedStockQuantity <= 0) {
+                    return ['success' => false, 'message' => 'Quantity is required and must be greater than 0'];
+                }
                 $serialNumber = isset($row['serial_number']) ? preg_replace('/\s+/', '', trim((string)$row['serial_number'])) : '';
 
                 if ($serialNumber !== '') {
@@ -1740,9 +1829,8 @@ class AdminAPI {
                     }
                 }
 
-                $category = isset($row['category']) && trim((string)$row['category']) !== ''
-                    ? trim((string)$row['category'])
-                    : 'other';
+                $rawCategory = isset($row['category']) ? (string)$row['category'] : '';
+                $category = $this->normalizeDbCategoryValue($rawCategory);
 
                 $claimType = isset($row['claim_type']) ? strtolower(trim((string)$row['claim_type'])) : 'none';
                 if (!in_array($claimType, $validClaimTypes, true)) {
@@ -1778,16 +1866,27 @@ class AdminAPI {
                 $stmt->bindValue(':purchase_date', isset($row['purchase_date']) && trim((string)$row['purchase_date']) !== '' ? $row['purchase_date'] : date('Y-m-d'), PDO::PARAM_STR);
                 $stmt->bindValue(':warranty_period', isset($row['warranty_period']) && trim((string)$row['warranty_period']) !== '' ? trim((string)$row['warranty_period']) : '1 year', PDO::PARAM_STR);
                 $stmt->bindValue(':price', isset($row['price']) ? (float)$row['price'] : 0);
-                $stmt->bindValue(':stock_quantity', isset($row['stock_quantity']) ? max(0, intval($row['stock_quantity'])) : 1, PDO::PARAM_INT);
+                $stmt->bindValue(
+                    ':stock_quantity',
+                    $resolvedStockQuantity,
+                    PDO::PARAM_INT,
+                );
                 $stmt->bindValue(':status', $status, PDO::PARAM_STR);
 
                 if (!$stmt->execute()) {
                     return ['success' => false, 'message' => 'Failed to create product'];
                 }
 
+                $createdId = (int)$this->conn->lastInsertId();
+                // Safety write: ensures stock_quantity persists exactly as resolved value.
+                $qtyStmt = $this->conn->prepare("UPDATE products SET stock_quantity = :stock_quantity WHERE id = :id");
+                $qtyStmt->bindValue(':stock_quantity', $resolvedStockQuantity, PDO::PARAM_INT);
+                $qtyStmt->bindValue(':id', $createdId, PDO::PARAM_INT);
+                $qtyStmt->execute();
+
                 return [
                     'success' => true,
-                    'product_id' => (int)$this->conn->lastInsertId(),
+                    'product_id' => $createdId,
                     'product_code' => $productCode,
                     'product_name' => $productName
                 ];
@@ -1934,9 +2033,8 @@ class AdminAPI {
             $validClaimTypes = ['none', 'shop_claim', 'company_claim', 'sun_to_company', 'company_to_sun'];
             $validStatuses = ['active', 'inactive', 'discontinued', 'out_of_stock'];
 
-            $category = isset($data['category']) && trim((string)$data['category']) !== ''
-                ? trim((string)$data['category'])
-                : (string)($existingProduct['category'] ?? 'other');
+            $rawCategory = isset($data['category']) ? (string)$data['category'] : '';
+            $category = $this->normalizeDbCategoryValue($rawCategory, (string)($existingProduct['category'] ?? ''));
 
             $claimType = isset($data['claim_type']) ? strtolower(trim((string)$data['claim_type'])) : strtolower((string)($existingProduct['claim_type'] ?? 'none'));
             if (!in_array($claimType, $validClaimTypes, true)) {
@@ -1981,7 +2079,7 @@ class AdminAPI {
             $stmt->bindValue(':warranty_period', isset($data['warranty_period']) && trim((string)$data['warranty_period']) !== '' ? trim((string)$data['warranty_period']) : (string)($existingProduct['warranty_period'] ?? '1 year'), PDO::PARAM_STR);
             $stmt->bindValue(':price', isset($data['price']) ? (float)$data['price'] : (float)($existingProduct['price'] ?? 0));
             if ($hasStockQuantityColumn) {
-                $stockQuantity = isset($data['stock_quantity']) ? max(0, intval($data['stock_quantity'])) : intval($existingProduct['stock_quantity'] ?? 1);
+                $stockQuantity = isset($data['stock_quantity']) ? max(0, intval($data['stock_quantity'])) : intval($existingProduct['stock_quantity'] ?? 0);
                 $stmt->bindValue(':stock_quantity', $stockQuantity, PDO::PARAM_INT);
             }
             $stmt->bindValue(':status', $status, PDO::PARAM_STR);

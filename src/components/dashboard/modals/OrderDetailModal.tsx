@@ -133,6 +133,7 @@ const withIdFallback = (names: string[], ids: number[], labelPrefix: string) => 
 interface ProductEntry {
   label: string;
   serialNumber: string;
+  quantity: number;
 }
 
 const buildOrderProductEntries = (
@@ -175,18 +176,31 @@ const buildOrderProductEntries = (
 
   const entries = ids.map((id, index) => {
     const matched = products.find((product) => product.id === id);
+    const fallbackName = names[index] || "";
+    const matchedByName =
+      !matched && fallbackName
+        ? products.find(
+            (product) =>
+              String(product.product_name || "").trim().toLowerCase() ===
+              fallbackName.trim().toLowerCase(),
+          )
+        : undefined;
     return {
-      label:
-        names[index] ||
-        matched?.product_name ||
-        `${isReplacement ? "Replacement Product" : "Product"}`,
-      serialNumber: serials[index] || matched?.serial_number || (index === 0 ? fallbackSerial : "") || "",
+      label: fallbackName || matched?.product_name || matchedByName?.product_name || `${isReplacement ? "Replacement Product" : "Product"}`,
+      serialNumber: serials[index] || matched?.serial_number || matchedByName?.serial_number || (index === 0 ? fallbackSerial : "") || "",
+      quantity: Number((matched ?? matchedByName)?.stock_quantity ?? 0),
     };
   });
 
   if (entries.length > 0) return entries;
 
   return withIdFallback(names, ids, isReplacement ? "Replacement Product" : "Product").map((label, index) => ({
+    quantity: Number(
+      products.find(
+        (product) =>
+          String(product.product_name || "").trim().toLowerCase() === String(label || "").trim().toLowerCase(),
+      )?.stock_quantity ?? 0,
+    ),
     label,
     serialNumber: serials[index] || (index === 0 ? fallbackSerial : "") || "",
   }));
@@ -203,6 +217,7 @@ const renderProductCollection = (entries: ProductEntry[], emptyLabel: string) =>
         <div className="order-detail-product-table-head">
           <span>S.No</span>
           <span>Product Name</span>
+          <span>Qty</span>
           <span>Serial Number</span>
         </div>
         {entries.map((entry, index) => (
@@ -213,6 +228,7 @@ const renderProductCollection = (entries: ProductEntry[], emptyLabel: string) =>
           >
             <span>{index + 1}</span>
             <span>{entry.label}</span>
+            <span>{entry.quantity}</span>
             <span>{entry.serialNumber || "N/A"}</span>
           </div>
         ))}

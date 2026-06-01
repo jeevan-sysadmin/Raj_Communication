@@ -119,6 +119,7 @@ const withIdFallback = (names: string[], ids: number[], prefix: string) =>
 interface ProductEntry {
   label: string;
   serialNumber: string;
+  quantity: number;
 }
 
 const parseSerialList = (value: unknown) => normalizeNames(value);
@@ -164,7 +165,7 @@ const buildOrderProductEntries = (
     const matched = products.find((product) => product.id === id);
     const label = names[index] || matched?.product_name || `${isReplacement ? "Replacement Product" : "Product"} #${id}`;
     const serialNumber = serialsFromList[index] || matched?.serial_number || (index === 0 ? fallbackSerial : "") || "";
-    return { label, serialNumber };
+    return { label, serialNumber, quantity: Number(matched?.stock_quantity ?? 0) };
   });
 
   if (idEntries.length > 0) return idEntries;
@@ -172,12 +173,13 @@ const buildOrderProductEntries = (
   return withIdFallback(names, ids, isReplacement ? "Replacement Product" : "Product").map((label, index) => ({
     label,
     serialNumber: serialsFromList[index] || (index === 0 ? fallbackSerial : "") || "",
+    quantity: 0,
   }));
 };
 
 const getOrderProductEntries = (order: Order, products: Product[]) => {
   const entries = buildOrderProductEntries(order, products, false);
-  return entries.length > 0 ? entries : [{ label: "Not added", serialNumber: "" }];
+  return entries.length > 0 ? entries : [{ label: "Not added", serialNumber: "", quantity: 0 }];
 };
 
 const getOrderReplacementEntries = (order: Order, products: Product[]) => {
@@ -185,7 +187,7 @@ const getOrderReplacementEntries = (order: Order, products: Product[]) => {
 };
 
 const formatProductEntry = (entry: ProductEntry) =>
-  entry.serialNumber ? `${entry.label} (SN: ${entry.serialNumber})` : entry.label;
+  `${entry.label} (Qty: ${entry.quantity}${entry.serialNumber ? `, SN: ${entry.serialNumber}` : ""})`;
 
 const formatProductEntryList = (entries: ProductEntry[], fallback: string) =>
   entries.length > 0
@@ -445,6 +447,7 @@ const renderOrderProductChips = (
         {visibleEntries.map((entry, index) => (
           <span key={`${entry.label}-${index}`} className="product-chip">
             <span className="product-chip-title">{index + 1}. {entry.label}</span>
+            <small className="product-chip-serial">Qty: {entry.quantity}</small>
             <small className="product-chip-serial">SN: {entry.serialNumber || "N/A"}</small>
           </span>
         ))}

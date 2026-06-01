@@ -206,7 +206,7 @@ interface Product {
   is_spare_product?: boolean | number | string;
   brand: string;
   model: string;
-  category: 'laptop' | 'desktop' | 'mobile' | 'tablet' | 'accessory' | 'other';
+  category: string;
   claim_type?: string;
   specifications: string;
   purchase_date: string;
@@ -1731,12 +1731,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   ];
 
   const categoryOptions = [
-    { value: 'laptop', label: 'Laptop' },
-    { value: 'desktop', label: 'Desktop' },
-    { value: 'mobile', label: 'Mobile' },
-    { value: 'tablet', label: 'Tablet' },
-    { value: 'accessory', label: 'Accessory' },
-    { value: 'other', label: 'Other' }
+    { value: 'CAMERA', label: 'CAMERA' },
+    { value: 'DVR', label: 'DVR' },
+    { value: 'NVR', label: 'NVR' },
+    { value: 'HARDDISK', label: 'HARDDISK' },
+    { value: 'SOLAR CAMERA', label: 'SOLAR CAMERA' },
+    { value: 'PTCAMERA', label: 'PTCAMERA' },
+    { value: 'SD CARD', label: 'SD CARD' },
+    { value: 'SSD', label: 'SSD' },
+    { value: 'POWER SUPPLY', label: 'POWER SUPPLY' },
+    { value: 'MONITOR', label: 'MONITOR' },
+    { value: 'EXTENDER', label: 'EXTENDER' },
+    { value: 'MEDIA CONVERTER', label: 'MEDIA CONVERTER' },
+    { value: 'PTZCAMERA', label: 'PTZCAMERA' },
+    { value: 'POE SWITCH', label: 'POE SWITCH' },
+    { value: 'DESKTOP SWITCH', label: 'DESKTOP SWITCH' },
+    { value: 'TV', label: 'TV' },
+    { value: 'UPS', label: 'UPS' },
+    { value: 'OTHERS', label: 'OTHERS' }
   ];
 
   const deliveryStatusOptions = [
@@ -1802,10 +1814,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     is_spare_product: false,
     brand: '',
     model: '',
-    category: 'laptop' as 'laptop' | 'desktop' | 'mobile' | 'tablet' | 'accessory' | 'other',
+    category: '',
     claim_type: 'none',
     price: '0',
-    stock_quantity: '0',
+    stock_quantity: '1',
     min_stock_level: '5',
     purchase_date: new Date().toISOString().split('T')[0],
     warranty_period: '1 year',
@@ -2525,7 +2537,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           is_spare_product: product.is_spare_product ?? 0,
           brand: product.brand || '',
           model: product.model || '',
-          category: (product.category as 'laptop' | 'desktop' | 'mobile' | 'tablet' | 'accessory' | 'other') || 'other',
+          category: String(product.category || 'OTHERS'),
           claim_type: product.claim_type || 'none',
           specifications: product.specifications || '',
           purchase_date: product.purchase_date || '',
@@ -3334,7 +3346,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   };
   
   // Handle create product
-  const handleCreateProduct = async (options?: { keepOpen?: boolean }) => {
+  const handleCreateProduct = async (options?: { keepOpen?: boolean; quantityOverride?: number }) => {
     if (createSubmitState.product) return;
     setCreateSubmitState((prev) => ({ ...prev, product: true }));
     try {
@@ -3344,33 +3356,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         return;
       }
 
-      let rowQuantityByKey: Record<string, number> = {};
-      if (newProduct.product_rows_json) {
-        try {
-          const parsedRows = JSON.parse(newProduct.product_rows_json) as Array<{
-            product_name?: string;
-            serial_number?: string;
-            stock_quantity?: string | number;
-          }>;
-          rowQuantityByKey = (Array.isArray(parsedRows) ? parsedRows : []).reduce<Record<string, number>>((acc, row) => {
-            const name = String(row?.product_name ?? '').trim();
-            const serial = String(row?.serial_number ?? '').replace(/\s+/g, '');
-            const key = `${name}__${serial}`;
-            if (!name) return acc;
-            const qty = Number.parseInt(String(row?.stock_quantity ?? ''), 10);
-            acc[key] = Number.isFinite(qty) ? Math.max(0, qty) : 0;
-            return acc;
-          }, {});
-        } catch (_error) {
-          rowQuantityByKey = {};
-        }
+      const typedQuantityRaw =
+        options?.quantityOverride !== undefined
+          ? options.quantityOverride
+          : Number.parseInt(String(newProduct.stock_quantity ?? '').trim(), 10);
+      const typedQuantity = Number.isFinite(typedQuantityRaw) ? typedQuantityRaw : 0;
+      if (typedQuantity <= 0) {
+        setError('Quantity is required and must be greater than 0');
+        return;
       }
-
-      const defaultQuantity = Math.max(0, Number.parseInt(String(newProduct.stock_quantity ?? '0'), 10) || 0);
       const productRows = parseResult.pairs.map((pair) => ({
         product_name: pair.productName,
         serial_number: pair.serialNumber,
-        stock_quantity: rowQuantityByKey[`${pair.productName}__${pair.serialNumber}`] ?? defaultQuantity,
+        // Always honor the quantity user typed in the form.
+        stock_quantity: typedQuantity,
         is_spare_product: newProduct.is_spare_product ? 1 : 0,
         brand: newProduct.brand || '',
         model: newProduct.model || '',
@@ -3386,7 +3385,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       const payload = productRows.length > 1 ? { products: productRows } : productRows[0];
       console.log('Creating product with data:', payload);
 
-      const data = await apiRequest('Product.php', 'POST', payload);
+      const normalizedPayload = Array.isArray((payload as any)?.products)
+        ? {
+            stock_quantity: typedQuantity,
+            products: (payload as any).products.map((row: any) => ({
+              ...row,
+              category: String(row?.category || '').trim() || 'OTHERS',
+              stock_quantity: typedQuantity,
+            })),
+          }
+        : {
+            ...(payload as any),
+            category: String((payload as any)?.category || '').trim() || 'OTHERS',
+            stock_quantity: typedQuantity,
+          };
+
+      const data = await apiRequest('admin_api.php?action=create_product', 'POST', normalizedPayload);
       if (!(data.success || data.partial)) {
         setError(data.message || 'Failed to create product');
         return;
@@ -4272,15 +4286,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   const filteredProductsForDashboard = products.filter((product) => {
     const search = searchTerm.toLowerCase();
+    const normalizedSearch = searchTerm.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    const productSerial = String(product.serial_number || '');
+    const normalizedProductSerial = productSerial.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
     const matchesSearch =
       !searchTerm ||
       [
         product.product_code,
         product.product_name,
+        product.serial_number || '',
         product.brand,
         product.model,
         product.category
-      ].some((value) => String(value || '').toLowerCase().includes(search));
+      ].some((value) => String(value || '').toLowerCase().includes(search)) ||
+      (!!normalizedSearch && normalizedProductSerial.includes(normalizedSearch));
 
     const matchesStatus = !filters.products.status || product.status === filters.products.status;
     const matchesCategory = !filters.products.category || product.category === filters.products.category;
@@ -5578,13 +5597,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   const submitCreateProductForm = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!String(newProduct.category || '').trim()) {
+      setError('Category is required');
+      return;
+    }
+    const formElement = e.currentTarget;
+    const qtyField = formElement.elements.namedItem('stock_quantity') as HTMLInputElement | RadioNodeList | null;
+    const qtyFromForm =
+      qtyField && typeof (qtyField as HTMLInputElement | RadioNodeList).value === 'string'
+        ? (qtyField as HTMLInputElement | RadioNodeList).value
+        : '';
+    const quantityOverride = Number.parseInt(String(qtyFromForm || newProduct.stock_quantity || '').trim(), 10) || 0;
+    if (quantityOverride <= 0) {
+      setError('Quantity must be greater than 0');
+      return;
+    }
     const submitter = (e.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
     const submitAction = submitter?.value || 'create_close';
-    void handleCreateProduct({ keepOpen: submitAction === 'create_next' });
+    void handleCreateProduct({ keepOpen: submitAction === 'create_next', quantityOverride });
   };
 
   const submitEditProductForm = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (editType === 'product' && !String(editData?.category || '').trim()) {
+      setError('Category is required');
+      return;
+    }
     void handleSaveEdit();
   };
 
@@ -6653,7 +6691,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         productForm={{
           product_name: editData?.product_name || '',
           serial_number: editData?.serial_number || '',
-          stock_quantity: String(editData?.stock_quantity ?? '1'),
+          stock_quantity: String(editData?.stock_quantity ?? '0'),
           is_spare_product:
             editData?.is_spare_product === true ||
             editData?.is_spare_product === 1 ||
@@ -6661,7 +6699,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             editData?.is_spare_product === 'true',
           brand: editData?.brand || '',
           model: editData?.model || '',
-          category: editData?.category || 'laptop',
+          category: editData?.category || '',
           claim_type: editData?.claim_type || 'none',
           specifications: editData?.specifications || '',
           purchase_date: editData?.purchase_date || '',
@@ -7090,11 +7128,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                 <div className="form-group">
                   <label>Category *</label>
                   <select
-                    value={editData.category || 'other'}
+                    value={editData.category || ''}
                     onChange={(e) => setEditData({...editData, category: e.target.value})}
                     className="form-select"
                     required
                   >
+                    <option value="">Select category</option>
                     {categoryOptions.map(option => (
                       <option key={option.value} value={option.value}>
                         {option.label}
