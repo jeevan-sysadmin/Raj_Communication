@@ -12,6 +12,20 @@ body {
   background: #0a0e17;
 }
 
+img,
+svg,
+canvas,
+video {
+  max-width: 100%;
+}
+
+input,
+select,
+textarea,
+button {
+  font: inherit;
+}
+
 /* Main container */
 .login-container {
   min-height: 100vh;

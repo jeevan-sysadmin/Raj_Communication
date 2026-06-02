@@ -1,4 +1,6 @@
 <?php
+date_default_timezone_set('Asia/Kolkata');
+
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
@@ -511,16 +513,12 @@ function mergeProductStatusDatesMap($productIds, $newStatusMap, $existingDatesMa
         }
         // Keep all reached flow dates filled in sequence.
         if ($status === 'rajtocom') {
-            if ($row['rajtocom'] === null) {
-                $row['rajtocom'] = $timestamp;
-            }
+            $row['rajtocom'] = $timestamp;
         } elseif ($status === 'comtoraj') {
             if ($row['rajtocom'] === null) {
                 $row['rajtocom'] = $timestamp;
             }
-            if ($row['comtoraj'] === null) {
-                $row['comtoraj'] = $timestamp;
-            }
+            $row['comtoraj'] = $timestamp;
         } elseif ($status === 'deliveryed') {
             if ($row['rajtocom'] === null) {
                 $row['rajtocom'] = $timestamp;
@@ -528,9 +526,7 @@ function mergeProductStatusDatesMap($productIds, $newStatusMap, $existingDatesMa
             if ($row['comtoraj'] === null) {
                 $row['comtoraj'] = $timestamp;
             }
-            if ($row['deliveryed'] === null) {
-                $row['deliveryed'] = $timestamp;
-            }
+            $row['deliveryed'] = $timestamp;
         }
 
         $merged[$key] = $row;

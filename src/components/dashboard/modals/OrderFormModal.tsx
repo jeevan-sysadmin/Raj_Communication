@@ -126,6 +126,62 @@ const normalizeRepairingStatusMap = (value: unknown): Record<string, RepairingSt
   return normalized;
 };
 
+const normalizeProductStatusDatesMap = (
+  value: unknown,
+): Record<string, { pending?: string; rajtocom?: string; comtoraj?: string; deliveryed?: string }> => {
+  if (!value) return {};
+
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+      if (typeof parsed === "string") {
+        parsed = JSON.parse(parsed);
+      }
+    } catch {
+      return {};
+    }
+  }
+
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+
+  const normalized: Record<string, { pending?: string; rajtocom?: string; comtoraj?: string; deliveryed?: string }> = {};
+  Object.entries(parsed as Record<string, unknown>).forEach(([productId, dates]) => {
+    const key = productId.trim();
+    if (!key || typeof dates !== "object" || dates === null || Array.isArray(dates)) return;
+    const row = dates as Record<string, unknown>;
+    normalized[key] = {
+      pending: row.pending ? String(row.pending) : "",
+      rajtocom: row.rajtocom ? String(row.rajtocom) : "",
+      comtoraj: row.comtoraj ? String(row.comtoraj) : "",
+      deliveryed: row.deliveryed ? String(row.deliveryed) : "",
+    };
+  });
+
+  return normalized;
+};
+
+const getIndiaTimestampString = () => {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = Object.fromEntries(
+    formatter
+      .formatToParts(new Date())
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  ) as Record<string, string>;
+
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+};
+
 const normalizeIssueDescriptionMap = (value: unknown): Record<string, string> => {
   if (!value) return {};
   let parsed = value;
@@ -552,9 +608,33 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
       ...productStatusMap,
       [normalizedProductId]: normalizedStatus,
     };
+    const currentTimestamp = getIndiaTimestampString();
+    const existingDatesMap = normalizeProductStatusDatesMap((orderForm as unknown as { product_status_dates_map?: unknown }).product_status_dates_map);
+    const currentDates = existingDatesMap[normalizedProductId] || {};
+    const nextDatesMap = {
+      ...existingDatesMap,
+      [normalizedProductId]: {
+        pending: currentDates.pending || "",
+        rajtocom:
+          normalizedStatus === "rajtocom"
+            ? currentTimestamp
+            : (currentDates.rajtocom || ""),
+        comtoraj:
+          normalizedStatus === "comtoraj"
+            ? currentTimestamp
+            : (currentDates.comtoraj || ""),
+        deliveryed:
+          normalizedStatus === "deliveryed"
+            ? currentTimestamp
+            : (currentDates.deliveryed || ""),
+      },
+    };
     setProductStatusMap(nextStatusMap);
     onChange({
       target: { name: "product_status_map", value: JSON.stringify(nextStatusMap) }
+    } as ChangeEvent<HTMLInputElement>);
+    onChange({
+      target: { name: "product_status_dates_map", value: JSON.stringify(nextDatesMap) }
     } as ChangeEvent<HTMLInputElement>);
   };
 

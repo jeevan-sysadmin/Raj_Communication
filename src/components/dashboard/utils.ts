@@ -3,16 +3,36 @@ export const formatCurrency = (value: string | number | undefined): string => {
   return Number.isFinite(amount) ? amount.toFixed(2) : "0.00";
 };
 
-export const formatDisplayDate = (dateString: string): string => {
-  if (!dateString || dateString === "0000-00-00 00:00:00") {
-    return "-";
+export const parseAppDate = (dateString: string): Date | null => {
+  if (!dateString || dateString === "0000-00-00" || dateString === "0000-00-00 00:00:00") {
+    return null;
   }
 
-  const normalized = dateString.includes(" ") ? dateString.replace(" ", "T") : dateString;
-  const date = new Date(normalized);
-  if (Number.isNaN(date.getTime())) {
-    return "-";
+  const trimmed = String(dateString).trim();
+  const match = trimmed.match(
+    /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/,
+  );
+
+  if (match) {
+    const [, year, month, day, hours = "0", minutes = "0", seconds = "0"] = match;
+    const date = new Date(
+      Number(year),
+      Number(month) - 1,
+      Number(day),
+      Number(hours),
+      Number(minutes),
+      Number(seconds),
+    );
+    return Number.isNaN(date.getTime()) ? null : date;
   }
+
+  const date = new Date(trimmed);
+  return Number.isNaN(date.getTime()) ? null : date;
+};
+
+export const formatDisplayDate = (dateString: string): string => {
+  const date = parseAppDate(dateString);
+  if (!date) return "-";
 
   return date.toLocaleDateString("en-IN", {
     year: "numeric",
@@ -21,11 +41,23 @@ export const formatDisplayDate = (dateString: string): string => {
   });
 };
 
+export const formatDisplayDateTime = (dateString: string): string => {
+  const date = parseAppDate(dateString);
+  if (!date) return "-";
+
+  return date.toLocaleString("en-IN", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
+};
+
 export const formatISODate = (dateString: string): string => {
-  const date = new Date(dateString);
-  if (Number.isNaN(date.getTime())) {
-    return "";
-  }
+  const date = parseAppDate(dateString);
+  if (!date) return "";
 
   return date.toISOString().split("T")[0];
 };

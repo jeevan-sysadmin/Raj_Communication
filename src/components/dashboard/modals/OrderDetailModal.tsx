@@ -15,7 +15,7 @@ import {
   FiX,
 } from "react-icons/fi";
 import type { Order, Product } from "../types";
-import { formatCurrency, formatDisplayDate, getBalanceDue } from "../utils";
+import { formatCurrency, formatDisplayDate, formatDisplayDateTime, getBalanceDue, parseAppDate } from "../utils";
 
 interface OrderDetailModalProps {
   order: Order;
@@ -33,13 +33,12 @@ const formatOrderMeta = (value?: string) =>
 
 const formatFlowDate = (value?: string) => {
   if (!value || value === "0000-00-00" || value === "0000-00-00 00:00:00") return "Not set";
-  const normalized = value.includes(" ") ? value.replace(" ", "T") : value;
-  const parsed = new Date(normalized);
-  if (Number.isNaN(parsed.getTime())) {
+  const parsed = parseAppDate(value);
+  if (!parsed) {
     // Always show backend value instead of hiding valid-looking timestamps.
     return value;
   }
-  return value;
+  return formatDisplayDateTime(value);
 };
 
 const prettify = (value?: string) =>
@@ -263,6 +262,13 @@ const renderCompanyProductBlocks = (
     </div>
   );
 };
+
+const renderFlowDateCell = (label: string, value?: string) => (
+  <div className="flow-status-date-item">
+    <span className="flow-status-date-label">{label}</span>
+    <strong className="flow-status-date-value">{formatFlowDate(value)}</strong>
+  </div>
+);
 
 interface RepairingStatusEntry {
   productId: number;
@@ -641,6 +647,11 @@ const OrderDetailModal = ({
               </p>
               <p title={companyNamesText}>Companies: {companyNamesText}</p>
             </div>
+            <div className="order-detail-meta-strip">
+              <span>Created {formatDisplayDateTime(order.created_at)}</span>
+              <span>Payment {prettify(order.payment_status)}</span>
+              <span>Staff {order.staff_name || "Not assigned"}</span>
+            </div>
           </div>
           <div className="order-detail-header-actions">
             <div className="order-detail-status-row">
@@ -724,6 +735,9 @@ const OrderDetailModal = ({
           <div className="order-detail-grid">
             <div className="detail-section detail-section-emphasis">
               <h3><FiInfo /> Service Summary</h3>
+              <p className="detail-section-intro">
+                Quick view of the customer complaint, technician notes, and the current repair context.
+              </p>
               <div className="detail-stack">
                 <div className="detail-copy-block">
                   <span className="detail-copy-label">Issue Description (By Product):</span>
@@ -759,6 +773,9 @@ const OrderDetailModal = ({
 
             <div className="detail-section">
               <h3><FiPackage /> Product Information</h3>
+              <p className="detail-section-intro">
+                Product list, replacement items, and per-product service progress.
+              </p>
               <div className="detail-item detail-item-product-list">
                 <span className="detail-label">Main Products</span>
                 <div className="detail-value">
@@ -788,6 +805,7 @@ const OrderDetailModal = ({
                         const label = productNameById.get(productId) || `Product #${productId}`;
                         const current = productFlowStatusMap[String(productId)] || "pending";
                         const dates = productFlowDatesMap[String(productId)] || {};
+                        const pendingTime = order.created_at || dates.pending;
                         return (
                           <div key={`flow-${productId}`} className="flow-status-card">
                             <div className="flow-status-head">
@@ -795,10 +813,10 @@ const OrderDetailModal = ({
                               <span className={`flow-status-pill flow-${current}`}>{prettify(current)}</span>
                             </div>
                             <div className="flow-status-dates">
-                              <span>Pending: {formatFlowDate(dates.pending)}</span>
-                              <span>RajToCom: {formatFlowDate(dates.rajtocom)}</span>
-                              <span>ComToRaj: {formatFlowDate(dates.comtoraj)}</span>
-                              <span>Deliveryed: {formatFlowDate(dates.deliveryed)}</span>
+                              {renderFlowDateCell("Pending", pendingTime)}
+                              {renderFlowDateCell("RajToCom", dates.rajtocom)}
+                              {renderFlowDateCell("ComToRaj", dates.comtoraj)}
+                              {renderFlowDateCell("Deliveryed", dates.deliveryed)}
                             </div>
                           </div>
                         );
@@ -813,6 +831,9 @@ const OrderDetailModal = ({
 
             <div className="detail-section">
               <h3><FiDollarSign /> Payment Snapshot</h3>
+              <p className="detail-section-intro">
+                Financial summary with final amount, deposit, and remaining balance.
+              </p>
               <div className="detail-item"><span className="detail-label">Estimated Cost</span><span className="detail-value">Rs. {formatCurrency(order.estimated_cost)}</span></div>
               <div className="detail-item"><span className="detail-label">Final Cost</span><span className="detail-value">Rs. {finalAmount}</span></div>
               <div className="detail-item"><span className="detail-label">Deposit</span><span className="detail-value">Rs. {depositAmount}</span></div>
@@ -826,6 +847,9 @@ const OrderDetailModal = ({
 
             <div className="detail-section">
               <h3><FiTrendingUp /> Workflow</h3>
+              <p className="detail-section-intro">
+                Order-level service state, urgency, warranty, and delivery milestones.
+              </p>
               <div className="detail-item">
                 <span className="detail-label">Status</span>
                 <span className="detail-value order-inline-badge" style={{ backgroundColor: `${statusColor}18`, color: statusColor }}>
@@ -850,6 +874,9 @@ const OrderDetailModal = ({
 
             <div className="detail-section">
               <h3><FiUsers /> Team & Client</h3>
+              <p className="detail-section-intro">
+                Contact details, company mapping, and assigned service ownership.
+              </p>
               <div className="detail-item"><span className="detail-label">Client Phone</span><span className="detail-value">{order.client_phone || "N/A"}</span></div>
               <div className="detail-item"><span className="detail-label">Client Email</span><span className="detail-value">{order.client_email || "N/A"}</span></div>
               <div className="detail-item">
@@ -872,7 +899,10 @@ const OrderDetailModal = ({
 
             <div className="detail-section">
               <h3><FiClock /> Record Timeline</h3>
-              <div className="detail-item"><span className="detail-label">Created At</span><span className="detail-value">{new Date(order.created_at).toLocaleString()}</span></div>
+              <p className="detail-section-intro">
+                Core record metadata and audit-friendly order identifiers.
+              </p>
+              <div className="detail-item"><span className="detail-label">Created At</span><span className="detail-value">{formatDisplayDateTime(order.created_at)}</span></div>
               <div className="detail-item"><span className="detail-label">Order ID</span><span className="detail-value">#{order.id}</span></div>
               <div className="detail-item"><span className="detail-label">Code</span><span className="detail-value">{order.order_code}</span></div>
             </div>

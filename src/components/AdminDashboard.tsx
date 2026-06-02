@@ -1,5 +1,5 @@
 // src/components/AdminDashboard.tsx
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useDeferredValue, useMemo } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import {
@@ -29,6 +29,7 @@ import {
 } from './dashboard/receiptUtils';
 import { exportStyledPdfReport } from './dashboard/pdfExport';
 import { expandProductNameSerialPairs } from './dashboard/productBatch';
+import { formatDisplayDateTime, parseAppDate } from './dashboard/utils';
 import ConfirmDeleteModal from './dashboard/modals/ConfirmDeleteModal';
 import type { Order as DashboardOrder } from './dashboard/types';
 
@@ -417,7 +418,8 @@ const OrderDetailsModal: React.FC<{
   };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
+    const date = parseAppDate(dateString);
+    if (!date) return '-';
     return date.toLocaleDateString('en-IN', {
       day: 'numeric',
       month: 'long',
@@ -427,16 +429,9 @@ const OrderDetailsModal: React.FC<{
 
   const formatDateTime = (dateString?: string) => {
     if (!dateString) return '-';
-    const normalized = dateString.includes(' ') ? dateString.replace(' ', 'T') : dateString;
-    const date = new Date(normalized);
-    if (Number.isNaN(date.getTime())) return dateString;
-    return date.toLocaleString('en-IN', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
+    const date = parseAppDate(dateString);
+    if (!date) return dateString;
+    return formatDisplayDateTime(dateString);
   };
 
   const parseJsonArray = (value: string): unknown[] | null => {
@@ -497,7 +492,7 @@ const OrderDetailsModal: React.FC<{
     return ids.map((id) => `${labelPrefix} #${id}`);
   };
 
-  type ProductEntry = { label: string; serialNumber: string };
+  type ProductEntry = { label: string; serialNumber: string; model: string };
 
   const buildOrderProductEntries = (
     ids: number[],
@@ -511,6 +506,7 @@ const OrderDetailsModal: React.FC<{
       return {
         label: names[index] || matched?.product_name || `${prefix} #${id}`,
         serialNumber: serials[index] || matched?.serial_number || (index === 0 ? fallbackSerial : '') || '',
+        model: String(matched?.model || (matched as any)?.product_model || '').trim(),
       };
     });
 
@@ -519,6 +515,7 @@ const OrderDetailsModal: React.FC<{
     return names.map((name, index) => ({
       label: name,
       serialNumber: serials[index] || (index === 0 ? fallbackSerial : '') || '',
+      model: '',
     }));
   };
 
@@ -824,6 +821,24 @@ const OrderDetailsModal: React.FC<{
     return 'N/A';
   };
 
+  const getModelForProductLabel = (productLabel: string): string => {
+    const normalizedLabel = String(productLabel || '').trim().toLowerCase();
+    if (!normalizedLabel) return 'N/A';
+
+    const fromPrimaryEntry = primaryEntries.find(
+      (entry) => String(entry.label || '').trim().toLowerCase() === normalizedLabel,
+    )?.model;
+    if (fromPrimaryEntry && String(fromPrimaryEntry).trim()) return String(fromPrimaryEntry).trim();
+
+    const fromProducts = products.find(
+      (product) => String(product.product_name || '').trim().toLowerCase() === normalizedLabel,
+    );
+    const model = String(fromProducts?.model || (fromProducts as any)?.product_model || '').trim();
+    if (model) return model;
+
+    return 'N/A';
+  };
+
   const renderCompanyProductBlocks = (
     lines: Array<{ companyLabel: string; productNames: string[] }>,
   ) => {
@@ -832,22 +847,73 @@ const OrderDetailsModal: React.FC<{
     }
 
     return (
-      <div>
+      <div className="product-company-groups-admin">
         {lines.map((line, index) => (
-          <div key={`${line.companyLabel}-${index}`} style={{ marginBottom: '10px' }}>
-            <div><strong>{line.companyLabel}</strong></div>
+          <div key={`${line.companyLabel}-${index}`} className="product-company-group-admin">
+            <div className="product-company-heading-admin">{line.companyLabel}</div>
             {line.productNames.length > 0 ? (
-              line.productNames.map((productName, productIndex) => (
-                <div key={`${line.companyLabel}-${productName}-${productIndex}`} style={{ marginBottom: '6px' }}>
-                  <div>{productIndex + 1}. {productName}</div>
-                  <div style={{ fontSize: '12px', color: '#475569', marginLeft: '14px' }}>
-                    {getSerialForProductLabel(productName)}
+              <div className="product-card-grid-admin">
+                {line.productNames.map((productName, productIndex) => (
+                  <div
+                    key={`${line.companyLabel}-${productName}-${productIndex}`}
+                    className="product-entry-card-admin"
+                  >
+                    <div className="product-entry-index-admin">
+                      Product {productIndex + 1}
+                    </div>
+                    <div className="product-entry-name-admin">{productName}</div>
+                    <div className="product-entry-meta-admin">
+                      <span className="product-entry-meta-label-admin">Model</span>
+                      <span className="product-entry-meta-value-admin">
+                        {getModelForProductLabel(productName)}
+                      </span>
+                    </div>
+                    <div className="product-entry-meta-admin">
+                      <span className="product-entry-meta-label-admin">Serial No</span>
+                      <span className="product-entry-meta-value-admin">
+                        {getSerialForProductLabel(productName)}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))
+                ))}
+              </div>
             ) : (
               <div>No products</div>
             )}
+          </div>
+        ))}
+      </div>
+    );
+  };
+
+  const renderFlowDateTileAdmin = (label: string, value?: string) => (
+    <div className="flow-date-tile-admin">
+      <span className="flow-date-label-admin">{label}</span>
+      <strong className="flow-date-value-admin">
+        {formatDateTime(value) === '-' ? 'Not set' : formatDateTime(value)}
+      </strong>
+    </div>
+  );
+
+  const renderStandaloneProductCards = (entries: ProductEntry[]) => {
+    if (entries.length === 0) {
+      return <span>Not added</span>;
+    }
+
+    return (
+      <div className="product-card-grid-admin">
+        {entries.map((entry, index) => (
+          <div key={`${entry.label}-${entry.serialNumber}-${index}`} className="product-entry-card-admin">
+            <div className="product-entry-index-admin">Product {index + 1}</div>
+            <div className="product-entry-name-admin">{entry.label || 'Unnamed product'}</div>
+            <div className="product-entry-meta-admin">
+              <span className="product-entry-meta-label-admin">Model</span>
+              <span className="product-entry-meta-value-admin">{entry.model || 'N/A'}</span>
+            </div>
+            <div className="product-entry-meta-admin">
+              <span className="product-entry-meta-label-admin">Serial No</span>
+              <span className="product-entry-meta-value-admin">{entry.serialNumber || 'N/A'}</span>
+            </div>
           </div>
         ))}
       </div>
@@ -865,8 +931,14 @@ const OrderDetailsModal: React.FC<{
         {/* Order Header */}
         <div className="order-header">
           <div className="order-code-section">
+            <span className="order-kicker-admin">Service Order</span>
             <h3 className="order-code">{order.order_code}</h3>
             <span className="order-date">Created: {formatDate(order.created_at)}</span>
+            <div className="order-meta-strip-admin">
+              <span>{order.client_name || 'Client not set'}</span>
+              <span>{companyNamesText}</span>
+              <span>{order.staff_name || 'Staff not assigned'}</span>
+            </div>
           </div>
           <div className="order-status-section">
             <div className="status-display">
@@ -884,12 +956,38 @@ const OrderDetailsModal: React.FC<{
           </div>
         </div>
 
+        <div className="order-overview-admin">
+          <div className="order-overview-card-admin">
+            <span className="overview-label-admin">Client</span>
+            <strong>{order.client_name || 'N/A'}</strong>
+            <p>{order.client_phone || 'Phone not available'}</p>
+          </div>
+          <div className="order-overview-card-admin">
+            <span className="overview-label-admin">Products</span>
+            <strong>{primaryEntries.length || 0} Item{primaryEntries.length === 1 ? '' : 's'}</strong>
+            <p>{primaryEntries[0]?.label || 'No product added'}</p>
+          </div>
+          <div className="order-overview-card-admin">
+            <span className="overview-label-admin">Financials</span>
+            <strong>Rs. {parseFloat(order.final_cost || order.estimated_cost || '0').toFixed(2)}</strong>
+            <p>{order.payment_status.replace('_', ' ')}</p>
+          </div>
+          <div className="order-overview-card-admin">
+            <span className="overview-label-admin">Workflow</span>
+            <strong>{order.status.charAt(0).toUpperCase() + order.status.slice(1)}</strong>
+            <p>{order.priority.charAt(0).toUpperCase() + order.priority.slice(1)} priority</p>
+          </div>
+        </div>
+
         <div className="order-details-grid">
           {/* Client Information */}
           <div className="detail-card client-info">
             <div className="detail-card-header">
               <FiUser className="detail-card-icon" />
-              <h4>Client Information</h4>
+              <div>
+                <h4>Client Information</h4>
+                <p className="detail-card-subtitle">Primary contact details for the service order.</p>
+              </div>
             </div>
             <div className="detail-card-content">
               <div className="detail-row">
@@ -925,7 +1023,10 @@ const OrderDetailsModal: React.FC<{
           <div className="detail-card product-info">
             <div className="detail-card-header">
               <FiPackage className="detail-card-icon" />
-              <h4>Product Information</h4>
+              <div>
+                <h4>Product Information</h4>
+                <p className="detail-card-subtitle">Company mapping, product list, and warranty context.</p>
+              </div>
             </div>
             <div className="detail-card-content">
               <div className="detail-row">
@@ -934,49 +1035,20 @@ const OrderDetailsModal: React.FC<{
               </div>
               <div className="detail-row">
                 <span className="detail-label">Main Products:</span>
-                <div className="detail-value">
+                <div className="detail-value product-detail-stack-admin">
                   {companyProductLines.length > 0 ? (
                     renderCompanyProductBlocks(companyProductLines)
                   ) : (
-                    <span
-                      title={
-                        primaryEntries.length
-                          ? primaryEntries
-                              .map((entry) =>
-                                entry.serialNumber ? `${entry.label} (SN: ${entry.serialNumber})` : entry.label,
-                              )
-                              .join(', ')
-                          : 'Not added'
-                      }
-                    >
-                      {primaryEntries.length
-                        ? primaryEntries
-                            .map((entry, index) =>
-                              `${index + 1}. ${entry.label}${entry.serialNumber ? ` (SN: ${entry.serialNumber})` : ''}`,
-                            )
-                            .join(', ')
-                        : 'Not added'}
-                    </span>
+                    renderStandaloneProductCards(primaryEntries)
                   )}
                 </div>
               </div>
               {replacementEntries.length > 0 && (
                 <div className="detail-row">
                   <span className="detail-label">Replacement Products:</span>
-                  <span
-                    className="detail-value"
-                    title={replacementEntries
-                      .map((entry) =>
-                        entry.serialNumber ? `${entry.label} (SN: ${entry.serialNumber})` : entry.label,
-                      )
-                      .join(', ')}
-                  >
-                    {replacementEntries
-                      .map((entry, index) =>
-                        `${index + 1}. ${entry.label}${entry.serialNumber ? ` (SN: ${entry.serialNumber})` : ''}`,
-                      )
-                      .join(', ')}
-                  </span>
+                  <div className="detail-value product-detail-stack-admin">
+                    {renderStandaloneProductCards(replacementEntries)}
+                  </div>
                 </div>
               )}
               {(brandValue || modelValue) && (
@@ -1015,7 +1087,10 @@ const OrderDetailsModal: React.FC<{
           <div className="detail-card repairing-status-info">
             <div className="detail-card-header">
               <FiTrendingUp className="detail-card-icon" />
-              <h4>Repairing Status</h4>
+              <div>
+                <h4>Repairing Status</h4>
+                <p className="detail-card-subtitle">Live repair readiness per product.</p>
+              </div>
             </div>
             <div className="detail-card-content">
               <div className="repairing-status-summary-admin">
@@ -1051,7 +1126,10 @@ const OrderDetailsModal: React.FC<{
           <div className="detail-card product-flow-info">
             <div className="detail-card-header">
               <FiTrendingUp className="detail-card-icon" />
-              <h4>Product Flow Status Timeline</h4>
+              <div>
+                <h4>Product Flow Status Timeline</h4>
+                <p className="detail-card-subtitle">Track when each product moved through service flow stages.</p>
+              </div>
             </div>
             <div className="detail-card-content">
               {productFlowIds.length > 0 ? (
@@ -1060,6 +1138,7 @@ const OrderDetailsModal: React.FC<{
                     const label = productNameById.get(productId) || `Product #${productId}`;
                     const current = productFlowStatusMap[String(productId)] || 'pending';
                     const dates = productFlowDatesMap[String(productId)] || {};
+                    const pendingTime = (order as any).created_at || dates.pending || '';
                     return (
                       <div key={`flow-admin-${productId}`} className="flow-status-card-admin">
                         <div className="flow-status-head-admin">
@@ -1067,10 +1146,10 @@ const OrderDetailsModal: React.FC<{
                           <span className={`flow-status-pill-admin flow-${current}`}>{current}</span>
                         </div>
                         <div className="flow-status-dates-admin">
-                          <span>Pending: {formatDateTime(dates.pending) === '-' ? 'Not set' : formatDateTime(dates.pending)}</span>
-                          <span>RajToCom: {formatDateTime(dates.rajtocom) === '-' ? 'Not set' : formatDateTime(dates.rajtocom)}</span>
-                          <span>ComToRaj: {formatDateTime(dates.comtoraj) === '-' ? 'Not set' : formatDateTime(dates.comtoraj)}</span>
-                          <span>Deliveryed: {formatDateTime(dates.deliveryed) === '-' ? 'Not set' : formatDateTime(dates.deliveryed)}</span>
+                          {renderFlowDateTileAdmin('Pending', pendingTime)}
+                          {renderFlowDateTileAdmin('RajToCom', dates.rajtocom)}
+                          {renderFlowDateTileAdmin('ComToRaj', dates.comtoraj)}
+                          {renderFlowDateTileAdmin('Deliveryed', dates.deliveryed)}
                         </div>
                       </div>
                     );
@@ -1086,7 +1165,10 @@ const OrderDetailsModal: React.FC<{
           <div className="detail-card service-details">
             <div className="detail-card-header">
               <FiHardDrive className="detail-card-icon" />
-              <h4>Service Details</h4>
+              <div>
+                <h4>Service Details</h4>
+                <p className="detail-card-subtitle">Issue summary, technician notes, and service-specific details.</p>
+              </div>
             </div>
             <div className="detail-card-content">
               <div className="detail-row full-width">
@@ -1157,7 +1239,10 @@ const OrderDetailsModal: React.FC<{
           <div className="detail-card financial-info">
             <div className="detail-card-header">
               <FiRupee className="detail-card-icon" />
-              <h4>Financial Information</h4>
+              <div>
+                <h4>Financial Information</h4>
+                <p className="detail-card-subtitle">Costs, payment state, and outstanding balance at a glance.</p>
+              </div>
             </div>
             <div className="detail-card-content">
               <div className="detail-row">
@@ -1203,7 +1288,10 @@ const OrderDetailsModal: React.FC<{
           <div className="detail-card timeline-info">
             <div className="detail-card-header">
               <FiDate className="detail-card-icon" />
-              <h4>Timeline & Dates</h4>
+              <div>
+                <h4>Timeline & Dates</h4>
+                <p className="detail-card-subtitle">Creation, updates, and delivery planning milestones.</p>
+              </div>
             </div>
             <div className="detail-card-content">
               <div className="detail-row">
@@ -1237,7 +1325,10 @@ const OrderDetailsModal: React.FC<{
           <div className="detail-card staff-info">
             <div className="detail-card-header">
               <FiUserCheck className="detail-card-icon" />
-              <h4>Staff Assignment</h4>
+              <div>
+                <h4>Staff Assignment</h4>
+                <p className="detail-card-subtitle">Service ownership and assignment details.</p>
+              </div>
             </div>
             <div className="detail-card-content">
               <div className="detail-row">
@@ -1554,6 +1645,7 @@ const ResetPasswordModal: React.FC<{
 // Main Component
 const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const navigate = useNavigate();
+  const loadedTabsRef = useRef<Set<string>>(new Set());
   
   // State
   const [user, setUser] = useState<any>(null);
@@ -1616,6 +1708,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   
   // Search and Filter States
   const [searchTerm, setSearchTerm] = useState('');
+  const deferredSearchTerm = useDeferredValue(searchTerm);
   const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
   const [filters, setFilters] = useState({
     users: {
@@ -1870,78 +1963,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     
     return () => window.removeEventListener('resize', handleResize);
   }, [navigate]);
-  
-  // Load data based on active tab
-  useEffect(() => {
-    if (!user) return;
-    
-    const loadData = async () => {
-      setError(null);
-      const tabKey = activeTab as keyof typeof loading;
-      setLoading(prev => ({ ...prev, [tabKey]: true }));
-      
-      try {
-        switch (activeTab) {
-          case 'dashboard':
-            await loadDashboardData();
-            await loadNotifications();
-            await loadStaffForDropdown();
-            await loadClientsForDropdown(); // Load clients for dropdown
-            break;
-          case 'users':
-            await loadUsers();
-            break;
-          case 'orders':
-          case 'replacementorders':
-          case 'pending':
-            await loadOrders();
-            await loadStaffForDropdown();
-            await loadClientsForDropdown(); // Load clients for dropdown
-            await loadProducts(); // Load products for create/edit order modal
-            break;
-          case 'clients':
-            await loadClients();
-            break;
-          case 'products':
-          case 'spareproducts':
-          case 'shopclaim':
-          case 'companyclaim':
-          case 'companys':
-            await loadProducts();
-            break;
-          case 'suntocompany':
-            await loadSunToCompanyClaims();
-            break;
-          case 'companytosun':
-            await loadCompanyToSunClaims();
-            break;
-          case 'staff':
-            await loadStaffPerformance();
-            break;
-          case 'revenue':
-            break;
-          case 'analytics':
-            await loadAnalytics();
-            break;
-          case 'brandwiseoverallreport':
-            await Promise.all([loadOrders(), loadProducts(), loadDeliveries()]);
-            break;
-          case 'deliveries':
-            await loadDeliveries();
-            break;
-          case 'backup':
-            break;
-        }
-      } catch (error: any) {
-        console.error('Failed to load data:', error);
-        setError(error.message || 'Failed to load data');
-      } finally {
-        setLoading(prev => ({ ...prev, [tabKey]: false }));
-      }
-    };
-    
-    loadData();
-  }, [activeTab, user]);
   
   // API functions
   const getAuthToken = () => {
@@ -4115,7 +4136,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   };
   
   // Filter and sort data
-  const getFilteredAndSortedData = () => {
+  const getFilteredAndSortedData = useCallback(() => {
     let data: any[] = [];
     
     switch (activeTab) {
@@ -4137,12 +4158,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
     
     // Apply search filter
-    if (searchTerm) {
+    if (deferredSearchTerm) {
       data = data.filter(item => {
         const searchableFields = Object.values(item)
           .map(val => String(val).toLowerCase())
           .join(' ');
-        return searchableFields.includes(searchTerm.toLowerCase());
+        return searchableFields.includes(deferredSearchTerm.toLowerCase());
       });
     }
     
@@ -4179,7 +4200,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
     
     return data;
-  };
+  }, [activeTab, clients, deferredSearchTerm, deliveries, filters, orders, products, sortConfig, users]);
 
   const matchesDateRange = (dateString: string) => {
     const normalized = toISODate(dateString);
@@ -4225,10 +4246,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       .join(' ');
   };
 
-  const filteredOrdersForDashboard = orders.filter((order) => {
-    const search = searchTerm.toLowerCase();
+  const filteredOrdersForDashboard = useMemo(() => orders.filter((order) => {
+    const search = deferredSearchTerm.toLowerCase();
     const matchesSearch =
-      !searchTerm ||
+      !deferredSearchTerm ||
       [
         order.order_code,
         order.client_name,
@@ -4244,12 +4265,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     const matchesPayment = !filters.orders.payment_status || order.payment_status === filters.orders.payment_status;
 
     return matchesSearch && matchesStatus && matchesPriority && matchesPayment && matchesDateRange(order.created_at);
-  });
+  }), [orders, deferredSearchTerm, filters.orders, dateRange.startDate, dateRange.endDate]);
 
-  const filteredReplacementOrdersForDashboard = orders.filter((order) => {
-    const search = searchTerm.toLowerCase();
+  const filteredReplacementOrdersForDashboard = useMemo(() => orders.filter((order) => {
+    const search = deferredSearchTerm.toLowerCase();
     const matchesSearch =
-      !searchTerm ||
+      !deferredSearchTerm ||
       [
         order.order_code,
         order.client_name,
@@ -4266,12 +4287,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     const hasReplacement = Boolean(order.replacement_product_id);
 
     return hasReplacement && matchesSearch && matchesStatus && matchesPriority && matchesPayment && matchesDateRange(order.created_at);
-  });
+  }), [orders, deferredSearchTerm, filters.orders, dateRange.startDate, dateRange.endDate]);
 
-  const filteredClientsForDashboard = clients.filter((client) => {
-    const search = searchTerm.toLowerCase();
+  const filteredClientsForDashboard = useMemo(() => clients.filter((client) => {
+    const search = deferredSearchTerm.toLowerCase();
     const matchesSearch =
-      !searchTerm ||
+      !deferredSearchTerm ||
       [
         client.client_code,
         client.full_name,
@@ -4282,15 +4303,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
     const matchesCity = !filters.clients.city || client.city?.toLowerCase().includes(filters.clients.city.toLowerCase());
     return matchesSearch && matchesCity && matchesDateRange(client.created_at);
-  });
+  }), [clients, deferredSearchTerm, filters.clients.city, dateRange.startDate, dateRange.endDate]);
 
-  const filteredProductsForDashboard = products.filter((product) => {
-    const search = searchTerm.toLowerCase();
-    const normalizedSearch = searchTerm.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+  const filteredProductsForDashboard = useMemo(() => products.filter((product) => {
+    const search = deferredSearchTerm.toLowerCase();
+    const normalizedSearch = deferredSearchTerm.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
     const productSerial = String(product.serial_number || '');
     const normalizedProductSerial = productSerial.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
     const matchesSearch =
-      !searchTerm ||
+      !deferredSearchTerm ||
       [
         product.product_code,
         product.product_name,
@@ -4304,12 +4325,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     const matchesStatus = !filters.products.status || product.status === filters.products.status;
     const matchesCategory = !filters.products.category || product.category === filters.products.category;
     return matchesSearch && matchesStatus && matchesCategory && matchesDateRange(product.created_at);
-  });
+  }), [products, deferredSearchTerm, filters.products, dateRange.startDate, dateRange.endDate]);
 
-  const filteredSpareProductsForDashboard = products.filter((product) => {
-    const search = searchTerm.toLowerCase();
+  const filteredSpareProductsForDashboard = useMemo(() => products.filter((product) => {
+    const search = deferredSearchTerm.toLowerCase();
     const matchesSearch =
-      !searchTerm ||
+      !deferredSearchTerm ||
       [
         product.product_code,
         product.product_name,
@@ -4323,12 +4344,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     const matchesStatus = !filters.products.status || product.status === filters.products.status;
     const matchesCategory = !filters.products.category || product.category === filters.products.category;
     return Boolean(Number(product.is_spare_product || 0)) && matchesSearch && matchesStatus && matchesCategory && matchesDateRange(product.created_at);
-  });
+  }), [products, deferredSearchTerm, filters.products, dateRange.startDate, dateRange.endDate]);
 
-  const filteredShopClaimsForDashboard = products.filter((product) => {
-    const search = searchTerm.toLowerCase();
+  const filteredShopClaimsForDashboard = useMemo(() => products.filter((product) => {
+    const search = deferredSearchTerm.toLowerCase();
     const matchesSearch =
-      !searchTerm ||
+      !deferredSearchTerm ||
       [
         product.product_code,
         product.product_name,
@@ -4340,12 +4361,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       ].some((value) => String(value || '').toLowerCase().includes(search));
 
     return product.claim_type === 'shop_claim' && matchesSearch && matchesDateRange(product.created_at);
-  });
+  }), [products, deferredSearchTerm, dateRange.startDate, dateRange.endDate]);
 
-  const filteredCompanyClaimsForDashboard = products.filter((product) => {
-    const search = searchTerm.toLowerCase();
+  const filteredCompanyClaimsForDashboard = useMemo(() => products.filter((product) => {
+    const search = deferredSearchTerm.toLowerCase();
     const matchesSearch =
-      !searchTerm ||
+      !deferredSearchTerm ||
       [
         product.product_code,
         product.product_name,
@@ -4357,12 +4378,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       ].some((value) => String(value || '').toLowerCase().includes(search));
 
     return product.claim_type === 'company_claim' && matchesSearch && matchesDateRange(product.created_at);
-  });
+  }), [products, deferredSearchTerm, dateRange.startDate, dateRange.endDate]);
 
-  const filteredSunToCompanyForDashboard = sunToCompanyClaims.filter((product) => {
-    const search = searchTerm.toLowerCase();
+  const filteredSunToCompanyForDashboard = useMemo(() => sunToCompanyClaims.filter((product) => {
+    const search = deferredSearchTerm.toLowerCase();
     const matchesSearch =
-      !searchTerm ||
+      !deferredSearchTerm ||
       [
         product.product_code,
         product.product_name,
@@ -4374,12 +4395,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       ].some((value) => String(value || '').toLowerCase().includes(search));
 
     return matchesSearch && matchesDateRange(product.created_at);
-  });
+  }), [sunToCompanyClaims, deferredSearchTerm, dateRange.startDate, dateRange.endDate]);
 
-  const filteredCompanyToSunForDashboard = companyToSunClaims.filter((product) => {
-    const search = searchTerm.toLowerCase();
+  const filteredCompanyToSunForDashboard = useMemo(() => companyToSunClaims.filter((product) => {
+    const search = deferredSearchTerm.toLowerCase();
     const matchesSearch =
-      !searchTerm ||
+      !deferredSearchTerm ||
       [
         product.product_code,
         product.product_name,
@@ -4391,12 +4412,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       ].some((value) => String(value || '').toLowerCase().includes(search));
 
     return matchesSearch && matchesDateRange(product.created_at);
-  });
+  }), [companyToSunClaims, deferredSearchTerm, dateRange.startDate, dateRange.endDate]);
 
-  const filteredDeliveriesForDashboard = deliveries.filter((delivery) => {
-    const search = searchTerm.toLowerCase();
+  const filteredDeliveriesForDashboard = useMemo(() => deliveries.filter((delivery) => {
+    const search = deferredSearchTerm.toLowerCase();
     const matchesSearch =
-      !searchTerm ||
+      !deferredSearchTerm ||
       [
         delivery.delivery_code,
         delivery.order_code,
@@ -4410,7 +4431,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     const matchesStatus = !filters.deliveries.status || delivery.status === filters.deliveries.status;
     const matchesType = !filters.deliveries.delivery_type || delivery.delivery_type === filters.deliveries.delivery_type;
     return matchesSearch && matchesStatus && matchesType && matchesDateRange(delivery.created_at);
-  });
+  }), [deliveries, deferredSearchTerm, filters.deliveries, dateRange.startDate, dateRange.endDate]);
   
   // Handle selection
   const handleSelectAll = (type: string) => {
@@ -4466,27 +4487,37 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
   
-  const handleRefresh = async () => {
+  const markTabsLoaded = useCallback((tabs: string[]) => {
+    tabs.forEach((tab) => loadedTabsRef.current.add(tab));
+  }, []);
+
+  const loadDataForTab = useCallback(async (tab: string, force = false) => {
+    if (!user) return;
+    if (!force && loadedTabsRef.current.has(tab)) return;
+
+    setError(null);
+    const tabKey = tab as keyof typeof loading;
+    setLoading((prev) => ({ ...prev, [tabKey]: true }));
+
     try {
-      const tabKey = activeTab as keyof typeof loading;
-      setLoading(prev => ({ ...prev, [tabKey]: true }));
-      
-      switch (activeTab) {
+      switch (tab) {
         case 'dashboard':
-          await loadDashboardData();
-          await loadNotifications();
+          await Promise.all([loadDashboardData(), loadNotifications(), loadStaffForDropdown(), loadClientsForDropdown()]);
+          markTabsLoaded(['dashboard']);
           break;
         case 'users':
           await loadUsers();
+          markTabsLoaded(['users']);
           break;
         case 'orders':
         case 'replacementorders':
         case 'pending':
-          await loadOrders();
-          await loadProducts();
+          await Promise.all([loadOrders(), loadStaffForDropdown(), loadClientsForDropdown(), loadProducts()]);
+          markTabsLoaded(['orders', 'replacementorders', 'pending', 'products', 'spareproducts', 'shopclaim', 'companyclaim', 'companys']);
           break;
         case 'clients':
           await loadClients();
+          markTabsLoaded(['clients']);
           break;
         case 'products':
         case 'spareproducts':
@@ -4494,39 +4525,59 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         case 'companyclaim':
         case 'companys':
           await loadProducts();
+          markTabsLoaded(['products', 'spareproducts', 'shopclaim', 'companyclaim', 'companys']);
           break;
         case 'suntocompany':
           await loadSunToCompanyClaims();
+          markTabsLoaded(['suntocompany']);
           break;
         case 'companytosun':
           await loadCompanyToSunClaims();
+          markTabsLoaded(['companytosun']);
           break;
         case 'staff':
           await loadStaffPerformance();
+          markTabsLoaded(['staff']);
           break;
         case 'revenue':
+        case 'backup':
+          markTabsLoaded([tab]);
           break;
         case 'analytics':
           await loadAnalytics();
+          markTabsLoaded(['analytics']);
           break;
         case 'brandwiseoverallreport':
           await Promise.all([loadOrders(), loadProducts(), loadDeliveries()]);
+          markTabsLoaded(['brandwiseoverallreport', 'orders', 'replacementorders', 'pending', 'products', 'spareproducts', 'shopclaim', 'companyclaim', 'companys', 'deliveries']);
           break;
         case 'deliveries':
           await loadDeliveries();
-          break;
-        case 'backup':
+          markTabsLoaded(['deliveries']);
           break;
       }
+    } finally {
+      setLoading((prev) => ({ ...prev, [tabKey]: false }));
+    }
+  }, [markTabsLoaded, user]);
+
+  const handleRefresh = async () => {
+    try {
+      await loadDataForTab(activeTab, true);
       setSuccessMessage('Data refreshed successfully');
       setTimeout(() => setSuccessMessage(null), 3000);
     } catch (error) {
       setError('Failed to refresh data');
-    } finally {
-      const tabKey = activeTab as keyof typeof loading;
-      setLoading(prev => ({ ...prev, [tabKey]: false }));
     }
   };
+
+  useEffect(() => {
+    if (!user) return;
+
+    loadDataForTab(activeTab).catch((error: any) => {
+      setError(error?.message || 'Failed to load data');
+    });
+  }, [activeTab, loadDataForTab, user]);
   
   const handleLogout = () => {
     localStorage.clear();
@@ -5664,7 +5715,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const visibleNavItems = navItems;
   
   // Stats cards data - Updated to use real API data
-  const statsCards = dashboardStats ? [
+  const statsCards = useMemo(() => dashboardStats ? [
     {
       title: 'Total Products',
       value: dashboardStats.total_products?.toLocaleString() || '0',
@@ -5806,11 +5857,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         setSearchTerm('');
       }
     }
-  ] : [];
+  ] : [], [dashboardStats]);
 
-  const visibleStatsCards = isLimitedRole
+  const visibleStatsCards = useMemo(() => isLimitedRole
     ? statsCards.filter((stat) => stat.title !== 'Today Revenue' && stat.title !== 'Total Revenue')
-    : statsCards;
+    : statsCards, [isLimitedRole, statsCards]);
 
   useEffect(() => {
     if (isLimitedRole && hiddenForLimitedRoles.has(activeTab)) {
@@ -5818,7 +5869,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   }, [activeTab, isLimitedRole]);
 
-  const receiptModalConfig =
+  const receiptModalConfig = useMemo<{
+    kind: 'order' | 'delivery';
+    code: string;
+    subtitle: string;
+    description: string;
+    previewMarkup: string;
+    summaryItems: Array<{ label: string; value: string }>;
+    onDownload: () => void;
+    onPrint: () => void;
+  } | null>(() =>
     receiptTarget?.kind === 'order'
       ? {
           kind: 'order' as const,
@@ -5854,7 +5914,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             onDownload: () => void downloadDeliveryReceiptPreview(receiptTarget.delivery),
             onPrint: () => printDeliveryReceiptPreview(receiptTarget.delivery),
           }
-        : null;
+        : null, [products, receiptTarget]);
   
   if (!user) {
     return (

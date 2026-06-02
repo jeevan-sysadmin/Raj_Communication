@@ -16,7 +16,7 @@ import BulkActionPanel from "../BulkActionPanel";
 import DateRangeSelector from "../DateRangeSelector";
 import { exportStyledPdfReport } from "../pdfExport";
 import type { DateRange, Order, Product } from "../types";
-import { formatCurrency, formatDisplayDate } from "../utils";
+import { formatCurrency, formatDisplayDate, parseAppDate } from "../utils";
 
 interface OrdersTabProps {
   orders: Order[];
@@ -202,8 +202,8 @@ const formatPaymentStatusLabel = (value?: string) =>
 const getPendingDays = (order: Order): number => {
   if (!order.created_at) return 0;
 
-  const createdDate = new Date(order.created_at);
-  if (Number.isNaN(createdDate.getTime())) return 0;
+  const createdDate = parseAppDate(order.created_at);
+  if (!createdDate) return 0;
 
   const today = new Date();
   const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());

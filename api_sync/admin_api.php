@@ -1,6 +1,8 @@
 <?php
 // C:\xampp\htdocs\sun_computers\api\admin_api.php
 
+date_default_timezone_set('Asia/Kolkata');
+
 // Enable CORS
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS");
@@ -37,10 +39,151 @@ class AdminAPI {
             exit();
         }
 
+        $this->initializeConnectionTimeContext();
+
         $this->ensureProductsStockQuantityDefaults();
         
         // Verify authentication
         $this->verifyAuth();
+    }
+
+    private function initializeConnectionTimeContext(): void {
+        try {
+            $this->conn->exec("SET time_zone = '+05:30'");
+        } catch (Throwable $e) {
+            // Keep request working even if the DB user cannot set session time zone.
+        }
+    }
+
+    private function currentTimestamp(): string {
+        return date('Y-m-d H:i:s');
+    }
+
+    private function normalizeProductFlowStatusValue($value): string {
+        $normalized = strtolower(trim((string)$value));
+        if ($normalized === 'rajtocom' || $normalized === 'rajtocompany') {
+            return 'rajtocom';
+        }
+        if ($normalized === 'comtoraj' || $normalized === 'companytoraj') {
+            return 'comtoraj';
+        }
+        if ($normalized === 'deliveryed' || $normalized === 'delivered') {
+            return 'deliveryed';
+        }
+        return 'pending';
+    }
+
+    private function buildProductStatusDatesMapForCreate(array $productIds, array $statusMap, string $timestamp): array {
+        $datesMap = [];
+
+        foreach ($productIds as $productId) {
+            $key = (string)((int)$productId);
+            if ($key === '0') {
+                continue;
+            }
+
+            $status = isset($statusMap[$key])
+                ? $this->normalizeProductFlowStatusValue($statusMap[$key])
+                : 'pending';
+
+            $datesMap[$key] = [
+                'pending' => $timestamp,
+                'rajtocom' => null,
+                'comtoraj' => null,
+                'deliveryed' => null,
+            ];
+
+            if ($status === 'rajtocom') {
+                $datesMap[$key]['rajtocom'] = $timestamp;
+            } elseif ($status === 'comtoraj') {
+                $datesMap[$key]['rajtocom'] = $timestamp;
+                $datesMap[$key]['comtoraj'] = $timestamp;
+            } elseif ($status === 'deliveryed') {
+                $datesMap[$key]['rajtocom'] = $timestamp;
+                $datesMap[$key]['comtoraj'] = $timestamp;
+                $datesMap[$key]['deliveryed'] = $timestamp;
+            }
+        }
+
+        return $datesMap;
+    }
+
+    private function normalizeProductStatusDatesMapValue($value): array {
+        if (is_array($value)) {
+            $parsed = $value;
+        } elseif (is_string($value)) {
+            $trimmed = trim($value);
+            if ($trimmed === '') {
+                return [];
+            }
+            $decoded = json_decode($trimmed, true);
+            if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
+                return [];
+            }
+            $parsed = $decoded;
+        } else {
+            return [];
+        }
+
+        $normalized = [];
+        foreach ($parsed as $productId => $dates) {
+            $key = (string)((int)$productId);
+            if ($key === '0' || !is_array($dates)) {
+                continue;
+            }
+            $normalized[$key] = [
+                'pending' => isset($dates['pending']) && trim((string)$dates['pending']) !== '' ? trim((string)$dates['pending']) : null,
+                'rajtocom' => isset($dates['rajtocom']) && trim((string)$dates['rajtocom']) !== '' ? trim((string)$dates['rajtocom']) : null,
+                'comtoraj' => isset($dates['comtoraj']) && trim((string)$dates['comtoraj']) !== '' ? trim((string)$dates['comtoraj']) : null,
+                'deliveryed' => isset($dates['deliveryed']) && trim((string)$dates['deliveryed']) !== '' ? trim((string)$dates['deliveryed']) : null,
+            ];
+        }
+
+        return $normalized;
+    }
+
+    private function mergeProductStatusDatesMap(array $productIds, array $newStatusMap, array $existingDatesMap, string $timestamp): array {
+        $merged = [];
+
+        foreach ($productIds as $productId) {
+            $key = (string)((int)$productId);
+            if ($key === '0') {
+                continue;
+            }
+
+            $status = isset($newStatusMap[$key]) ? $this->normalizeProductFlowStatusValue($newStatusMap[$key]) : 'pending';
+            $existing = isset($existingDatesMap[$key]) && is_array($existingDatesMap[$key]) ? $existingDatesMap[$key] : [];
+            $row = [
+                'pending' => isset($existing['pending']) && $existing['pending'] !== '' ? $existing['pending'] : null,
+                'rajtocom' => isset($existing['rajtocom']) && $existing['rajtocom'] !== '' ? $existing['rajtocom'] : null,
+                'comtoraj' => isset($existing['comtoraj']) && $existing['comtoraj'] !== '' ? $existing['comtoraj'] : null,
+                'deliveryed' => isset($existing['deliveryed']) && $existing['deliveryed'] !== '' ? $existing['deliveryed'] : null,
+            ];
+
+            if ($row['pending'] === null) {
+                $row['pending'] = $timestamp;
+            }
+            if ($status === 'rajtocom') {
+                $row['rajtocom'] = $timestamp;
+            } elseif ($status === 'comtoraj') {
+                if ($row['rajtocom'] === null) {
+                    $row['rajtocom'] = $timestamp;
+                }
+                $row['comtoraj'] = $timestamp;
+            } elseif ($status === 'deliveryed') {
+                if ($row['rajtocom'] === null) {
+                    $row['rajtocom'] = $timestamp;
+                }
+                if ($row['comtoraj'] === null) {
+                    $row['comtoraj'] = $timestamp;
+                }
+                $row['deliveryed'] = $timestamp;
+            }
+
+            $merged[$key] = $row;
+        }
+
+        return $merged;
     }
 
     private function ensureProductsStockQuantityDefaults(): void {
@@ -1116,6 +1259,7 @@ class AdminAPI {
 
                 $product_ids_json = !empty($product_ids) ? json_encode($product_ids) : null;
                 $replacement_product_ids_json = !empty($replacement_product_ids) ? json_encode($replacement_product_ids) : null;
+                $currentTimestamp = $this->currentTimestamp();
                 
                 // Generate order code
                 $order_code = 'ORD' . date('Ymd') . strtoupper(substr(uniqid(), -6));
@@ -1133,16 +1277,57 @@ class AdminAPI {
                 if ($serviceOrdersHasCompanyId && array_key_exists('company_id', $data)) {
                     $company_id = $this->normalizeExistingCompanyId($data['company_id']);
                 }
+
+                $normalizedProductStatusMap = [];
+                $incomingProductStatusMap = is_array($data['product_status_map'] ?? null) ? $data['product_status_map'] : [];
+                foreach ($product_ids as $rawProductId) {
+                    $productKey = (string)((int)$rawProductId);
+                    if ($productKey === '0') {
+                        continue;
+                    }
+                    $normalizedProductStatusMap[$productKey] = $this->normalizeProductFlowStatusValue($incomingProductStatusMap[$productKey] ?? 'pending');
+                }
+
+                $productStatusDatesMap = $this->buildProductStatusDatesMapForCreate(
+                    $product_ids,
+                    $normalizedProductStatusMap,
+                    $currentTimestamp
+                );
+
+                $serviceOrdersHasProductStatusMap = $this->tableHasColumn('service_orders', 'product_status_map');
+                $serviceOrdersHasProductStatusDatesMap = $this->tableHasColumn('service_orders', 'product_status_dates_map');
+                $serviceOrdersHasRepairingStatusMap = $this->tableHasColumn('service_orders', 'repairing_status_map');
+                $serviceOrdersHasIssueDescriptionMap = $this->tableHasColumn('service_orders', 'issue_description_map');
                 
                 // Create order
-                $orderCompanyColumns = $serviceOrdersHasCompanyId ? ", company_id" : "";
-                $orderCompanyValues = $serviceOrdersHasCompanyId ? ", :company_id" : "";
+                $orderExtraColumns = "";
+                $orderExtraValues = "";
+                if ($serviceOrdersHasCompanyId) {
+                    $orderExtraColumns .= ", company_id";
+                    $orderExtraValues .= ", :company_id";
+                }
+                if ($serviceOrdersHasProductStatusMap) {
+                    $orderExtraColumns .= ", product_status_map";
+                    $orderExtraValues .= ", :product_status_map";
+                }
+                if ($serviceOrdersHasProductStatusDatesMap) {
+                    $orderExtraColumns .= ", product_status_dates_map";
+                    $orderExtraValues .= ", :product_status_dates_map";
+                }
+                if ($serviceOrdersHasRepairingStatusMap) {
+                    $orderExtraColumns .= ", repairing_status_map";
+                    $orderExtraValues .= ", :repairing_status_map";
+                }
+                if ($serviceOrdersHasIssueDescriptionMap) {
+                    $orderExtraColumns .= ", issue_description_map";
+                    $orderExtraValues .= ", :issue_description_map";
+                }
                 $orderQuery = "INSERT INTO service_orders (order_code, client_id, product_id, product_ids, replacement_product_id, replacement_product_ids, staff_id, service_type,
                              issue_description, warranty_status, estimated_cost, final_cost, deposit_amount, 
-                             payment_status, estimated_delivery_date, status, priority, notes{$orderCompanyColumns}, created_at)
+                             payment_status, estimated_delivery_date, status, priority, notes{$orderExtraColumns}, created_at)
                              VALUES (:order_code, :client_id, :product_id, :product_ids, :replacement_product_id, :replacement_product_ids, :staff_id, :service_type,
                              :issue_description, :warranty_status, :estimated_cost, :final_cost, :deposit_amount,
-                             :payment_status, :estimated_delivery_date, :status, :priority, :notes{$orderCompanyValues}, NOW())";
+                             :payment_status, :estimated_delivery_date, :status, :priority, :notes{$orderExtraValues}, :created_at)";
                 
                 $orderStmt = $this->conn->prepare($orderQuery);
                 $orderStmt->bindValue(':order_code', $order_code, PDO::PARAM_STR);
@@ -1163,8 +1348,27 @@ class AdminAPI {
                 $orderStmt->bindValue(':status', isset($data['status']) ? $data['status'] : 'pending', PDO::PARAM_STR);
                 $orderStmt->bindValue(':priority', isset($data['priority']) ? $data['priority'] : 'medium', PDO::PARAM_STR);
                 $orderStmt->bindValue(':notes', isset($data['notes']) ? $data['notes'] : '', PDO::PARAM_STR);
+                $orderStmt->bindValue(':created_at', $currentTimestamp, PDO::PARAM_STR);
                 if ($serviceOrdersHasCompanyId) {
                     $orderStmt->bindValue(':company_id', $company_id, $company_id ? PDO::PARAM_INT : PDO::PARAM_NULL);
+                }
+                if ($serviceOrdersHasProductStatusMap) {
+                    $productStatusMapJson = !empty($normalizedProductStatusMap) ? json_encode($normalizedProductStatusMap) : null;
+                    $orderStmt->bindValue(':product_status_map', $productStatusMapJson, $productStatusMapJson !== null ? PDO::PARAM_STR : PDO::PARAM_NULL);
+                }
+                if ($serviceOrdersHasProductStatusDatesMap) {
+                    $productStatusDatesMapJson = !empty($productStatusDatesMap) ? json_encode($productStatusDatesMap) : null;
+                    $orderStmt->bindValue(':product_status_dates_map', $productStatusDatesMapJson, $productStatusDatesMapJson !== null ? PDO::PARAM_STR : PDO::PARAM_NULL);
+                }
+                if ($serviceOrdersHasRepairingStatusMap) {
+                    $repairingStatusMap = is_array($data['repairing_status_map'] ?? null) ? $data['repairing_status_map'] : [];
+                    $repairingStatusMapJson = !empty($repairingStatusMap) ? json_encode($repairingStatusMap) : null;
+                    $orderStmt->bindValue(':repairing_status_map', $repairingStatusMapJson, $repairingStatusMapJson !== null ? PDO::PARAM_STR : PDO::PARAM_NULL);
+                }
+                if ($serviceOrdersHasIssueDescriptionMap) {
+                    $issueDescriptionMap = is_array($data['issue_description_map'] ?? null) ? $data['issue_description_map'] : [];
+                    $issueDescriptionMapJson = !empty($issueDescriptionMap) ? json_encode($issueDescriptionMap) : null;
+                    $orderStmt->bindValue(':issue_description_map', $issueDescriptionMapJson, $issueDescriptionMapJson !== null ? PDO::PARAM_STR : PDO::PARAM_NULL);
                 }
                 
                 if ($orderStmt->execute()) {
@@ -1269,6 +1473,12 @@ class AdminAPI {
                 if ($serviceOrdersHasCompanyId) {
                     $checkColumns .= ", company_id";
                 }
+                if ($this->tableHasColumn('service_orders', 'product_status_map')) {
+                    $checkColumns .= ", product_status_map";
+                }
+                if ($this->tableHasColumn('service_orders', 'product_status_dates_map')) {
+                    $checkColumns .= ", product_status_dates_map";
+                }
                 $checkQuery = "SELECT {$checkColumns} FROM service_orders WHERE id = :id";
                 $checkStmt = $this->conn->prepare($checkQuery);
                 $checkStmt->bindValue(':id', $data['id'], PDO::PARAM_INT);
@@ -1338,6 +1548,37 @@ class AdminAPI {
                     ? trim((string)$data['service_type'])
                     : 'general';
                 
+                $serviceOrdersHasProductStatusMap = $this->tableHasColumn('service_orders', 'product_status_map');
+                $serviceOrdersHasProductStatusDatesMap = $this->tableHasColumn('service_orders', 'product_status_dates_map');
+                $currentTimestamp = $this->currentTimestamp();
+                $normalizedProductStatusMap = [];
+                $productStatusDatesMapJson = null;
+
+                if ($serviceOrdersHasProductStatusMap) {
+                    $incomingProductStatusMap = is_array($data['product_status_map'] ?? null) ? $data['product_status_map'] : [];
+                    $productIdsForStatus = is_array($new_product_ids) && !empty($new_product_ids)
+                        ? $new_product_ids
+                        : $this->normalizeIdList($existingOrder['product_ids'] ?? ($existingOrder['product_id'] ?? null));
+                    foreach ($productIdsForStatus as $rawProductId) {
+                        $productKey = (string)((int)$rawProductId);
+                        if ($productKey === '0') {
+                            continue;
+                        }
+                        $normalizedProductStatusMap[$productKey] = $this->normalizeProductFlowStatusValue($incomingProductStatusMap[$productKey] ?? 'pending');
+                    }
+
+                    if ($serviceOrdersHasProductStatusDatesMap) {
+                        $existingDatesMap = $this->normalizeProductStatusDatesMapValue($existingOrder['product_status_dates_map'] ?? null);
+                        $mergedDatesMap = $this->mergeProductStatusDatesMap(
+                            $productIdsForStatus,
+                            $normalizedProductStatusMap,
+                            $existingDatesMap,
+                            $currentTimestamp
+                        );
+                        $productStatusDatesMapJson = !empty($mergedDatesMap) ? json_encode($mergedDatesMap) : null;
+                    }
+                }
+
                 // Update order
                 $query = "UPDATE service_orders SET 
                          product_id = :product_id,
@@ -1355,6 +1596,8 @@ class AdminAPI {
                          status = :status,
                          priority = :priority,
                          staff_id = :staff_id,
+                         " . ($serviceOrdersHasProductStatusMap ? "product_status_map = :product_status_map," : "") . "
+                         " . ($serviceOrdersHasProductStatusDatesMap ? "product_status_dates_map = :product_status_dates_map," : "") . "
                          " . ($serviceOrdersHasCompanyId ? "company_id = :company_id," : "") . "
                          notes = :notes,
                          updated_at = NOW() 
@@ -1377,6 +1620,13 @@ class AdminAPI {
                 $stmt->bindValue(':status', $data['status'], PDO::PARAM_STR);
                 $stmt->bindValue(':priority', $data['priority'], PDO::PARAM_STR);
                 $stmt->bindValue(':staff_id', isset($data['staff_id']) && !empty($data['staff_id']) ? $data['staff_id'] : null, PDO::PARAM_INT);
+                if ($serviceOrdersHasProductStatusMap) {
+                    $productStatusMapJson = !empty($normalizedProductStatusMap) ? json_encode($normalizedProductStatusMap) : null;
+                    $stmt->bindValue(':product_status_map', $productStatusMapJson, $productStatusMapJson !== null ? PDO::PARAM_STR : PDO::PARAM_NULL);
+                }
+                if ($serviceOrdersHasProductStatusDatesMap) {
+                    $stmt->bindValue(':product_status_dates_map', $productStatusDatesMapJson, $productStatusDatesMapJson !== null ? PDO::PARAM_STR : PDO::PARAM_NULL);
+                }
                 if ($serviceOrdersHasCompanyId) {
                     $stmt->bindValue(':company_id', $new_company_id, $new_company_id ? PDO::PARAM_INT : PDO::PARAM_NULL);
                 }
