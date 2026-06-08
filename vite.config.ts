@@ -19,12 +19,11 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
-    open: true,
     cors: true,
     // Proxy for API requests
     proxy: {
       '/api': {
-        target: 'http://cloud.anyrdp.in:3001/sun_computers/api',
+        target: 'http://cloud.anyrdp.in/sun_computers/api',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
       }
@@ -48,6 +47,11 @@ export default defineConfig({
     }
   },
 
+  optimizeDeps: {
+    include: ['react', 'react-dom', 'react-router-dom', 'framer-motion', 'axios'],
+    exclude: ['three', '@react-three/fiber', '@react-three/drei', 'jspdf', 'jspdf-autotable', 'html2canvas'],
+  },
+
   // Resolve paths
   resolve: {
     alias: {
@@ -61,7 +65,7 @@ export default defineConfig({
 
   // CSS configuration
   css: {
-    devSourcemap: true,
+    devSourcemap: false,
     modules: {
       localsConvention: 'camelCase'
     }

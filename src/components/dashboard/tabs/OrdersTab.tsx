@@ -37,6 +37,7 @@ interface OrdersTabProps {
   getStatusColor: (status: string) => string;
   getPriorityColor: (priority: string) => string;
   getWarrantyColor: (warranty: string) => string;
+  searchHandledByParent?: boolean;
   title?: string;
   emptyTitle?: string;
   emptyDescription?: string;
@@ -480,6 +481,7 @@ const OrdersTab = (props: OrdersTabProps) => {
     getStatusColor,
     getPriorityColor,
     getWarrantyColor,
+    searchHandledByParent = false,
     title = "Service Orders",
     emptyTitle = "No orders found",
     emptyDescription = "Try adjusting your filters or create a new order",
@@ -493,6 +495,8 @@ const OrdersTab = (props: OrdersTabProps) => {
   const [selectedOrderIds, setSelectedOrderIds] = useState<number[]>([]);
 
   const searchableOrders = useMemo(() => {
+    if (searchHandledByParent) return filteredOrders;
+
     const search = String(searchTerm || "").trim().toLowerCase();
     if (!search) return filteredOrders;
 
@@ -530,7 +534,7 @@ const OrdersTab = (props: OrdersTabProps) => {
 
     // Fallback: if parent-level filtering misses serial matches, search full orders here.
     return orders.filter(matchesSearch);
-  }, [filteredOrders, orders, products, searchTerm]);
+  }, [filteredOrders, orders, products, searchHandledByParent, searchTerm]);
 
   const totalPages = Math.max(1, Math.ceil(searchableOrders.length / ITEMS_PER_PAGE));
   const pageStartIndex = (currentPage - 1) * ITEMS_PER_PAGE;

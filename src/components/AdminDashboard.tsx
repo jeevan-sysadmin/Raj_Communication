@@ -524,7 +524,7 @@ const OrderDetailsModal: React.FC<{
 
     const controller = new AbortController();
     const endpoints = [
-      'http://cloud.anyrdp.in/raj_communication/api/companys.php',
+      'http://cloud.anyrdp.in:3001/raj_communication/api/companys.php',
       '/raj_communication/api/companys.php',
     ];
 

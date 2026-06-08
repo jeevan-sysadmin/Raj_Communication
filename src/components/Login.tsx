@@ -78,6 +78,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
   const [loginError, setLoginError] = useState<string>("");
   const [redirectingTo, setRedirectingTo] = useState<'user' | 'admin' | null>(null);
   const [disableHeavyEffects, setDisableHeavyEffects] = useState<boolean>(false);
+  const [showLoginScene, setShowLoginScene] = useState<boolean>(false);
   const redirectTimeoutRef = useRef<number | null>(null);
 
   const clearErrors = () => {
@@ -181,11 +182,37 @@ export default function Login({ onLoginSuccess }: LoginProps) {
     const lowCpu = (navigator.hardwareConcurrency || 4) <= 4;
     const smallScreen = window.innerWidth <= 900;
 
-    setDisableHeavyEffects(reducedMotion || lowBandwidth || lowCpu || smallScreen);
+    const disableScene = reducedMotion || lowBandwidth || lowCpu || smallScreen;
+    setDisableHeavyEffects(disableScene);
+
+    let timeoutId: number | null = null;
+    let idleId: number | null = null;
+
+    if (!disableScene) {
+      const enableScene = () => setShowLoginScene(true);
+      const requestIdle = (window as Window & {
+        requestIdleCallback?: (callback: () => void, options?: { timeout: number }) => number;
+        cancelIdleCallback?: (handle: number) => void;
+      }).requestIdleCallback;
+
+      if (requestIdle) {
+        idleId = requestIdle(enableScene, { timeout: 1200 });
+      } else {
+        timeoutId = window.setTimeout(enableScene, 350);
+      }
+    } else {
+      setShowLoginScene(false);
+    }
     
     return () => {
       if (redirectTimeoutRef.current) {
         window.clearTimeout(redirectTimeoutRef.current);
+      }
+      if (timeoutId) {
+        window.clearTimeout(timeoutId);
+      }
+      if (idleId) {
+        (window as Window & { cancelIdleCallback?: (handle: number) => void }).cancelIdleCallback?.(idleId);
       }
     };
   }, []);
@@ -211,6 +238,8 @@ export default function Login({ onLoginSuccess }: LoginProps) {
   return (
     <div className="login-container">
       {disableHeavyEffects ? (
+        <div className="canvas-fallback" aria-hidden="true" />
+      ) : !showLoginScene ? (
         <div className="canvas-fallback" aria-hidden="true" />
       ) : (
         <Suspense fallback={<div className="canvas-fallback" aria-hidden="true" />}>

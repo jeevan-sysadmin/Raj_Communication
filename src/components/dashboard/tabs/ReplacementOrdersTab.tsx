@@ -20,6 +20,7 @@ interface ReplacementOrdersTabProps {
   getStatusColor: (status: string) => string;
   getPriorityColor: (priority: string) => string;
   getWarrantyColor: (warranty: string) => string;
+  searchHandledByParent?: boolean;
 }
 
 const ReplacementOrdersTab = (props: ReplacementOrdersTabProps) => (
@@ -29,6 +30,7 @@ const ReplacementOrdersTab = (props: ReplacementOrdersTabProps) => (
     products={props.products}
     loading={props.loading}
     searchTerm={props.searchTerm}
+    searchHandledByParent={props.searchHandledByParent}
     dateRange={props.dateRange}
     onSearchChange={props.onSearchChange}
     onDateRangeChange={props.onDateRangeChange}
