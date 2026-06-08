@@ -3,6 +3,7 @@ import type { ChangeEvent, FormEvent } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { FiAlertCircle, FiBriefcase, FiCalendar, FiCheck, FiChevronDown, FiClock, FiCreditCard, FiDollarSign, FiLoader, FiPackage, FiPhone, FiPlus, FiSave, FiSearch, FiStar, FiUser, FiUsers, FiX } from "react-icons/fi";
 import type { Client, Company, OrderForm, Product, User } from "../types";
+import { buildApiUrl } from "../../../config/api";
 
 interface OrderFormModalProps {
   show: boolean;
@@ -28,8 +29,7 @@ const isSpareProduct = (product: Product) => {
 };
 
 const COMPANY_API_CANDIDATES = [
-  "http://cloud.anyrdp.in:3001/raj_communication/api/companys.php",
-  "http://cloud.anyrdp.in:3001/raj_communication/api/companys.php",
+  buildApiUrl("companys.php"),
 ];
 
 const normalizeCompany = (row: any): Company => ({

@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 
 import { motion, AnimatePresence } from "framer-motion";
 import { FiUser, FiLock, FiEye, FiEyeOff, FiLogIn, FiAlertCircle, FiShield, FiUsers, FiTool } from "react-icons/fi";
+import { buildApiUrl } from "../config/api";
 
 
 // Import your logo
@@ -68,10 +69,11 @@ async function apiLogin(email: string, password: string): Promise<LoginResponse>
     password: password
   };
 
-  console.log(`Trying endpoint: http://cloud.anyrdp.in:3001/raj_communication/api/login.php`);
+  const loginEndpoint = buildApiUrl("login.php");
+  console.log(`Trying endpoint: ${loginEndpoint}`);
   
   try {
-    const response = await fetch("http://cloud.anyrdp.in:3001/raj_communication/api/login.php", {
+    const response = await fetch(loginEndpoint, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

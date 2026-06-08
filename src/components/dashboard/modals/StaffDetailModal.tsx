@@ -19,6 +19,7 @@ import {
   FiX,
 } from "react-icons/fi";
 import { exportStyledPdfReport } from "../pdfExport";
+import { API_SYNC_BASE_URL } from "../../../config/api";
 
 interface StaffRecord {
   id: number;
@@ -78,7 +79,6 @@ interface StaffDetailModalProps {
   onViewOrders?: (staff: StaffRecord) => void;
 }
 
-const API_BASE_URL = "http://cloud.anyrdp.in:3001/raj_communication/api_sync";
 const serviceTypes = ["general", "repair", "sales", "water", "inverter"];
 const expenseTypes = ["petrol", "travel", "food", "tools", "stationery", "others"];
 
@@ -190,8 +190,8 @@ const StaffDetailModal = ({ show, staff, staffOrders, onClose, onEdit, onViewOrd
 
     try {
       const [salaryResponse, expenseResponse] = await Promise.all([
-        fetch(`${API_BASE_URL}/salary.php?staff_id=${staff.id}`, { headers: headers() }),
-        fetch(`${API_BASE_URL}/expenses.php?staff_id=${staff.id}`, { headers: headers() }),
+        fetch(`${API_SYNC_BASE_URL}/salary.php?staff_id=${staff.id}`, { headers: headers() }),
+        fetch(`${API_SYNC_BASE_URL}/expenses.php?staff_id=${staff.id}`, { headers: headers() }),
       ]);
 
       const salaryJson = await salaryResponse.json();
@@ -662,7 +662,7 @@ const StaffDetailModal = ({ show, staff, staffOrders, onClose, onEdit, onViewOrd
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/salary.php`, {
+      const response = await fetch(`${API_SYNC_BASE_URL}/salary.php`, {
         method: "POST",
         headers: headers(),
         body: JSON.stringify({
@@ -710,7 +710,7 @@ const StaffDetailModal = ({ show, staff, staffOrders, onClose, onEdit, onViewOrd
     setError(null);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/expenses.php`, {
+      const response = await fetch(`${API_SYNC_BASE_URL}/expenses.php`, {
         method: "POST",
         headers: headers(),
         body: JSON.stringify({

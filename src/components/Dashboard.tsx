@@ -31,6 +31,7 @@ import OrderDetailModal from "./dashboard/modals/OrderDetailModal";
 import OrderFormModal from "./dashboard/modals/OrderFormModal";
 import ProductFormModal from "./dashboard/modals/ProductFormModal";
 import ConfirmDeleteModal from "./dashboard/modals/ConfirmDeleteModal";
+import { API_BASE_URL } from "../config/api";
 import ClientsTab from "./dashboard/tabs/ClientsTab";
 import DashboardOverviewTab from "./dashboard/tabs/DashboardOverviewTab";
 import DeliveryTab from "./dashboard/tabs/DeliveryTab";
@@ -67,8 +68,6 @@ import {
 } from "./dashboard/receiptUtils";
 import { expandProductNameSerialPairs, splitSerialValues } from "./dashboard/productBatch";
 import { formatCurrency, formatDisplayDate, formatISODate } from "./dashboard/utils";
-
-const API_BASE_URL = "http://cloud.anyrdp.in:3001/raj_communication/api";
 
 const createDefaultOrderForm = (): OrderForm => ({
   company_id: "",

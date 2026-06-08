@@ -23,6 +23,7 @@ import DeliveryDetailModal from "../modals/DeliveryDetailModal";
 import { exportStyledPdfReport } from "../pdfExport";
 import type { DateRange, Delivery } from "../types";
 import { formatDisplayDate } from "../utils";
+import { buildApiUrl } from "../../../config/api";
 
 interface DeliveryTabProps {
   orders?: DeliveryOrderMeta[];
@@ -40,8 +41,8 @@ interface DeliveryTabProps {
 }
 
 const ITEMS_PER_PAGE = 20;
-const DELIVERY_API_URL = "http://cloud.anyrdp.in:3001/raj_communication/api/deliveries.php";
-const ORDERS_API_URL = "http://cloud.anyrdp.in:3001/raj_communication/api/Order.php";
+const DELIVERY_API_URL = buildApiUrl("deliveries.php");
+const ORDERS_API_URL = buildApiUrl("Order.php");
 
 interface DeliveryOrderMeta {
   id: number;

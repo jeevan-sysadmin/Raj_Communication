@@ -19,9 +19,10 @@ import CompanysFormModal from "../modals/CompanysFormModal";
 import { exportStyledPdfReport } from "../pdfExport";
 import type { Company, CompanyForm, DateRange } from "../types";
 import { formatDisplayDate } from "../utils";
+import { buildApiUrl } from "../../../config/api";
 
 const ITEMS_PER_PAGE = 20;
-const COMPANY_API_URL = "http://cloud.anyrdp.in:3001/raj_communication/api/companys.php";
+const COMPANY_API_URL = buildApiUrl("companys.php");
 const SERVICE_COMPANY_PDF = "SERVICE COMPANY LIST.pdf";
 
 const emptyForm: CompanyForm = {

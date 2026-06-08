@@ -13,6 +13,7 @@ import {
   FiTrendingUp,
 } from "react-icons/fi";
 import { exportStyledPdfReport } from "../pdfExport";
+import { API_BASE_URL } from "../../../config/api";
 
 interface ServiceSummary {
   service_type: string;
@@ -94,7 +95,6 @@ interface RevenueResponse {
   message?: string;
 }
 
-const API_BASE_URL = "http://cloud.anyrdp.in:3001/raj_communication/api";
 const serviceTypeOptions = ["all", "general", "repair", "sales", "water", "inverter"];
 
 const todayString = () => new Date().toISOString().split("T")[0];

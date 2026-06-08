@@ -57,6 +57,7 @@ import { expandProductNameSerialPairs } from './dashboard/productBatch';
 import { formatDisplayDateTime, parseAppDate } from './dashboard/utils';
 import ConfirmDeleteModal from './dashboard/modals/ConfirmDeleteModal';
 import type { Company as DashboardCompany, Order as DashboardOrder } from './dashboard/types';
+import { API_BASE_URL, API_SYNC_BASE_URL, buildApiUrl } from '../config/api';
 
 // Enhanced Type Definitions
 interface User {
@@ -523,10 +524,7 @@ const OrderDetailsModal: React.FC<{
     }
 
     const controller = new AbortController();
-    const endpoints = [
-      'http://cloud.anyrdp.in:3001/raj_communication/api/companys.php',
-      '/raj_communication/api/companys.php',
-    ];
+    const endpoints = [buildApiUrl('companys.php')];
 
     const loadCompanyNames = async () => {
       for (const endpoint of endpoints) {
@@ -1995,9 +1993,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   });
 
   const [newProduct, setNewProduct] = useState(getDefaultNewProduct);
-  
-  // API Configuration
-  const API_BASE_URL = "http://cloud.anyrdp.in:3001/raj_communication/api";
   
   // Check authentication and role
   useEffect(() => {
@@ -5168,10 +5163,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   const getAdminApiCandidates = useCallback(() => {
     const primary = `${API_BASE_URL}/admin_api.php`;
-    const secondary = `${API_BASE_URL.replace(/\/api$/i, '/api_sync')}/admin_api.php`;
-    const relativePrimary = '/raj_communication/api/admin_api.php';
-    const relativeSecondary = '/raj_communication/api_sync/admin_api.php';
-    return Array.from(new Set([primary, secondary, relativePrimary, relativeSecondary]));
+    const secondary = `${API_SYNC_BASE_URL}/admin_api.php`;
+    return Array.from(new Set([primary, secondary]));
   }, []);
 
   const handleDatabaseBackup = async () => {
