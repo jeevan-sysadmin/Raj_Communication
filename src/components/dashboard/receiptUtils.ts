@@ -1,5 +1,3 @@
-﻿import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
 import type { Delivery, Order, Product } from "./types";
 import { formatCurrency, formatDisplayDate } from "./utils";
 
@@ -500,6 +498,10 @@ export const createDeliveryReceiptMarkup = (delivery: Delivery) => {
 };
 
 export const downloadReceiptPdf = async (markup: string, filename: string) => {
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
+    import("html2canvas"),
+    import("jspdf"),
+  ]);
   const receiptDiv = document.createElement("div");
   receiptDiv.style.position = "fixed";
   receiptDiv.style.left = "-9999px";
@@ -612,4 +614,5 @@ export const openReceiptPrintWindow = (title: string, markup: string) => {
     return true;
   }
 };
+
 

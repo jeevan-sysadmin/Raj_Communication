@@ -1,6 +1,3 @@
-﻿import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
-
 type PdfAccent = string | [number, number, number];
 
 interface ReportMetric {
@@ -25,6 +22,24 @@ interface StyledPdfReportOptions {
   orientation?: "portrait" | "landscape";
   columnStyles?: Record<number, ReportColumnStyle>;
 }
+
+type MinimalPdfDoc = {
+  setFillColor: (...args: number[]) => void;
+  setDrawColor: (...args: number[]) => void;
+  roundedRect: (x: number, y: number, w: number, h: number, rx: number, ry: number, style: string) => void;
+  setFont: (fontName: string, fontStyle: string) => void;
+  setFontSize: (size: number) => void;
+  setTextColor: (...args: number[]) => void;
+  text: (text: string, x: number, y: number, options?: { align?: "right" | "left" | "center" }) => void;
+  line: (x1: number, y1: number, x2: number, y2: number) => void;
+  save: (filename: string) => void;
+  internal: {
+    pageSize: {
+      getWidth: () => number;
+      getHeight: () => number;
+    };
+  };
+};
 
 const resolveRgb = (accentColor: PdfAccent = "#2563eb"): [number, number, number] => {
   if (Array.isArray(accentColor)) return accentColor;
@@ -58,7 +73,7 @@ const darken = ([r, g, b]: [number, number, number], ratio: number): [number, nu
 ];
 
 const drawMetricCard = (
-  doc: jsPDF,
+  doc: MinimalPdfDoc,
   x: number,
   y: number,
   width: number,
@@ -85,7 +100,7 @@ const drawMetricCard = (
   doc.text(value, x + 4, y + 15);
 };
 
-export const exportStyledPdfReport = ({
+export const exportStyledPdfReport = async ({
   filename,
   title,
   subtitle,
@@ -97,11 +112,16 @@ export const exportStyledPdfReport = ({
   orientation = "landscape",
   columnStyles,
 }: StyledPdfReportOptions) => {
+  const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+    import("jspdf"),
+    import("jspdf-autotable"),
+  ]);
+
   const accent = resolveRgb(accentColor);
   const accentDark = darken(accent, 0.72);
   const accentSoft = mixWithWhite(accent, 0.86);
 
-  const doc = new jsPDF({ orientation, unit: "mm", format: "a4" });
+  const doc = new jsPDF({ orientation, unit: "mm", format: "a4" }) as unknown as MinimalPdfDoc;
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
   const margin = 14;
@@ -155,7 +175,7 @@ export const exportStyledPdfReport = ({
   doc.setDrawColor(...accentSoft);
   doc.line(margin, tableStartY - 2, pageWidth - margin, tableStartY - 2);
 
-  autoTable(doc, {
+  autoTable(doc as never, {
     startY: tableStartY,
     head,
     body,
@@ -184,7 +204,7 @@ export const exportStyledPdfReport = ({
       fillColor: [248, 250, 252],
     },
     columnStyles,
-    didDrawPage: ({ pageNumber }) => {
+    didDrawPage: ({ pageNumber }: { pageNumber: number }) => {
       doc.setDrawColor(...accentSoft);
       doc.line(margin, pageHeight - 11, pageWidth - margin, pageHeight - 11);
 
@@ -198,4 +218,3 @@ export const exportStyledPdfReport = ({
 
   doc.save(filename);
 };
-

@@ -805,7 +805,7 @@ const OrdersTab = (props: OrdersTabProps) => {
     );
   };
 
-  const exportOrdersToPDF = () => {
+  const exportOrdersToPDF = async () => {
     if (bulkOrders.length === 0) return;
     const totalValue = bulkOrders.reduce(
       (sum, order) => sum + Number(order.final_cost || order.estimated_cost || 0),
@@ -818,7 +818,7 @@ const OrdersTab = (props: OrdersTabProps) => {
       (order) => (order.payment_status || "").toLowerCase() !== "paid",
     ).length;
 
-    exportStyledPdfReport({
+    await exportStyledPdfReport({
       filename: `service_orders_${new Date().toISOString().split("T")[0]}.pdf`,
       title: "Service Orders Report",
       subtitle: "Complete service order export including product/replacement lists, serials, workflow, notes, and payment details.",
@@ -1070,7 +1070,6 @@ const OrdersTab = (props: OrdersTabProps) => {
                 <th>Product</th>
                 <th>Replacement</th>
                 <th>Client</th>
-                <th>Companies</th>
                 <th>Warranty</th>
                 <th>Payment Status</th>
                 <th>Repairing Status</th>
@@ -1083,8 +1082,6 @@ const OrdersTab = (props: OrdersTabProps) => {
                 const isSelected = selectedOrderIds.includes(order.id);
                 const productEntries = getOrderProductEntries(order, products);
                 const replacementEntries = getOrderReplacementEntries(order, products);
-                const companyNames = getCompanyNames(order);
-                const companyProductLines = getCompanyProductLines(order, products);
                 const pendingDays = getPendingDays(order);
                 const deliveredByProducts = isAllProductsDelivered(order);
 
@@ -1139,14 +1136,6 @@ const OrdersTab = (props: OrdersTabProps) => {
                           <span className="client-phone">{order.client_phone}</span>
                         </div>
                       </div>
-                    </td>
-                    <td>
-                      <span
-                        className="staff-name"
-                        title={companyProductLines.length > 0 ? companyProductLines.join(" | ") : companyNames.join(", ")}
-                      >
-                        {companyNames.length > 0 ? companyNames.join(", ") : "No company"}
-                      </span>
                     </td>
                     <td>
                       <span

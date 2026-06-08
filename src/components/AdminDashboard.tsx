@@ -373,8 +373,6 @@ const OrderDetailsModal: React.FC<{
   onGenerateReceipt: () => void;
   onDelete: () => void;
 }> = ({ isOpen, onClose, order, products = [], onEdit, onGenerateReceipt, onDelete }) => {
-  if (!order) return null;
-
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'pending': return <FiClock className="status-icon pending" />;
@@ -487,6 +485,84 @@ const OrderDetailsModal: React.FC<{
     );
   };
 
+  const preloadedCompanyIds = order
+    ? Array.from(
+        new Set([
+          ...normalizeIdList(order.company_ids),
+          ...normalizeIdList(order.company_id),
+        ]),
+      )
+    : [];
+  const preloadedCompanyNames = order
+    ? (() => {
+        const fromArray = normalizeNameList(order.company_names);
+        const fromText = normalizeNameList(order.company_names_text || order.company_name);
+        const rawNames = fromArray.length > 0 ? fromArray : fromText;
+        return preloadedCompanyIds.length > 0
+          ? preloadedCompanyIds.map((_, index) => rawNames[index] || '')
+          : rawNames;
+      })()
+    : [];
+
+  const [companyNameOverrides, setCompanyNameOverrides] = useState<Record<number, string>>({});
+
+  useEffect(() => {
+    if (!isOpen || !order || preloadedCompanyIds.length === 0) {
+      setCompanyNameOverrides({});
+      return;
+    }
+
+    const missingCompanyIds = preloadedCompanyIds.filter((_, index) => {
+      const name = String(preloadedCompanyNames[index] || '').trim();
+      return !name || /^company\s*#\s*\d+$/i.test(name);
+    });
+
+    if (missingCompanyIds.length === 0) {
+      setCompanyNameOverrides({});
+      return;
+    }
+
+    const controller = new AbortController();
+    const endpoints = [
+      'http://cloud.anyrdp.in:3001/raj_communication/api/companys.php',
+      '/raj_communication/api/companys.php',
+    ];
+
+    const loadCompanyNames = async () => {
+      for (const endpoint of endpoints) {
+        try {
+          const response = await fetch(endpoint, {
+            method: 'GET',
+            headers: { Accept: 'application/json' },
+            signal: controller.signal,
+          });
+          if (!response.ok) continue;
+          const payload = await response.json();
+          const rows = Array.isArray(payload?.companys) ? payload.companys : [];
+          const nextOverrides: Record<number, string> = {};
+          rows.forEach((row: any) => {
+            const id = Number(row?.id ?? 0);
+            const name = String(row?.company_name ?? '').trim();
+            if (id > 0 && name && missingCompanyIds.includes(id)) {
+              nextOverrides[id] = name;
+            }
+          });
+          if (Object.keys(nextOverrides).length > 0) {
+            setCompanyNameOverrides(nextOverrides);
+          }
+          return;
+        } catch {
+          // Try next endpoint candidate.
+        }
+      }
+    };
+
+    void loadCompanyNames();
+    return () => controller.abort();
+  }, [isOpen, order, preloadedCompanyIds, preloadedCompanyNames]);
+
+  if (!order) return null;
+
   const withIdFallback = (names: string[], ids: number[], labelPrefix: string) => {
     if (names.length > 0) return names;
     return ids.map((id) => `${labelPrefix} #${id}`);
@@ -563,8 +639,6 @@ const OrderDetailsModal: React.FC<{
     order.replacement_serial_number || '',
     'Replacement Product',
   );
-  const brandValue = order.product_brand || order.brand;
-  const modelValue = order.product_model || order.model;
   const normalizeProductFlowStatusMap = (value: unknown): Record<string, string> => {
     if (!value) return {};
     let parsed: unknown = value;
@@ -702,16 +776,24 @@ const OrderDetailsModal: React.FC<{
   );
   const companyNamesFromArray = normalizeNameList(order.company_names);
   const companyNamesFromText = normalizeNameList(order.company_names_text || order.company_name);
-  const companyNames =
+  const rawCompanyNames =
     companyNamesFromArray.length > 0
       ? companyNamesFromArray
-      : companyNamesFromText.length > 0
-        ? companyNamesFromText
-        : companyIds.map((id) => `Company #${id}`);
+      : companyNamesFromText;
+  const companyNames =
+    companyIds.length > 0
+      ? companyIds.map((companyId, index) => {
+          const inlineName = rawCompanyNames[index] || '';
+          const overrideName = companyNameOverrides[companyId] || '';
+          return overrideName || inlineName || `Company #${companyId}`;
+        })
+      : rawCompanyNames;
   const companyNamesText = companyNames.length > 0 ? companyNames.join(', ') : 'No company selected';
   const isCompanyIdLabel = (value: string) => /^company\s*#\s*\d+$/i.test(String(value || '').trim());
   const fallbackCompanyName =
-    companyNames.find((name) => !isCompanyIdLabel(name) && String(name || '').trim().length > 0) || '';
+    companyIds.length <= 1
+      ? companyNames.find((name) => !isCompanyIdLabel(name) && String(name || '').trim().length > 0) || ''
+      : '';
   const repairingStatusMap = normalizeRepairingStatusMap((order as any).repairing_status_map);
   const repairingStatusIds = Object.keys(repairingStatusMap)
     .map((id) => Number(id))
@@ -1049,14 +1131,6 @@ const OrderDetailsModal: React.FC<{
                   <div className="detail-value product-detail-stack-admin">
                     {renderStandaloneProductCards(replacementEntries)}
                   </div>
-                </div>
-              )}
-              {(brandValue || modelValue) && (
-                <div className="detail-row">
-                  <span className="detail-label">Brand/Model:</span>
-                  <span className="detail-value">
-                    {brandValue || 'N/A'} {modelValue ? `- ${modelValue}` : ''}
-                  </span>
                 </div>
               )}
               {order.serial_number && (
@@ -2440,7 +2514,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           company_ids: normalizedCompanyIds,
           company_name: (normalizedCompanyNames.length > 0 ? normalizedCompanyNames.join(' || ') : (order.company_name || '')),
           company_names: normalizedCompanyNames,
+          company_names_text: normalizedCompanyNames.join(' || '),
           company_product_map: normalizedCompanyProductMap,
+          companies_products: normalizedCompanyProductMap,
           client_id: parseInt(order.client_id) || 0,
           client_name: order.client_name || 'Unknown',
           client_phone: order.client_phone || '',
@@ -4632,7 +4708,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     document.body.removeChild(link);
   };
   
-  const exportToPDF = (data: any[], title: string, filename: string) => {
+  const exportToPDF = async (data: any[], title: string, filename: string) => {
     if (!data || data.length === 0) {
       setError('No data to export');
       return;
@@ -4655,7 +4731,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       }),
     );
 
-    exportStyledPdfReport({
+    await exportStyledPdfReport({
       filename,
       title,
       subtitle: 'Structured export from the admin dashboard with current filtered data and table-ready records.',
@@ -6588,192 +6664,208 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       {/* Modals */}
       <React.Suspense fallback={<LazySectionLoader />}>
       {/* User Form Modal */}
-      <UserFormModal
-        show={showCreateUser || (showEditModal && editType === 'user' && editData?.role === 'admin')}
-        editMode={showEditModal && editType === 'user' && editData?.role === 'admin'}
-        isSubmitting={createSubmitState.user}
-        userForm={((showEditModal && editType === 'user' && editData?.role === 'admin') ? editData : newUser) as any}
-        onClose={() => {
-          if (createSubmitState.user) return;
-          setShowCreateUser(false);
-          if (showEditModal && editType === 'user') {
-            setShowEditModal(false);
-            setEditData(null);
-          }
-        }}
-        onChange={handleUserFormChange}
-        onImageChange={handleUserImageChange}
-        onSubmit={submitUserForm}
-      />
+      {(showCreateUser || (showEditModal && editType === 'user' && editData?.role === 'admin')) && (
+        <UserFormModal
+          show={showCreateUser || (showEditModal && editType === 'user' && editData?.role === 'admin')}
+          editMode={showEditModal && editType === 'user' && editData?.role === 'admin'}
+          isSubmitting={createSubmitState.user}
+          userForm={((showEditModal && editType === 'user' && editData?.role === 'admin') ? editData : newUser) as any}
+          onClose={() => {
+            if (createSubmitState.user) return;
+            setShowCreateUser(false);
+            if (showEditModal && editType === 'user') {
+              setShowEditModal(false);
+              setEditData(null);
+            }
+          }}
+          onChange={handleUserFormChange}
+          onImageChange={handleUserImageChange}
+          onSubmit={submitUserForm}
+        />
+      )}
       
       {/* Staff Form Modal */}
-      <StaffFormModal
-        show={showCreateStaff || (showEditModal && editType === 'user' && editData?.role !== 'admin')}
-        editMode={showEditModal && editType === 'user' && editData?.role !== 'admin'}
-        isSubmitting={createSubmitState.user}
-        staffForm={((showEditModal && editType === 'user' && editData?.role !== 'admin') ? editData : newUser) as any}
-        onClose={() => {
-          if (createSubmitState.user) return;
-          setShowCreateStaff(false);
-          if (showEditModal && editType === 'user') {
-            setShowEditModal(false);
-            setEditData(null);
-          }
-        }}
-        onChange={handleUserFormChange}
-        onImageChange={handleUserImageChange}
-        onSubmit={submitUserForm}
-      />
+      {(showCreateStaff || (showEditModal && editType === 'user' && editData?.role !== 'admin')) && (
+        <StaffFormModal
+          show={showCreateStaff || (showEditModal && editType === 'user' && editData?.role !== 'admin')}
+          editMode={showEditModal && editType === 'user' && editData?.role !== 'admin'}
+          isSubmitting={createSubmitState.user}
+          staffForm={((showEditModal && editType === 'user' && editData?.role !== 'admin') ? editData : newUser) as any}
+          onClose={() => {
+            if (createSubmitState.user) return;
+            setShowCreateStaff(false);
+            if (showEditModal && editType === 'user') {
+              setShowEditModal(false);
+              setEditData(null);
+            }
+          }}
+          onChange={handleUserFormChange}
+          onImageChange={handleUserImageChange}
+          onSubmit={submitUserForm}
+        />
+      )}
       
       {/* User Detail Modal */}
-      <UserDetailModal
-        show={showUserDetailsModal}
-        user={selectedUserDetails as any}
-        onClose={() => {
-          setShowUserDetailsModal(false);
-          setSelectedUserDetails(null);
-        }}
-        onEdit={(user) => {
-          setShowUserDetailsModal(false);
-          handleEdit('user', user);
-        }}
-        onResetPassword={(user) => {
-          setShowUserDetailsModal(false);
-          openResetPasswordModal(user.id, user.name);
-        }}
-        onDelete={handleDeleteUser}
-      />
+      {showUserDetailsModal && (
+        <UserDetailModal
+          show={showUserDetailsModal}
+          user={selectedUserDetails as any}
+          onClose={() => {
+            setShowUserDetailsModal(false);
+            setSelectedUserDetails(null);
+          }}
+          onEdit={(user) => {
+            setShowUserDetailsModal(false);
+            handleEdit('user', user);
+          }}
+          onResetPassword={(user) => {
+            setShowUserDetailsModal(false);
+            openResetPasswordModal(user.id, user.name);
+          }}
+          onDelete={handleDeleteUser}
+        />
+      )}
       
       {/* Create Order Modal */}
-      <OrderFormModal
-        show={showCreateOrder}
-        editMode={false}
-        isSubmitting={createSubmitState.order}
-        orderForm={{
-          ...newOrder,
-          payment_status: newOrder.payment_status === 'partially_paid' ? 'partial' : newOrder.payment_status,
-        }}
-        users={staffList as any}
-        clientsForDropdown={clients as any}
-        products={products as any}
-        loadingClientsForDropdown={loading.clients}
-        onClose={() => {
-          if (createSubmitState.order) return;
-          setShowCreateOrder(false);
-          setNewOrder(getDefaultNewOrder());
-        }}
-        onChange={handleNewOrderChange}
-        onProductsChange={updateNewOrderProducts}
-        onReplacementProductsChange={updateNewOrderReplacementProducts}
-        onSubmit={submitNewOrderForm}
-      />
+      {showCreateOrder && (
+        <OrderFormModal
+          show={showCreateOrder}
+          editMode={false}
+          isSubmitting={createSubmitState.order}
+          orderForm={{
+            ...newOrder,
+            payment_status: newOrder.payment_status === 'partially_paid' ? 'partial' : newOrder.payment_status,
+          }}
+          users={staffList as any}
+          clientsForDropdown={clients as any}
+          products={products as any}
+          loadingClientsForDropdown={loading.clients}
+          onClose={() => {
+            if (createSubmitState.order) return;
+            setShowCreateOrder(false);
+            setNewOrder(getDefaultNewOrder());
+          }}
+          onChange={handleNewOrderChange}
+          onProductsChange={updateNewOrderProducts}
+          onReplacementProductsChange={updateNewOrderReplacementProducts}
+          onSubmit={submitNewOrderForm}
+        />
+      )}
 
-      <OrderFormModal
-        show={showEditModal && editType === 'order'}
-        editMode={true}
-        orderForm={{
-          ...(editData || {}),
-          company_id: editData?.company_id || '',
-          company_ids: editData?.company_ids || [],
-          company_name: editData?.company_name || '',
-          company_product_map: editData?.company_product_map || {},
-          client_name: editData?.client_name || '',
-          client_phone: editData?.client_phone || '',
-          product_name: editData?.product_name || '',
-          replacement_product_name: editData?.replacement_product_name || '',
-          service_type: editData?.service_type || 'general',
-          issue_description: editData?.issue_description || '',
-          warranty_status: editData?.warranty_status || 'out_of_warranty',
-          estimated_cost: String(editData?.estimated_cost ?? ''),
-          final_cost: String(editData?.final_cost ?? ''),
-          payment_status: editData?.payment_status === 'partially_paid' ? 'partial' : (editData?.payment_status || 'pending'),
-          estimated_delivery_date: editData?.estimated_delivery_date || '',
-          status: editData?.status || 'pending',
-          priority: editData?.priority || 'medium',
-          notes: editData?.notes || '',
-          client_id: editData?.client_id || '',
-          product_id: editData?.product_id || '',
-          replacement_product_id: editData?.replacement_product_id || '',
-          product_ids: editData?.product_ids || [],
-          product_status_map: editData?.product_status_map || {},
-          repairing_status_map: editData?.repairing_status_map || {},
-          replacement_product_ids: editData?.replacement_product_ids || [],
-          staff_id: editData?.staff_id || '',
-          deposit_amount: String(editData?.deposit_amount ?? '0'),
-        }}
-        users={staffList as any}
-        clientsForDropdown={clients as any}
-        products={products as any}
-        loadingClientsForDropdown={loading.clients}
-        onClose={() => {
-          setShowEditModal(false);
-          setEditData(null);
-        }}
-        onChange={handleEditOrderChange}
-        onProductsChange={updateEditOrderProducts}
-        onReplacementProductsChange={updateEditOrderReplacementProducts}
-        onSubmit={submitEditOrderForm}
-      />
+      {showEditModal && editType === 'order' && (
+        <OrderFormModal
+          show={showEditModal && editType === 'order'}
+          editMode={true}
+          orderForm={{
+            ...(editData || {}),
+            company_id: editData?.company_id || '',
+            company_ids: editData?.company_ids || [],
+            company_name: editData?.company_name || '',
+            company_product_map: editData?.company_product_map || {},
+            client_name: editData?.client_name || '',
+            client_phone: editData?.client_phone || '',
+            product_name: editData?.product_name || '',
+            replacement_product_name: editData?.replacement_product_name || '',
+            service_type: editData?.service_type || 'general',
+            issue_description: editData?.issue_description || '',
+            warranty_status: editData?.warranty_status || 'out_of_warranty',
+            estimated_cost: String(editData?.estimated_cost ?? ''),
+            final_cost: String(editData?.final_cost ?? ''),
+            payment_status: editData?.payment_status === 'partially_paid' ? 'partial' : (editData?.payment_status || 'pending'),
+            estimated_delivery_date: editData?.estimated_delivery_date || '',
+            status: editData?.status || 'pending',
+            priority: editData?.priority || 'medium',
+            notes: editData?.notes || '',
+            client_id: editData?.client_id || '',
+            product_id: editData?.product_id || '',
+            replacement_product_id: editData?.replacement_product_id || '',
+            product_ids: editData?.product_ids || [],
+            product_status_map: editData?.product_status_map || {},
+            repairing_status_map: editData?.repairing_status_map || {},
+            replacement_product_ids: editData?.replacement_product_ids || [],
+            staff_id: editData?.staff_id || '',
+            deposit_amount: String(editData?.deposit_amount ?? '0'),
+          }}
+          users={staffList as any}
+          clientsForDropdown={clients as any}
+          products={products as any}
+          loadingClientsForDropdown={loading.clients}
+          onClose={() => {
+            setShowEditModal(false);
+            setEditData(null);
+          }}
+          onChange={handleEditOrderChange}
+          onProductsChange={updateEditOrderProducts}
+          onReplacementProductsChange={updateEditOrderReplacementProducts}
+          onSubmit={submitEditOrderForm}
+        />
+      )}
       
       {/* Create Client Modal */}
-      <ClientFormModal
-        show={showCreateClient}
-        editMode={false}
-        isSubmitting={createSubmitState.client}
-        clientForm={newClient}
-        onClose={() => {
-          if (createSubmitState.client) return;
-          setShowCreateClient(false);
-        }}
-        onChange={handleNewClientChange}
-        onSubmit={submitNewClientForm}
-      />
+      {showCreateClient && (
+        <ClientFormModal
+          show={showCreateClient}
+          editMode={false}
+          isSubmitting={createSubmitState.client}
+          clientForm={newClient}
+          onClose={() => {
+            if (createSubmitState.client) return;
+            setShowCreateClient(false);
+          }}
+          onChange={handleNewClientChange}
+          onSubmit={submitNewClientForm}
+        />
+      )}
       
       {/* Create Product Modal */}
-      <ProductFormModal
-        show={showCreateProduct}
-        editMode={false}
-        isSubmitting={createSubmitState.product}
-        productForm={newProduct}
-        onClose={() => {
-          if (createSubmitState.product) return;
-          setShowCreateProduct(false);
-          setNewProduct(getDefaultNewProduct());
-        }}
-        onChange={handleNewProductChange}
-        onSubmit={submitCreateProductForm}
-      />
+      {showCreateProduct && (
+        <ProductFormModal
+          show={showCreateProduct}
+          editMode={false}
+          isSubmitting={createSubmitState.product}
+          productForm={newProduct}
+          onClose={() => {
+            if (createSubmitState.product) return;
+            setShowCreateProduct(false);
+            setNewProduct(getDefaultNewProduct());
+          }}
+          onChange={handleNewProductChange}
+          onSubmit={submitCreateProductForm}
+        />
+      )}
 
       {/* Edit Product Modal */}
-      <ProductFormModal
-        show={showEditModal && editType === 'product'}
-        editMode={true}
-        productForm={{
-          product_name: editData?.product_name || '',
-          serial_number: editData?.serial_number || '',
-          stock_quantity: String(editData?.stock_quantity ?? '0'),
-          is_spare_product:
-            editData?.is_spare_product === true ||
-            editData?.is_spare_product === 1 ||
-            editData?.is_spare_product === '1' ||
-            editData?.is_spare_product === 'true',
-          brand: editData?.brand || '',
-          model: editData?.model || '',
-          category: editData?.category || '',
-          claim_type: editData?.claim_type || 'none',
-          specifications: editData?.specifications || '',
-          purchase_date: editData?.purchase_date || '',
-          warranty_period: editData?.warranty_period || '',
-          price: String(editData?.price ?? '0'),
-          status: editData?.status || 'active',
-        }}
-        onClose={() => {
-          setShowEditModal(false);
-          setEditData(null);
-        }}
-        onChange={handleNewProductChange}
-        onSubmit={submitEditProductForm}
-      />
+      {showEditModal && editType === 'product' && (
+        <ProductFormModal
+          show={showEditModal && editType === 'product'}
+          editMode={true}
+          productForm={{
+            product_name: editData?.product_name || '',
+            serial_number: editData?.serial_number || '',
+            stock_quantity: String(editData?.stock_quantity ?? '0'),
+            is_spare_product:
+              editData?.is_spare_product === true ||
+              editData?.is_spare_product === 1 ||
+              editData?.is_spare_product === '1' ||
+              editData?.is_spare_product === 'true',
+            brand: editData?.brand || '',
+            model: editData?.model || '',
+            category: editData?.category || '',
+            claim_type: editData?.claim_type || 'none',
+            specifications: editData?.specifications || '',
+            purchase_date: editData?.purchase_date || '',
+            warranty_period: editData?.warranty_period || '',
+            price: String(editData?.price ?? '0'),
+            status: editData?.status || 'active',
+          }}
+          onClose={() => {
+            setShowEditModal(false);
+            setEditData(null);
+          }}
+          onChange={handleNewProductChange}
+          onSubmit={submitEditProductForm}
+        />
+      )}
       {/* Edit Modal */}
       <Modal
         isOpen={showEditModal && editType !== 'user' && editType !== 'order' && editType !== 'product'}
@@ -7287,16 +7379,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       </Modal>
       
       {/* Reset Password Modal */}
-      <ResetPasswordModal
-        isOpen={showResetPasswordModal}
-        onClose={() => {
-          setShowResetPasswordModal(false);
-          setSelectedUserForReset(null);
-        }}
-        userId={selectedUserForReset?.id || 0}
-        userName={selectedUserForReset?.name || ''}
-        onResetPassword={handleResetPassword}
-      />
+      {showResetPasswordModal && (
+        <ResetPasswordModal
+          isOpen={showResetPasswordModal}
+          onClose={() => {
+            setShowResetPasswordModal(false);
+            setSelectedUserForReset(null);
+          }}
+          userId={selectedUserForReset?.id || 0}
+          userName={selectedUserForReset?.name || ''}
+          onResetPassword={handleResetPassword}
+        />
+      )}
 
       {receiptModalConfig && (
         <div style={{ maxHeight: "100vh", overflowY: "auto" }}>
@@ -7361,25 +7455,27 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       </Modal>
       
       {/* Staff Details Modal */}
-      <StaffDetailModal
-        show={showStaffDetailsModal}
-        onClose={() => {
-          setShowStaffDetailsModal(false);
-          setSelectedStaff(null);
-          setSelectedStaffOrders([]);
-        }}
-        staff={selectedStaff}
-        staffOrders={selectedStaffOrders}
-        onEdit={(staff) => {
-          setShowStaffDetailsModal(false);
-          handleEdit('user', getFullStaffRecord(staff));
-        }}
-        onViewOrders={(staff) => {
-          setShowStaffDetailsModal(false);
-          setActiveTab('orders');
-          setSearchTerm(staff.name);
-        }}
-      />
+      {showStaffDetailsModal && (
+        <StaffDetailModal
+          show={showStaffDetailsModal}
+          onClose={() => {
+            setShowStaffDetailsModal(false);
+            setSelectedStaff(null);
+            setSelectedStaffOrders([]);
+          }}
+          staff={selectedStaff}
+          staffOrders={selectedStaffOrders}
+          onEdit={(staff) => {
+            setShowStaffDetailsModal(false);
+            handleEdit('user', getFullStaffRecord(staff));
+          }}
+          onViewOrders={(staff) => {
+            setShowStaffDetailsModal(false);
+            setActiveTab('orders');
+            setSearchTerm(staff.name);
+          }}
+        />
+      )}
       </React.Suspense>
       
       {/* Order Details Modal */}

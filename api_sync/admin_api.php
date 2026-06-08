@@ -557,6 +557,102 @@ class AdminAPI {
 
         return $stmt->fetch(PDO::FETCH_ASSOC) ? $companyId : null;
     }
+
+    private function normalizeExistingCompanyIds($value): array {
+        $companyIds = $this->normalizeIdList($value);
+        if (empty($companyIds)) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($companyIds), '?'));
+        $stmt = $this->conn->prepare("SELECT id FROM companies WHERE id IN ($placeholders)");
+        $stmt->execute($companyIds);
+
+        $validIds = [];
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $id = (int)($row['id'] ?? 0);
+            if ($id > 0) {
+                $validIds[] = $id;
+            }
+        }
+
+        return array_values(array_filter($companyIds, static function ($companyId) use ($validIds) {
+            return in_array((int)$companyId, $validIds, true);
+        }));
+    }
+
+    private function normalizeCompanyProductMapValue($value): array {
+        if ($value === null || $value === '') {
+            return [];
+        }
+
+        $raw = $value;
+        if (is_string($value)) {
+            $trimmed = trim($value);
+            if ($trimmed === '') {
+                return [];
+            }
+            $decoded = json_decode($trimmed, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $raw = $decoded;
+            } else {
+                return [];
+            }
+        }
+
+        if (!is_array($raw)) {
+            return [];
+        }
+
+        $map = [];
+        foreach ($raw as $companyId => $productIds) {
+            $normalizedCompanyId = (int)$companyId;
+            if ($normalizedCompanyId <= 0) {
+                continue;
+            }
+            $map[(string)$normalizedCompanyId] = $this->normalizeIdList($productIds);
+        }
+
+        return $map;
+    }
+
+    private function flattenCompanyProductMap(array $companyIds, array $companyProductMap): array {
+        $flat = [];
+        foreach ($companyIds as $companyId) {
+            $key = (string)((int)$companyId);
+            if (!isset($companyProductMap[$key]) || !is_array($companyProductMap[$key])) {
+                continue;
+            }
+            foreach ($companyProductMap[$key] as $productId) {
+                $id = (int)$productId;
+                if ($id > 0) {
+                    $flat[] = $id;
+                }
+            }
+        }
+        return array_values(array_unique($flat));
+    }
+
+    private function fetchCompanyNamesByIds(array $ids): array {
+        $ids = array_values(array_unique(array_filter(array_map('intval', $ids), function ($id) {
+            return $id > 0;
+        })));
+
+        if (empty($ids)) {
+            return [];
+        }
+
+        $placeholders = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $this->conn->prepare("SELECT id, company_name FROM companies WHERE id IN ($placeholders)");
+        $stmt->execute($ids);
+
+        $map = [];
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $map[(int)$row['id']] = $row['company_name'];
+        }
+
+        return $map;
+    }
     
     private function getBearerToken() {
         $headers = getallheaders();
@@ -1004,6 +1100,8 @@ class AdminAPI {
             $date_to = isset($_GET['date_to']) ? $_GET['date_to'] : '';
             $exclude_delivered = isset($_GET['exclude_delivered']) ? $_GET['exclude_delivered'] : false;
             $serviceOrdersHasCompanyId = $this->tableHasColumn('service_orders', 'company_id');
+            $serviceOrdersHasCompanyIds = $this->tableHasColumn('service_orders', 'company_ids');
+            $serviceOrdersHasCompanyProductMap = $this->tableHasColumn('service_orders', 'company_product_map');
             $companySelect = $serviceOrdersHasCompanyId ? ", co.company_name as company_name" : ", '' as company_name";
             $companyJoin = $serviceOrdersHasCompanyId ? " LEFT JOIN companies co ON o.company_id = co.id " : "";
             
@@ -1073,7 +1171,10 @@ class AdminAPI {
 
                 $stored_primary_by_order = [];
                 $stored_replacement_by_order = [];
+                $stored_company_ids_by_order = [];
+                $stored_company_product_map_by_order = [];
                 $stored_ids = [];
+                $stored_company_ids = [];
 
                 foreach ($orders as $order) {
                     $orderId = (int)$order['id'];
@@ -1093,9 +1194,22 @@ class AdminAPI {
                             $stored_ids = array_merge($stored_ids, $ids);
                         }
                     }
+
+                    if ($serviceOrdersHasCompanyIds && array_key_exists('company_ids', $order)) {
+                        $ids = $this->normalizeExistingCompanyIds($order['company_ids']);
+                        if (!empty($ids)) {
+                            $stored_company_ids_by_order[$orderId] = $ids;
+                            $stored_company_ids = array_merge($stored_company_ids, $ids);
+                        }
+                    }
+
+                    if ($serviceOrdersHasCompanyProductMap && array_key_exists('company_product_map', $order)) {
+                        $stored_company_product_map_by_order[$orderId] = $this->normalizeCompanyProductMapValue($order['company_product_map']);
+                    }
                 }
 
                 $stored_names_map = !empty($stored_ids) ? $this->fetchProductNamesByIds($stored_ids) : [];
+                $stored_company_names_map = !empty($stored_company_ids) ? $this->fetchCompanyNamesByIds($stored_company_ids) : [];
 
                 foreach ($orders as &$order) {
                     $orderId = (int)$order['id'];
@@ -1127,6 +1241,36 @@ class AdminAPI {
                         $order['replacement_product_ids'] = $replacementId > 0 ? [$replacementId] : [];
                         $order['replacement_product_names'] = !empty($order['replacement_product_name']) ? [$order['replacement_product_name']] : [];
                     }
+
+                    $companyIds = $stored_company_ids_by_order[$orderId] ?? [];
+                    if (empty($companyIds)) {
+                        $primaryCompanyId = isset($order['company_id']) ? (int)$order['company_id'] : 0;
+                        if ($primaryCompanyId > 0) {
+                            $companyIds = [$primaryCompanyId];
+                        }
+                    }
+
+                    $companyNames = !empty($companyIds)
+                        ? $this->buildNamesFromIds($companyIds, $stored_company_names_map)
+                        : [];
+                    $companyProductMap = $stored_company_product_map_by_order[$orderId] ?? [];
+                    $normalizedCompanyProductMap = [];
+                    foreach ($companyIds as $companyId) {
+                        $key = (string)$companyId;
+                        $normalizedCompanyProductMap[$key] = array_values(array_map('intval', $companyProductMap[$key] ?? []));
+                    }
+                    if (!empty($companyIds) && empty($this->flattenCompanyProductMap($companyIds, $normalizedCompanyProductMap)) && !empty($order['product_ids'])) {
+                        $normalizedCompanyProductMap[(string)$companyIds[0]] = array_values(array_map('intval', $order['product_ids']));
+                    }
+
+                    $order['company_id'] = !empty($companyIds) ? (int)$companyIds[0] : null;
+                    $order['company_ids'] = $companyIds;
+                    $order['company_names'] = $companyNames;
+                    $order['company_name'] = !empty($companyNames)
+                        ? implode(' || ', $companyNames)
+                        : (isset($order['company_name']) ? (string)$order['company_name'] : '');
+                    $order['company_product_map'] = $normalizedCompanyProductMap;
+                    $order['companies_products'] = $normalizedCompanyProductMap;
                 }
                 unset($order);
             }
@@ -1273,10 +1417,26 @@ class AdminAPI {
                     ? trim((string)$data['service_type'])
                     : 'general';
                 $serviceOrdersHasCompanyId = $this->tableHasColumn('service_orders', 'company_id');
-                $company_id = null;
-                if ($serviceOrdersHasCompanyId && array_key_exists('company_id', $data)) {
-                    $company_id = $this->normalizeExistingCompanyId($data['company_id']);
+                $serviceOrdersHasCompanyIds = $this->tableHasColumn('service_orders', 'company_ids');
+                $serviceOrdersHasCompanyProductMap = $this->tableHasColumn('service_orders', 'company_product_map');
+                $company_ids = $this->normalizeExistingCompanyIds($data['company_ids'] ?? ($data['company_id'] ?? null));
+                $company_id = !empty($company_ids) ? (int)$company_ids[0] : null;
+                $company_product_map = $this->normalizeCompanyProductMapValue($data['company_product_map'] ?? ($data['companies_products'] ?? null));
+                $normalized_company_product_map = [];
+                if (!empty($company_ids)) {
+                    foreach ($company_ids as $companyId) {
+                        $key = (string)$companyId;
+                        $normalized_company_product_map[$key] = isset($company_product_map[$key])
+                            ? $this->normalizeIdList($company_product_map[$key])
+                            : [];
+                    }
+                    $flat_company_products = $this->flattenCompanyProductMap($company_ids, $normalized_company_product_map);
+                    if (empty($flat_company_products) && !empty($product_ids)) {
+                        $normalized_company_product_map[(string)$company_ids[0]] = $product_ids;
+                    }
                 }
+                $company_ids_json = !empty($company_ids) ? json_encode($company_ids) : null;
+                $company_product_map_json = !empty($normalized_company_product_map) ? json_encode($normalized_company_product_map) : null;
 
                 $normalizedProductStatusMap = [];
                 $incomingProductStatusMap = is_array($data['product_status_map'] ?? null) ? $data['product_status_map'] : [];
@@ -1305,6 +1465,14 @@ class AdminAPI {
                 if ($serviceOrdersHasCompanyId) {
                     $orderExtraColumns .= ", company_id";
                     $orderExtraValues .= ", :company_id";
+                }
+                if ($serviceOrdersHasCompanyIds) {
+                    $orderExtraColumns .= ", company_ids";
+                    $orderExtraValues .= ", :company_ids";
+                }
+                if ($serviceOrdersHasCompanyProductMap) {
+                    $orderExtraColumns .= ", company_product_map";
+                    $orderExtraValues .= ", :company_product_map";
                 }
                 if ($serviceOrdersHasProductStatusMap) {
                     $orderExtraColumns .= ", product_status_map";
@@ -1351,6 +1519,12 @@ class AdminAPI {
                 $orderStmt->bindValue(':created_at', $currentTimestamp, PDO::PARAM_STR);
                 if ($serviceOrdersHasCompanyId) {
                     $orderStmt->bindValue(':company_id', $company_id, $company_id ? PDO::PARAM_INT : PDO::PARAM_NULL);
+                }
+                if ($serviceOrdersHasCompanyIds) {
+                    $orderStmt->bindValue(':company_ids', $company_ids_json, $company_ids_json ? PDO::PARAM_STR : PDO::PARAM_NULL);
+                }
+                if ($serviceOrdersHasCompanyProductMap) {
+                    $orderStmt->bindValue(':company_product_map', $company_product_map_json, $company_product_map_json ? PDO::PARAM_STR : PDO::PARAM_NULL);
                 }
                 if ($serviceOrdersHasProductStatusMap) {
                     $productStatusMapJson = !empty($normalizedProductStatusMap) ? json_encode($normalizedProductStatusMap) : null;
@@ -1458,6 +1632,8 @@ class AdminAPI {
             $data = json_decode(file_get_contents("php://input"), true);
             $this->ensureDeliveriesSerialColumn();
             $serviceOrdersHasCompanyId = $this->tableHasColumn('service_orders', 'company_id');
+            $serviceOrdersHasCompanyIds = $this->tableHasColumn('service_orders', 'company_ids');
+            $serviceOrdersHasCompanyProductMap = $this->tableHasColumn('service_orders', 'company_product_map');
             
             if (empty($data['id'])) {
                 $this->sendError("Order ID is required", 400);
@@ -1472,6 +1648,12 @@ class AdminAPI {
                 $checkColumns = "id, order_code, payment_status, final_cost, deposit_amount, product_id, product_ids, replacement_product_id, replacement_product_ids";
                 if ($serviceOrdersHasCompanyId) {
                     $checkColumns .= ", company_id";
+                }
+                if ($serviceOrdersHasCompanyIds) {
+                    $checkColumns .= ", company_ids";
+                }
+                if ($serviceOrdersHasCompanyProductMap) {
+                    $checkColumns .= ", company_product_map";
                 }
                 if ($this->tableHasColumn('service_orders', 'product_status_map')) {
                     $checkColumns .= ", product_status_map";
@@ -1519,7 +1701,13 @@ class AdminAPI {
                 $new_replacement_product_id = $existingOrder['replacement_product_id'] ?? null;
                 $new_product_ids_json = $existingOrder['product_ids'] ?? null;
                 $new_replacement_product_ids_json = $existingOrder['replacement_product_ids'] ?? null;
-                $new_company_id = $serviceOrdersHasCompanyId ? $this->normalizeExistingCompanyId($existingOrder['company_id'] ?? null) : null;
+                $new_company_ids = $serviceOrdersHasCompanyIds
+                    ? $this->normalizeExistingCompanyIds($existingOrder['company_ids'] ?? ($existingOrder['company_id'] ?? null))
+                    : ($serviceOrdersHasCompanyId ? $this->normalizeExistingCompanyIds($existingOrder['company_id'] ?? null) : []);
+                $new_company_id = !empty($new_company_ids) ? (int)$new_company_ids[0] : null;
+                $new_company_product_map = $serviceOrdersHasCompanyProductMap
+                    ? $this->normalizeCompanyProductMapValue($existingOrder['company_product_map'] ?? null)
+                    : [];
 
                 if ($productIdsProvided) {
                     $new_product_ids = $this->normalizeIdList($data['product_ids'] ?? ($data['product_id'] ?? null));
@@ -1536,9 +1724,39 @@ class AdminAPI {
                     $new_replacement_product_ids_json = !empty($new_replacement_product_ids) ? json_encode($new_replacement_product_ids) : null;
                 }
 
-                if ($serviceOrdersHasCompanyId && array_key_exists('company_id', $data)) {
-                    $new_company_id = $this->normalizeExistingCompanyId($data['company_id']);
+                $companyIdsProvided = array_key_exists('company_ids', $data) || array_key_exists('company_id', $data);
+                $companyProductMapProvided = array_key_exists('company_product_map', $data) || array_key_exists('companies_products', $data);
+                if ($companyIdsProvided || $companyProductMapProvided) {
+                    $candidateCompanyIds = $companyIdsProvided
+                        ? $this->normalizeExistingCompanyIds($data['company_ids'] ?? ($data['company_id'] ?? null))
+                        : $new_company_ids;
+                    $candidateCompanyProductMap = $companyProductMapProvided
+                        ? $this->normalizeCompanyProductMapValue($data['company_product_map'] ?? ($data['companies_products'] ?? null))
+                        : $new_company_product_map;
+                    if (!$companyIdsProvided && !empty($candidateCompanyProductMap)) {
+                        $candidateCompanyIds = $this->normalizeExistingCompanyIds(array_keys($candidateCompanyProductMap));
+                    }
+
+                    $normalizedCandidateMap = [];
+                    foreach ($candidateCompanyIds as $companyId) {
+                        $key = (string)$companyId;
+                        $normalizedCandidateMap[$key] = isset($candidateCompanyProductMap[$key])
+                            ? $this->normalizeIdList($candidateCompanyProductMap[$key])
+                            : [];
+                    }
+                    $sourceProductIds = is_array($new_product_ids) && !empty($new_product_ids)
+                        ? $new_product_ids
+                        : $this->normalizeIdList($existingOrder['product_ids'] ?? ($existingOrder['product_id'] ?? null));
+                    if (!empty($candidateCompanyIds) && empty($this->flattenCompanyProductMap($candidateCompanyIds, $normalizedCandidateMap)) && !empty($sourceProductIds)) {
+                        $normalizedCandidateMap[(string)$candidateCompanyIds[0]] = $sourceProductIds;
+                    }
+
+                    $new_company_ids = $candidateCompanyIds;
+                    $new_company_id = !empty($new_company_ids) ? (int)$new_company_ids[0] : null;
+                    $new_company_product_map = $normalizedCandidateMap;
                 }
+                $new_company_ids_json = !empty($new_company_ids) ? json_encode($new_company_ids) : null;
+                $new_company_product_map_json = !empty($new_company_product_map) ? json_encode($new_company_product_map) : null;
                 
                 // Get new values
                 $new_final_cost = isset($data['final_cost']) ? floatval($data['final_cost']) : floatval($existingOrder['final_cost']);
@@ -1599,6 +1817,8 @@ class AdminAPI {
                          " . ($serviceOrdersHasProductStatusMap ? "product_status_map = :product_status_map," : "") . "
                          " . ($serviceOrdersHasProductStatusDatesMap ? "product_status_dates_map = :product_status_dates_map," : "") . "
                          " . ($serviceOrdersHasCompanyId ? "company_id = :company_id," : "") . "
+                         " . ($serviceOrdersHasCompanyIds ? "company_ids = :company_ids," : "") . "
+                         " . ($serviceOrdersHasCompanyProductMap ? "company_product_map = :company_product_map," : "") . "
                          notes = :notes,
                          updated_at = NOW() 
                          WHERE id = :id";
@@ -1629,6 +1849,12 @@ class AdminAPI {
                 }
                 if ($serviceOrdersHasCompanyId) {
                     $stmt->bindValue(':company_id', $new_company_id, $new_company_id ? PDO::PARAM_INT : PDO::PARAM_NULL);
+                }
+                if ($serviceOrdersHasCompanyIds) {
+                    $stmt->bindValue(':company_ids', $new_company_ids_json, $new_company_ids_json ? PDO::PARAM_STR : PDO::PARAM_NULL);
+                }
+                if ($serviceOrdersHasCompanyProductMap) {
+                    $stmt->bindValue(':company_product_map', $new_company_product_map_json, $new_company_product_map_json ? PDO::PARAM_STR : PDO::PARAM_NULL);
                 }
                 $stmt->bindValue(':notes', isset($data['notes']) ? $data['notes'] : '', PDO::PARAM_STR);
                 

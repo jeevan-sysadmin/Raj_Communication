@@ -41,7 +41,8 @@ export default defineConfig({
           vendor: ['react', 'react-dom', 'react-router-dom'],
           charts: ['recharts'],
           three: ['three', '@react-three/fiber', '@react-three/drei'],
-          utils: ['framer-motion', 'file-saver']
+          utils: ['framer-motion', 'file-saver'],
+          pdf: ['jspdf', 'jspdf-autotable', 'html2canvas']
         }
       }
     }
