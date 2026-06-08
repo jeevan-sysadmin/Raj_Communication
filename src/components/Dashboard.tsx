@@ -2143,16 +2143,16 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
     }
   };
 
-  const printOrderReceipt = (order: Order) => {
-    const opened = openReceiptPrintWindow(`Receipt_${order.order_code}`, createOrderReceiptMarkup(order, products));
+  const printOrderReceipt = (order: Order, markup?: string) => {
+    const opened = openReceiptPrintWindow(`Receipt_${order.order_code}`, markup || createOrderReceiptMarkup(order, products));
     if (!opened) {
       setError("Unable to open print window. Please allow pop-ups and try again.");
     }
   };
 
-  const printDeliveryReceipt = (delivery: Delivery) => {
+  const printDeliveryReceipt = (delivery: Delivery, markup?: string) => {
     const deliveryCode = delivery.delivery_code || `DEL${String(delivery.id).padStart(3, "0")}`;
-    const opened = openReceiptPrintWindow(`Delivery_Receipt_${deliveryCode}`, createDeliveryReceiptMarkup(delivery));
+    const opened = openReceiptPrintWindow(`Delivery_Receipt_${deliveryCode}`, markup || createDeliveryReceiptMarkup(delivery));
     if (!opened) {
       setError("Unable to open print window. Please allow pop-ups and try again.");
     }
@@ -2434,12 +2434,14 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
 
   const receiptModalConfig =
     receiptTarget?.kind === "order"
-      ? {
+      ? (() => {
+          const previewMarkup = createOrderReceiptMarkup(receiptTarget.order, products);
+          return {
           kind: "order" as const,
           code: receiptTarget.order.order_code,
           subtitle: `${receiptTarget.order.client_name} | ${receiptTarget.order.product_name}`,
           description: "Download a customer-ready PDF service receipt.",
-          previewMarkup: createOrderReceiptMarkup(receiptTarget.order, products),
+          previewMarkup,
           summaryItems: [
             { label: "Client", value: receiptTarget.order.client_name || "N/A" },
             { label: "Status", value: receiptTarget.order.status || "Pending" },
@@ -2449,15 +2451,18 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
             },
           ],
           onDownload: () => void downloadOrderReceipt(receiptTarget.order),
-          onPrint: () => printOrderReceipt(receiptTarget.order),
-        }
+          onPrint: () => printOrderReceipt(receiptTarget.order, previewMarkup),
+        };
+      })()
       : receiptTarget?.kind === "delivery"
-        ? {
+        ? (() => {
+            const previewMarkup = createDeliveryReceiptMarkup(receiptTarget.delivery);
+            return {
             kind: "delivery" as const,
             code: receiptTarget.delivery.delivery_code || `DEL${String(receiptTarget.delivery.id).padStart(3, "0")}`,
             subtitle: `${receiptTarget.delivery.client_name || "N/A"} | ${receiptTarget.delivery.product_name || "N/A"}`,
             description: "Download a clean PDF handover slip for delivery records.",
-            previewMarkup: createDeliveryReceiptMarkup(receiptTarget.delivery),
+            previewMarkup,
             summaryItems: [
               { label: "Client", value: receiptTarget.delivery.client_name || "N/A" },
               {
@@ -2469,8 +2474,9 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
               { label: "Status", value: receiptTarget.delivery.status || "Pending" },
             ],
             onDownload: () => void downloadDeliveryReceipt(receiptTarget.delivery),
-            onPrint: () => printDeliveryReceipt(receiptTarget.delivery),
-          }
+            onPrint: () => printDeliveryReceipt(receiptTarget.delivery, previewMarkup),
+          };
+        })()
         : null;
 
   return (

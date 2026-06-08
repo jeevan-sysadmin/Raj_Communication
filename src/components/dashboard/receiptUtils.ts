@@ -9,7 +9,24 @@ const escapeReceiptHtml = (value: string | number | undefined | null) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
+const buildProductIndexes = (products: Product[]) => {
+  const productById = new Map<number, Product>();
+  const productByNormalizedName = new Map<string, Product>();
+
+  products.forEach((product) => {
+    productById.set(product.id, product);
+    const normalizedName = String(product.product_name || "").trim().toLowerCase();
+    if (normalizedName && !productByNormalizedName.has(normalizedName)) {
+      productByNormalizedName.set(normalizedName, product);
+    }
+  });
+
+  return { productById, productByNormalizedName };
+};
+
 export const createOrderReceiptMarkup = (order: Order, products: Product[] = []) => {
+  const { productById, productByNormalizedName } = buildProductIndexes(products);
+
   const parseJsonArray = (value: string): unknown[] | null => {
     try {
       const parsed = JSON.parse(value);
@@ -97,7 +114,7 @@ export const createOrderReceiptMarkup = (order: Order, products: Product[] = [])
     const key = String(name || "").trim().toLowerCase();
     if (!key) return;
     const productId = primaryIds[index];
-    const matchedProduct = productId ? products.find((product) => product.id === productId) : undefined;
+    const matchedProduct = productId ? productById.get(productId) : undefined;
     const serial = String(primarySerials[index] || (index === 0 ? order.serial_number || "" : "")).trim();
     if (serial && !serialByProductName.has(key)) {
       serialByProductName.set(key, serial);
@@ -125,9 +142,7 @@ export const createOrderReceiptMarkup = (order: Order, products: Product[] = [])
           .map((name, index) => {
             const key = String(name || "").trim().toLowerCase();
             const id = ids[index];
-            const byNameProduct = products.find(
-              (product) => String(product.product_name || "").trim().toLowerCase() === key,
-            );
+            const byNameProduct = productByNormalizedName.get(key);
             const serial = String(
               serials[index] ||
                 (id ? serialByProductId.get(id) || "" : "") ||
@@ -544,9 +559,36 @@ export const openReceiptPrintWindow = (title: string, markup: string) => {
             background: #e2e8f0;
           }
 
+          body {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
+
+          * {
+            box-sizing: border-box;
+          }
+
+          img, svg, canvas {
+            max-width: 100%;
+          }
+
           @media print {
             html, body {
               background: #ffffff;
+            }
+
+            * {
+              animation: none !important;
+              transition: none !important;
+              box-shadow: none !important;
+              filter: none !important;
+              text-shadow: none !important;
+            }
+
+            body > div,
+            body > div > div,
+            body > div > div > div {
+              background-image: none !important;
             }
           }
         </style>
@@ -558,6 +600,26 @@ export const openReceiptPrintWindow = (title: string, markup: string) => {
   `;
 
   try {
+    const printWindow = window.open("", "receipt_print_window", "width=960,height=1080");
+    if (printWindow) {
+      printWindow.document.open();
+      printWindow.document.write(printDocument);
+      printWindow.document.close();
+
+      const triggerPrint = () => {
+        printWindow.focus();
+        printWindow.print();
+      };
+
+      if (printWindow.document.readyState === "complete") {
+        requestAnimationFrame(triggerPrint);
+      } else {
+        printWindow.onload = () => requestAnimationFrame(triggerPrint);
+      }
+
+      return true;
+    }
+
     const iframe = document.createElement("iframe");
     iframe.style.position = "fixed";
     iframe.style.right = "0";
@@ -585,11 +647,11 @@ export const openReceiptPrintWindow = (title: string, markup: string) => {
     }
 
     iframe.onload = () => {
-      window.setTimeout(() => {
+      requestAnimationFrame(() => {
         printFrame.focus();
         printFrame.print();
         cleanup();
-      }, 180);
+      });
     };
 
     frameDocument.open();
@@ -604,11 +666,11 @@ export const openReceiptPrintWindow = (title: string, markup: string) => {
     printWindow.document.write(printDocument);
     printWindow.document.close();
     printWindow.onload = () => {
-      window.setTimeout(() => {
+      requestAnimationFrame(() => {
         printWindow.focus();
         printWindow.print();
         printWindow.close();
-      }, 200);
+      });
     };
 
     return true;

@@ -1,5 +1,5 @@
 // src/components/AdminDashboard.tsx
-import React, { useState, useEffect, useRef, useCallback, useDeferredValue, useMemo } from 'react';
+import React, { startTransition, useState, useEffect, useRef, useCallback, useDeferredValue, useMemo } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import {
@@ -524,7 +524,7 @@ const OrderDetailsModal: React.FC<{
 
     const controller = new AbortController();
     const endpoints = [
-      'http://cloud.anyrdp.in:3001/raj_communication/api/companys.php',
+      'http://cloud.anyrdp.in/raj_communication/api/companys.php',
       '/raj_communication/api/companys.php',
     ];
 
@@ -1783,6 +1783,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   // Search and Filter States
   const [searchTerm, setSearchTerm] = useState('');
   const deferredSearchTerm = useDeferredValue(searchTerm);
+  const normalizedDeferredSearchTerm = useMemo(() => deferredSearchTerm.trim().toLowerCase(), [deferredSearchTerm]);
   const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
   const [filters, setFilters] = useState({
     users: {
@@ -4322,8 +4323,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       .join(' ');
   };
 
+  const handleSearchChange = useCallback((value: string) => {
+    startTransition(() => {
+      setSearchTerm(value);
+    });
+  }, []);
+
+  const isOrdersTabActive = activeTab === 'orders';
+  const isReplacementOrdersTabActive = activeTab === 'replacementorders';
+  const isClientsTabActive = activeTab === 'clients';
+  const isProductsTabActive = activeTab === 'products';
+  const isSpareProductsTabActive = activeTab === 'spareproducts';
+  const isShopClaimTabActive = activeTab === 'shopclaim';
+  const isCompanyClaimTabActive = activeTab === 'companyclaim';
+  const isSunToCompanyTabActive = activeTab === 'suntocompany';
+  const isCompanyToSunTabActive = activeTab === 'companytosun';
+  const isDeliveriesTabActive = activeTab === 'deliveries';
+
   const filteredOrdersForDashboard = useMemo(() => orders.filter((order) => {
-    const search = deferredSearchTerm.toLowerCase();
+    if (!isOrdersTabActive) return false;
+    const search = normalizedDeferredSearchTerm;
     const matchesSearch =
       !deferredSearchTerm ||
       [
@@ -4341,10 +4360,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     const matchesPayment = !filters.orders.payment_status || order.payment_status === filters.orders.payment_status;
 
     return matchesSearch && matchesStatus && matchesPriority && matchesPayment && matchesDateRange(order.created_at);
-  }), [orders, deferredSearchTerm, filters.orders, dateRange.startDate, dateRange.endDate]);
+  }), [orders, deferredSearchTerm, normalizedDeferredSearchTerm, filters.orders, dateRange.startDate, dateRange.endDate, isOrdersTabActive]);
 
   const filteredReplacementOrdersForDashboard = useMemo(() => orders.filter((order) => {
-    const search = deferredSearchTerm.toLowerCase();
+    if (!isReplacementOrdersTabActive) return false;
+    const search = normalizedDeferredSearchTerm;
     const matchesSearch =
       !deferredSearchTerm ||
       [
@@ -4363,10 +4383,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     const hasReplacement = Boolean(order.replacement_product_id);
 
     return hasReplacement && matchesSearch && matchesStatus && matchesPriority && matchesPayment && matchesDateRange(order.created_at);
-  }), [orders, deferredSearchTerm, filters.orders, dateRange.startDate, dateRange.endDate]);
+  }), [orders, deferredSearchTerm, normalizedDeferredSearchTerm, filters.orders, dateRange.startDate, dateRange.endDate, isReplacementOrdersTabActive]);
 
   const filteredClientsForDashboard = useMemo(() => clients.filter((client) => {
-    const search = deferredSearchTerm.toLowerCase();
+    if (!isClientsTabActive) return false;
+    const search = normalizedDeferredSearchTerm;
     const matchesSearch =
       !deferredSearchTerm ||
       [
@@ -4379,10 +4400,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
     const matchesCity = !filters.clients.city || client.city?.toLowerCase().includes(filters.clients.city.toLowerCase());
     return matchesSearch && matchesCity && matchesDateRange(client.created_at);
-  }), [clients, deferredSearchTerm, filters.clients.city, dateRange.startDate, dateRange.endDate]);
+  }), [clients, deferredSearchTerm, normalizedDeferredSearchTerm, filters.clients.city, dateRange.startDate, dateRange.endDate, isClientsTabActive]);
 
   const filteredProductsForDashboard = useMemo(() => products.filter((product) => {
-    const search = deferredSearchTerm.toLowerCase();
+    if (!isProductsTabActive) return false;
+    const search = normalizedDeferredSearchTerm;
     const normalizedSearch = deferredSearchTerm.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
     const productSerial = String(product.serial_number || '');
     const normalizedProductSerial = productSerial.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
@@ -4401,10 +4423,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     const matchesStatus = !filters.products.status || product.status === filters.products.status;
     const matchesCategory = !filters.products.category || product.category === filters.products.category;
     return matchesSearch && matchesStatus && matchesCategory && matchesDateRange(product.created_at);
-  }), [products, deferredSearchTerm, filters.products, dateRange.startDate, dateRange.endDate]);
+  }), [products, deferredSearchTerm, normalizedDeferredSearchTerm, filters.products, dateRange.startDate, dateRange.endDate, isProductsTabActive]);
 
   const filteredSpareProductsForDashboard = useMemo(() => products.filter((product) => {
-    const search = deferredSearchTerm.toLowerCase();
+    if (!isSpareProductsTabActive) return false;
+    const search = normalizedDeferredSearchTerm;
     const matchesSearch =
       !deferredSearchTerm ||
       [
@@ -4420,10 +4443,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     const matchesStatus = !filters.products.status || product.status === filters.products.status;
     const matchesCategory = !filters.products.category || product.category === filters.products.category;
     return Boolean(Number(product.is_spare_product || 0)) && matchesSearch && matchesStatus && matchesCategory && matchesDateRange(product.created_at);
-  }), [products, deferredSearchTerm, filters.products, dateRange.startDate, dateRange.endDate]);
+  }), [products, deferredSearchTerm, normalizedDeferredSearchTerm, filters.products, dateRange.startDate, dateRange.endDate, isSpareProductsTabActive]);
 
   const filteredShopClaimsForDashboard = useMemo(() => products.filter((product) => {
-    const search = deferredSearchTerm.toLowerCase();
+    if (!isShopClaimTabActive) return false;
+    const search = normalizedDeferredSearchTerm;
     const matchesSearch =
       !deferredSearchTerm ||
       [
@@ -4437,10 +4461,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       ].some((value) => String(value || '').toLowerCase().includes(search));
 
     return product.claim_type === 'shop_claim' && matchesSearch && matchesDateRange(product.created_at);
-  }), [products, deferredSearchTerm, dateRange.startDate, dateRange.endDate]);
+  }), [products, deferredSearchTerm, normalizedDeferredSearchTerm, dateRange.startDate, dateRange.endDate, isShopClaimTabActive]);
 
   const filteredCompanyClaimsForDashboard = useMemo(() => products.filter((product) => {
-    const search = deferredSearchTerm.toLowerCase();
+    if (!isCompanyClaimTabActive) return false;
+    const search = normalizedDeferredSearchTerm;
     const matchesSearch =
       !deferredSearchTerm ||
       [
@@ -4454,10 +4479,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       ].some((value) => String(value || '').toLowerCase().includes(search));
 
     return product.claim_type === 'company_claim' && matchesSearch && matchesDateRange(product.created_at);
-  }), [products, deferredSearchTerm, dateRange.startDate, dateRange.endDate]);
+  }), [products, deferredSearchTerm, normalizedDeferredSearchTerm, dateRange.startDate, dateRange.endDate, isCompanyClaimTabActive]);
 
   const filteredSunToCompanyForDashboard = useMemo(() => sunToCompanyClaims.filter((product) => {
-    const search = deferredSearchTerm.toLowerCase();
+    if (!isSunToCompanyTabActive) return false;
+    const search = normalizedDeferredSearchTerm;
     const matchesSearch =
       !deferredSearchTerm ||
       [
@@ -4471,10 +4497,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       ].some((value) => String(value || '').toLowerCase().includes(search));
 
     return matchesSearch && matchesDateRange(product.created_at);
-  }), [sunToCompanyClaims, deferredSearchTerm, dateRange.startDate, dateRange.endDate]);
+  }), [sunToCompanyClaims, deferredSearchTerm, normalizedDeferredSearchTerm, dateRange.startDate, dateRange.endDate, isSunToCompanyTabActive]);
 
   const filteredCompanyToSunForDashboard = useMemo(() => companyToSunClaims.filter((product) => {
-    const search = deferredSearchTerm.toLowerCase();
+    if (!isCompanyToSunTabActive) return false;
+    const search = normalizedDeferredSearchTerm;
     const matchesSearch =
       !deferredSearchTerm ||
       [
@@ -4488,10 +4515,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       ].some((value) => String(value || '').toLowerCase().includes(search));
 
     return matchesSearch && matchesDateRange(product.created_at);
-  }), [companyToSunClaims, deferredSearchTerm, dateRange.startDate, dateRange.endDate]);
+  }), [companyToSunClaims, deferredSearchTerm, normalizedDeferredSearchTerm, dateRange.startDate, dateRange.endDate, isCompanyToSunTabActive]);
 
   const filteredDeliveriesForDashboard = useMemo(() => deliveries.filter((delivery) => {
-    const search = deferredSearchTerm.toLowerCase();
+    if (!isDeliveriesTabActive) return false;
+    const search = normalizedDeferredSearchTerm;
     const matchesSearch =
       !deferredSearchTerm ||
       [
@@ -4507,7 +4535,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     const matchesStatus = !filters.deliveries.status || delivery.status === filters.deliveries.status;
     const matchesType = !filters.deliveries.delivery_type || delivery.delivery_type === filters.deliveries.delivery_type;
     return matchesSearch && matchesStatus && matchesType && matchesDateRange(delivery.created_at);
-  }), [deliveries, deferredSearchTerm, filters.deliveries, dateRange.startDate, dateRange.endDate]);
+  }), [deliveries, deferredSearchTerm, normalizedDeferredSearchTerm, filters.deliveries, dateRange.startDate, dateRange.endDate, isDeliveriesTabActive]);
   
   // Handle selection
   const handleSelectAll = (type: string) => {
@@ -5068,21 +5096,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
-  const printOrderReceiptPreview = (order: Order) => {
+  const printOrderReceiptPreview = (order: Order, markup?: string) => {
     const opened = openReceiptPrintWindow(
       `order_receipt_${order.order_code}`,
-      createOrderReceiptMarkup(order as any, products as any),
+      markup || createOrderReceiptMarkup(order as any, products as any),
     );
     if (!opened) {
       setError('Unable to open print window. Please allow pop-ups and try again.');
     }
   };
 
-  const printDeliveryReceiptPreview = (delivery: Delivery) => {
+  const printDeliveryReceiptPreview = (delivery: Delivery, markup?: string) => {
     const deliveryCode = delivery.delivery_code || delivery.id;
     const opened = openReceiptPrintWindow(
       `delivery_receipt_${deliveryCode}`,
-      createDeliveryReceiptMarkup(delivery as any),
+      markup || createDeliveryReceiptMarkup(delivery as any),
     );
     if (!opened) {
       setError('Unable to open print window. Please allow pop-ups and try again.');
@@ -5954,29 +5982,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     summaryItems: Array<{ label: string; value: string }>;
     onDownload: () => void;
     onPrint: () => void;
-  } | null>(() =>
-    receiptTarget?.kind === 'order'
-      ? {
+  } | null>(() => {
+    if (receiptTarget?.kind === 'order') {
+      const previewMarkup = createOrderReceiptMarkup(receiptTarget.order as any, products as any);
+      return {
           kind: 'order' as const,
           code: receiptTarget.order.order_code,
           subtitle: `${receiptTarget.order.client_name} | ${receiptTarget.order.product_name}`,
           description: 'Preview and download the customer receipt PDF.',
-          previewMarkup: createOrderReceiptMarkup(receiptTarget.order as any, products as any),
+          previewMarkup,
           summaryItems: [
             { label: 'Client', value: receiptTarget.order.client_name || 'N/A' },
             { label: 'Status', value: receiptTarget.order.status || 'Pending' },
             { label: 'Amount', value: `Rs. ${receiptTarget.order.final_cost || receiptTarget.order.estimated_cost || '0'}` },
           ],
           onDownload: () => void downloadOrderReceiptPreview(receiptTarget.order),
-          onPrint: () => printOrderReceiptPreview(receiptTarget.order),
-        }
-      : receiptTarget?.kind === 'delivery'
-        ? {
+          onPrint: () => printOrderReceiptPreview(receiptTarget.order, previewMarkup),
+        };
+    }
+
+    if (receiptTarget?.kind === 'delivery') {
+      const previewMarkup = createDeliveryReceiptMarkup(receiptTarget.delivery as any);
+      return {
             kind: 'delivery' as const,
             code: receiptTarget.delivery.delivery_code,
             subtitle: `${receiptTarget.delivery.client_name || 'N/A'} | ${receiptTarget.delivery.product_name || 'N/A'}`,
             description: 'Preview and download the delivery receipt PDF.',
-            previewMarkup: createDeliveryReceiptMarkup(receiptTarget.delivery as any),
+            previewMarkup,
             summaryItems: [
               { label: 'Client', value: receiptTarget.delivery.client_name || 'N/A' },
               { label: 'Status', value: receiptTarget.delivery.status || 'Pending' },
@@ -5988,9 +6020,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               },
             ],
             onDownload: () => void downloadDeliveryReceiptPreview(receiptTarget.delivery),
-            onPrint: () => printDeliveryReceiptPreview(receiptTarget.delivery),
-          }
-        : null, [products, receiptTarget]);
+            onPrint: () => printDeliveryReceiptPreview(receiptTarget.delivery, previewMarkup),
+          };
+    }
+
+    return null;
+  }, [products, receiptTarget]);
   
   if (!user) {
     return (
@@ -6315,8 +6350,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               products={products as any}
               loading={loading.orders}
               searchTerm={searchTerm}
+              searchHandledByParent
               dateRange={dateRange}
-              onSearchChange={setSearchTerm}
+              onSearchChange={handleSearchChange}
               onDateRangeChange={handleDateRangeChange}
               onPresetClick={setDateRangePreset}
               onViewOrder={(order) => {
@@ -6351,8 +6387,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               products={products as any}
               loading={loading.replacementorders}
               searchTerm={searchTerm}
+              searchHandledByParent
               dateRange={dateRange}
-              onSearchChange={setSearchTerm}
+              onSearchChange={handleSearchChange}
               onDateRangeChange={handleDateRangeChange}
               onPresetClick={setDateRangePreset}
               onViewOrder={(order) => {
@@ -6383,7 +6420,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               loading={loading.clients}
               searchTerm={searchTerm}
               dateRange={dateRange}
-              onSearchChange={setSearchTerm}
+              onSearchChange={handleSearchChange}
               onDateRangeChange={handleDateRangeChange}
               onPresetClick={setDateRangePreset}
               onEditClient={(client) => handleEdit('client', client)}
@@ -6403,7 +6440,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               searchTerm={searchTerm}
               filterStatus={filters.products.status || 'all'}
               dateRange={dateRange}
-              onSearchChange={setSearchTerm}
+              onSearchChange={handleSearchChange}
               onFilterStatusChange={(value) => handleFilterChange('products', 'status', value === 'all' ? '' : value)}
               onDateRangeChange={handleDateRangeChange}
               onPresetClick={setDateRangePreset}
@@ -6425,7 +6462,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               loading={loading.spareproducts}
               searchTerm={searchTerm}
               dateRange={dateRange}
-              onSearchChange={setSearchTerm}
+              onSearchChange={handleSearchChange}
               onDateRangeChange={handleDateRangeChange}
               onPresetClick={setDateRangePreset}
               onClearFilters={clearAllFilters}
@@ -6440,7 +6477,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               loading={loading.shopclaim}
               searchTerm={searchTerm}
               dateRange={dateRange}
-              onSearchChange={setSearchTerm}
+              onSearchChange={handleSearchChange}
               onDateRangeChange={handleDateRangeChange}
               onPresetClick={setDateRangePreset}
               onClearFilters={clearAllFilters}
@@ -6455,7 +6492,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               loading={loading.companyclaim}
               searchTerm={searchTerm}
               dateRange={dateRange}
-              onSearchChange={setSearchTerm}
+              onSearchChange={handleSearchChange}
               onDateRangeChange={handleDateRangeChange}
               onPresetClick={setDateRangePreset}
               onClearFilters={clearAllFilters}
@@ -6474,7 +6511,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               loading={loading.suntocompany}
               searchTerm={searchTerm}
               dateRange={dateRange}
-              onSearchChange={setSearchTerm}
+              onSearchChange={handleSearchChange}
               onDateRangeChange={handleDateRangeChange}
               onPresetClick={setDateRangePreset}
               onViewOrder={(order) => {
@@ -6504,7 +6541,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               loading={loading.companytosun}
               searchTerm={searchTerm}
               dateRange={dateRange}
-              onSearchChange={setSearchTerm}
+              onSearchChange={handleSearchChange}
               onDateRangeChange={handleDateRangeChange}
               onPresetClick={setDateRangePreset}
               onViewOrder={(order) => {
@@ -6533,7 +6570,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               loading={loading.deliveries}
               searchTerm={searchTerm}
               dateRange={dateRange}
-              onSearchChange={setSearchTerm}
+              onSearchChange={handleSearchChange}
               onDateRangeChange={handleDateRangeChange}
               onPresetClick={setDateRangePreset}
               onPrintDeliveryReceipt={(delivery) => openReceiptOptionsForDelivery(delivery as any)}
