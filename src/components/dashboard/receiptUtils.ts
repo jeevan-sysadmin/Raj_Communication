@@ -1,6 +1,13 @@
 import type { Delivery, Order, Product } from "./types";
 import { formatCurrency, formatDisplayDate } from "./utils";
 
+type ReceiptPdfModules = {
+  html2canvas: typeof import("html2canvas").default;
+  jsPDF: typeof import("jspdf").jsPDF;
+};
+
+let receiptPdfModulesPromise: Promise<ReceiptPdfModules> | null = null;
+
 const escapeReceiptHtml = (value: string | number | undefined | null) =>
   String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -22,6 +29,19 @@ const buildProductIndexes = (products: Product[]) => {
   });
 
   return { productById, productByNormalizedName };
+};
+
+const loadReceiptPdfModules = () => {
+  if (!receiptPdfModulesPromise) {
+    receiptPdfModulesPromise = Promise.all([import("html2canvas"), import("jspdf")]).then(
+      ([{ default: html2canvas }, { jsPDF }]) => ({
+        html2canvas,
+        jsPDF,
+      }),
+    );
+  }
+
+  return receiptPdfModulesPromise;
 };
 
 export const createOrderReceiptMarkup = (order: Order, products: Product[] = []) => {
@@ -81,21 +101,21 @@ export const createOrderReceiptMarkup = (order: Order, products: Product[] = [])
   const withIdFallback = (names: string[], ids: number[], prefix: string) =>
     names.length > 0 ? names : ids.map((id) => `${prefix} #${id}`);
 
-  const primaryIds = Array.from(new Set([
-    ...normalizeIds(order.product_ids),
-    ...normalizeIds(order.product_id),
-  ]));
-  const replacementIds = Array.from(new Set([
-    ...normalizeIds(order.replacement_product_ids),
-    ...normalizeIds(order.replacement_product_id),
-  ]));
+  const productNames = normalizeNames(order.product_names);
+  const singleProductNames = normalizeNames(order.product_name);
+  const replacementProductNames = normalizeNames(order.replacement_product_names);
+  const singleReplacementProductNames = normalizeNames(order.replacement_product_name);
+  const primaryIds = Array.from(new Set([...normalizeIds(order.product_ids), ...normalizeIds(order.product_id)]));
+  const replacementIds = Array.from(
+    new Set([...normalizeIds(order.replacement_product_ids), ...normalizeIds(order.replacement_product_id)]),
+  );
   const primaryNames = withIdFallback(
-    normalizeNames(order.product_names).length > 0 ? normalizeNames(order.product_names) : normalizeNames(order.product_name),
+    productNames.length > 0 ? productNames : singleProductNames,
     primaryIds,
     "Product",
   );
   const replacementNames = withIdFallback(
-    normalizeNames(order.replacement_product_names).length > 0 ? normalizeNames(order.replacement_product_names) : normalizeNames(order.replacement_product_name),
+    replacementProductNames.length > 0 ? replacementProductNames : singleReplacementProductNames,
     replacementIds,
     "Replacement Product",
   );
@@ -171,7 +191,7 @@ export const createOrderReceiptMarkup = (order: Order, products: Product[] = [])
   const isReplacementReceipt =
     replacementList.length > 0 ||
     replacementIds.length > 0 ||
-    normalizeNames(order.replacement_product_name).length > 0;
+    singleReplacementProductNames.length > 0;
   const receiptHeading = isReplacementReceipt ? "Replacement Order Receipt" : "Service Receipt";
   const receiptSubtitle = isReplacementReceipt
     ? "Replacement order summary for customer handover and records."
@@ -513,10 +533,7 @@ export const createDeliveryReceiptMarkup = (delivery: Delivery) => {
 };
 
 export const downloadReceiptPdf = async (markup: string, filename: string) => {
-  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
-    import("html2canvas"),
-    import("jspdf"),
-  ]);
+  const { html2canvas, jsPDF } = await loadReceiptPdfModules();
   const receiptDiv = document.createElement("div");
   receiptDiv.style.position = "fixed";
   receiptDiv.style.left = "-9999px";
@@ -538,6 +555,10 @@ export const downloadReceiptPdf = async (markup: string, filename: string) => {
   } finally {
     document.body.removeChild(receiptDiv);
   }
+};
+
+export const warmReceiptPdfRenderer = () => {
+  void loadReceiptPdfModules();
 };
 
 export const openReceiptPrintWindow = (title: string, markup: string) => {

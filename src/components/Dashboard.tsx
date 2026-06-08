@@ -2129,10 +2129,15 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
       const link = document.createElement("a");
       link.href = downloadUrl;
       link.download = fileName;
+      link.target = "_blank";
+      link.rel = "noopener";
+      link.style.display = "none";
       document.body.appendChild(link);
       link.click();
-      link.remove();
-      window.URL.revokeObjectURL(downloadUrl);
+      window.setTimeout(() => {
+        link.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+      }, 1000);
 
       setSuccessMessage("Database backup downloaded successfully");
       setTimeout(() => setSuccessMessage(null), 3000);
@@ -2424,12 +2429,12 @@ const Dashboard = ({ onLogout }: DashboardProps) => {
   const dashboardSearchResults = getFilteredDashboardData();
 
   const statsData = [
-    { id: 1, title: "Total Orders", value: dashboardStats?.total_orders?.toString() || orders.length.toString() || "0", change: "+12.5%", icon: <FiPackage />, color: "#3B82F6", filter: () => setActiveTab("orders") },
-    { id: 2, title: "Active Orders", value: dashboardStats?.pending_orders?.toString() || orders.filter((order) => ["pending", "scheduled", "process"].includes(order.status)).length.toString() || "0", change: "+8.2%", icon: <FiClock />, color: "#F59E0B", filter: () => { setActiveTab("orders"); setFilterStatus("pending"); } },
-    { id: 3, title: "Total Clients", value: dashboardStats?.total_clients?.toString() || clients.length.toString() || "0", change: "+5.3%", icon: <FiUsers />, color: "#10B981", filter: () => setActiveTab("clients") },
-    { id: 4, title: "Delivered Orders", value: dashboardStats?.delivered_orders?.toString() || orders.filter((order) => order.status === "delivered").length.toString() || "0", change: "+15.2%", icon: <FiCheckCircle />, color: "#8B5CF6", filter: () => { setActiveTab("orders"); setFilterStatus("delivered"); } },
-    { id: 5, title: "Pending Orders", value: orders.filter((order) => order.status === "pending").length.toString() || "0", change: "-2.1%", icon: <FiAlertCircle />, color: "#EF4444", filter: () => { setActiveTab("orders"); setFilterStatus("pending"); } },
-    { id: 6, title: "Total Products", value: dashboardStats?.total_products?.toString() || products.length.toString() || "0", change: "+3.7%", icon: <FiBox />, color: "#3B82F6", filter: () => setActiveTab("products") },
+    { id: 1, title: "Total Orders", value: dashboardStats?.total_orders?.toString() || "0", change: "+12.5%", icon: <FiPackage />, color: "#3B82F6", filter: () => setActiveTab("orders") },
+    { id: 2, title: "Active Orders", value: dashboardStats?.pending_orders?.toString() || "0", change: "+8.2%", icon: <FiClock />, color: "#F59E0B", filter: () => { setActiveTab("orders"); setFilterStatus("pending"); } },
+    { id: 3, title: "Total Clients", value: dashboardStats?.total_clients?.toString() || "0", change: "+5.3%", icon: <FiUsers />, color: "#10B981", filter: () => setActiveTab("clients") },
+    { id: 4, title: "Delivered Orders", value: dashboardStats?.delivered_orders?.toString() || "0", change: "+15.2%", icon: <FiCheckCircle />, color: "#8B5CF6", filter: () => { setActiveTab("orders"); setFilterStatus("delivered"); } },
+    { id: 5, title: "Pending Orders", value: dashboardStats?.pending_orders?.toString() || "0", change: "-2.1%", icon: <FiAlertCircle />, color: "#EF4444", filter: () => { setActiveTab("orders"); setFilterStatus("pending"); } },
+    { id: 6, title: "Total Products", value: dashboardStats?.total_products?.toString() || "0", change: "+3.7%", icon: <FiBox />, color: "#3B82F6", filter: () => setActiveTab("products") },
   ];
 
   const receiptModalConfig =

@@ -92,8 +92,14 @@ const applyPresetDateRange = (
   return { startDate: isoDate(start), endDate: isoDate(end) };
 };
 
-const CompanysTab = () => {
-  const [companys, setCompanys] = useState<Company[]>([]);
+interface CompanysTabProps {
+  companys?: Company[];
+  loading?: boolean;
+  onRefresh?: () => Promise<void> | void;
+}
+
+const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefresh }: CompanysTabProps) => {
+  const [companys, setCompanys] = useState<Company[]>(initialCompanys);
   const [searchTerm, setSearchTerm] = useState("");
   const [dateRange, setDateRange] = useState<DateRange>({ startDate: "", endDate: "" });
   const [currentPage, setCurrentPage] = useState(1);
@@ -104,6 +110,10 @@ const CompanysTab = () => {
   const [companyForm, setCompanyForm] = useState<CompanyForm>(emptyForm);
   const [loadingData, setLoadingData] = useState(false);
   const [savingCompany, setSavingCompany] = useState(false);
+
+  useEffect(() => {
+    setCompanys(initialCompanys);
+  }, [initialCompanys]);
 
   const loadCompaniesFromDb = useCallback(async () => {
     setLoadingData(true);
@@ -130,8 +140,9 @@ const CompanysTab = () => {
   }, []);
 
   useEffect(() => {
+    if (onRefresh) return;
     void loadCompaniesFromDb();
-  }, [loadCompaniesFromDb]);
+  }, [loadCompaniesFromDb, onRefresh]);
 
   const filteredCompanys = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
@@ -265,7 +276,11 @@ const CompanysTab = () => {
       }
 
       closeFormModal();
-      await loadCompaniesFromDb();
+      if (onRefresh) {
+        await onRefresh();
+      } else {
+        await loadCompaniesFromDb();
+      }
     } catch (error: any) {
       console.error("Company save error:", error);
       window.alert(error?.message || "Failed to save company");
@@ -293,7 +308,11 @@ const CompanysTab = () => {
 
       setSelectedCompanyIds((prev) => prev.filter((selectedId) => selectedId !== id));
       if (selectedCompany?.id === id) setSelectedCompany(null);
-      await loadCompaniesFromDb();
+      if (onRefresh) {
+        await onRefresh();
+      } else {
+        await loadCompaniesFromDb();
+      }
     } catch (error: any) {
       console.error("Company delete error:", error);
       window.alert(error?.message || "Failed to delete company");
@@ -547,7 +566,7 @@ const CompanysTab = () => {
       />
 
       <div className="table-container">
-        {loadingData ? (
+        {loading || loadingData ? (
           <div className="loading-state">
             <div className="loading-spinner"></div>
             <p>Loading companies from database...</p>

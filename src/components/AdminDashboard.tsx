@@ -8,7 +8,7 @@ import {
   FiShield, FiAlertCircle, FiCheckCircle,
   FiClock, FiRefreshCw,
   FiEdit, FiTrash2, FiChevronLeft, FiChevronRight,
-  FiTrendingDown, FiBox, FiUserCheck,
+  FiTrendingDown, FiUserCheck,
   FiX, FiShoppingBag, FiCalendar,
   FiUpload, FiTruck, FiUser, FiCamera,
   FiInfo, FiHardDrive,
@@ -21,6 +21,31 @@ import { useNavigate } from 'react-router-dom';
 import './css/AdminDashboard.css';
 import './css/Dashboard.css';
 import NotificationDropdown from './dashboard/NotificationDropdown';
+import OrdersTab from './dashboard/tabs/OrdersTab';
+import UserTab from './dashboard/tabs/UserTab';
+import StaffTab from './dashboard/tabs/StaffTab';
+import RevenueTab from './dashboard/tabs/RevenueTab';
+import AnalyticsTab from './dashboard/tabs/AnalyticsTab';
+import ClientsTab from './dashboard/tabs/ClientsTab';
+import ProductsTab from './dashboard/tabs/ProductsTab';
+import DeliveryTab from './dashboard/tabs/DeliveryTab';
+import ReplacementOrdersTab from './dashboard/tabs/ReplacementOrdersTab';
+import SpareProductsTab from './dashboard/tabs/SpareProductsTab';
+import ShopclaimTab from './dashboard/tabs/ShopclaimTab';
+import CompanyClaimTab from './dashboard/tabs/CompanyClaimTab';
+import CompanysTab from './dashboard/tabs/CompanysTab';
+import SunToCompanyTab from './dashboard/tabs/SunToCompanyTab';
+import CompanyToSunTab from './dashboard/tabs/CompanyToSunTab';
+import BrandwiseOverallReportTab from './dashboard/tabs/BrandwiseOverallReportTab';
+import PendingTab from './dashboard/tabs/PendingTab';
+import ReceiptActionModal from './dashboard/modals/ReceiptActionModal';
+import OrderFormModal from './dashboard/modals/OrderFormModal';
+import ClientFormModal from './dashboard/modals/ClientFormModal';
+import ProductFormModal from './dashboard/modals/ProductFormModal';
+import UserFormModal from './dashboard/modals/UserFormModal';
+import StaffFormModal from './dashboard/modals/StaffFormModal';
+import UserDetailModal from './dashboard/modals/UserDetailModal';
+import StaffDetailModal from './dashboard/modals/StaffDetailModal';
 import {
   createDeliveryReceiptMarkup,
   createOrderReceiptMarkup,
@@ -31,33 +56,7 @@ import { exportStyledPdfReport } from './dashboard/pdfExport';
 import { expandProductNameSerialPairs } from './dashboard/productBatch';
 import { formatDisplayDateTime, parseAppDate } from './dashboard/utils';
 import ConfirmDeleteModal from './dashboard/modals/ConfirmDeleteModal';
-import type { Order as DashboardOrder } from './dashboard/types';
-
-const OrdersTab = React.lazy(() => import('./dashboard/tabs/OrdersTab'));
-const UserTab = React.lazy(() => import('./dashboard/tabs/UserTab'));
-const StaffTab = React.lazy(() => import('./dashboard/tabs/StaffTab'));
-const RevenueTab = React.lazy(() => import('./dashboard/tabs/RevenueTab'));
-const AnalyticsTab = React.lazy(() => import('./dashboard/tabs/AnalyticsTab'));
-const ClientsTab = React.lazy(() => import('./dashboard/tabs/ClientsTab'));
-const ProductsTab = React.lazy(() => import('./dashboard/tabs/ProductsTab'));
-const DeliveryTab = React.lazy(() => import('./dashboard/tabs/DeliveryTab'));
-const ReplacementOrdersTab = React.lazy(() => import('./dashboard/tabs/ReplacementOrdersTab'));
-const SpareProductsTab = React.lazy(() => import('./dashboard/tabs/SpareProductsTab'));
-const ShopclaimTab = React.lazy(() => import('./dashboard/tabs/ShopclaimTab'));
-const CompanyClaimTab = React.lazy(() => import('./dashboard/tabs/CompanyClaimTab'));
-const CompanysTab = React.lazy(() => import('./dashboard/tabs/CompanysTab'));
-const SunToCompanyTab = React.lazy(() => import('./dashboard/tabs/SunToCompanyTab'));
-const CompanyToSunTab = React.lazy(() => import('./dashboard/tabs/CompanyToSunTab'));
-const BrandwiseOverallReportTab = React.lazy(() => import('./dashboard/tabs/BrandwiseOverallReportTab'));
-const PendingTab = React.lazy(() => import('./dashboard/tabs/PendingTab'));
-const ReceiptActionModal = React.lazy(() => import('./dashboard/modals/ReceiptActionModal'));
-const OrderFormModal = React.lazy(() => import('./dashboard/modals/OrderFormModal'));
-const ClientFormModal = React.lazy(() => import('./dashboard/modals/ClientFormModal'));
-const ProductFormModal = React.lazy(() => import('./dashboard/modals/ProductFormModal'));
-const UserFormModal = React.lazy(() => import('./dashboard/modals/UserFormModal'));
-const StaffFormModal = React.lazy(() => import('./dashboard/modals/StaffFormModal'));
-const UserDetailModal = React.lazy(() => import('./dashboard/modals/UserDetailModal'));
-const StaffDetailModal = React.lazy(() => import('./dashboard/modals/StaffDetailModal'));
+import type { Company as DashboardCompany, Order as DashboardOrder } from './dashboard/types';
 
 // Enhanced Type Definitions
 interface User {
@@ -101,6 +100,7 @@ interface BackupHistoryItem {
 }
 
 const BACKUP_HISTORY_STORAGE_KEY = 'backupHistoryLocal';
+const BACKUP_HISTORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
 
 interface StaffPerformance {
   id: number;
@@ -274,18 +274,18 @@ interface AdminDashboardProps {
   onLogout: () => void;
 }
 
+const isAdminDeliveryCompleted = (delivery: Delivery) => {
+  const normalizedStatus = String(delivery.status || '').trim().toLowerCase();
+  return (
+    normalizedStatus === 'delivered' ||
+    normalizedStatus === 'deliveryed' ||
+    (delivery.delivered_date && delivery.delivered_date !== '0000-00-00 00:00:00')
+  );
+};
+
 type ReceiptTarget =
   | { kind: 'order'; order: Order }
   | { kind: 'delivery'; delivery: Delivery };
-
-const LazySectionLoader = () => (
-  <div className="loading-overlay-content">
-    <div className="loading-spinner">
-      <div className="spinner-ring"></div>
-    </div>
-    <p className="loading-text">Loading section...</p>
-  </div>
-);
 
 // Alert Component
 const AlertMessage: React.FC<{
@@ -1758,6 +1758,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [dashboardStats, setDashboardStats] = useState<DashboardStats | null>(null);
   const [users, setUsers] = useState<User[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [companys, setCompanys] = useState<DashboardCompany[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [sunToCompanyClaims, setSunToCompanyClaims] = useState<Product[]>([]);
@@ -2138,150 +2139,36 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   // Data loading functions
   const loadDashboardData = async () => {
     try {
-      // Load dashboard stats from API
       const data = await apiRequest('admin_api.php?action=dashboard_stats');
-      
-      if (data.success && data.stats) {
-        console.log('Dashboard stats loaded:', data.stats);
-        
-        // Map API response to DashboardStats interface
-        const stats: DashboardStats = {
-          total_users: data.stats.total_users || 0,
-          total_clients: data.stats.total_clients || 0,
-          total_orders: data.stats.total_orders || 0,
-          total_products: data.stats.total_products || 0,
-          active_staff: data.stats.active_staff || 0,
-          pending_orders: data.stats.pending_orders || 0,
-          delivered_orders: data.stats.delivered_orders || 0,
-          total_revenue: data.stats.total_revenue || 0,
-          today_orders: data.stats.today_orders || 0,
-          today_revenue: data.stats.today_revenue || 0,
-          completed_orders: data.stats.completed_orders || 0,
-          active_products: data.stats.active_products || 0,
-          low_stock_products: data.stats.low_stock_products || 0,
-          avg_order_value: data.stats.avg_order_value || 0
-        };
-        
-        setDashboardStats(stats);
-      } else {
-        console.error('Failed to load dashboard stats:', data);
-        // Fallback to manual calculations if API fails
-        await fallbackDashboardData();
+
+      if (!data?.success || !data?.stats) {
+        throw new Error(data?.message || 'Dashboard stats were not returned from database');
       }
-    } catch (error) {
-      console.error('Error loading dashboard data:', error);
-      // Fallback to manual calculations
-      await fallbackDashboardData();
-    }
-  };
-  
-  const fallbackDashboardData = async () => {
-    try {
-      // Try to load individual data and calculate manually
-      const usersData = await apiRequest('admin_api.php?action=get_users');
-      const clientsData = await apiRequest('admin_api.php?action=get_clients');
-      const ordersData = await apiRequest('admin_api.php?action=get_orders');
-      const productsData = await apiRequest('admin_api.php?action=get_products');
-      
-      const today = new Date().toISOString().split('T')[0];
-      
-      // Calculate today's orders and revenue
-      const todayOrders = ordersData.orders ? 
-        ordersData.orders.filter((o: any) => o.created_at && o.created_at.startsWith(today)) : [];
-      
-      const todayRevenue = todayOrders.reduce((sum: number, o: any) => 
-        sum + parseFloat(o.final_cost || o.estimated_cost || '0'), 0);
-      
-      // FIXED: Correctly calculate pending orders - only orders with status 'pending'
-      const pendingOrders = ordersData.orders ? 
-        ordersData.orders.filter((o: any) => 
-          (o.status && o.status.toString().toLowerCase() === 'pending')
-        ).length : 0;
-      
-      // Calculate total revenue
-      const totalRevenue = ordersData.orders ? 
-        ordersData.orders.reduce((sum: number, o: any) => 
-          sum + parseFloat(o.final_cost || o.estimated_cost || '0'), 0) : 0;
-      
-      // Calculate delivered orders
-      const deliveredOrders = ordersData.orders ? 
-        ordersData.orders.filter((o: any) => 
-          o.status && o.status.toString().toLowerCase() === 'delivered'
-        ).length : 0;
-      
-      // Calculate completed orders
-      const completedOrders = ordersData.orders ? 
-        ordersData.orders.filter((o: any) => 
-          o.status && o.status.toString().toLowerCase() === 'completed'
-        ).length : 0;
-      
-      // Calculate active staff
-      const activeStaff = usersData.users ? 
-        usersData.users.filter((u: any) => 
-          (u.role !== 'admin') &&
-          (u.is_active === '1' || u.is_active === 1 || u.is_active === true || u.is_active === 'true')
-        ).length : 0;
-      
-      // Calculate active products
-      const activeProducts = productsData.products ? 
-        productsData.products.filter((p: any) => p.status === 'active').length : 0;
-      
-      // Calculate low stock products only when the API actually returns stock fields
-      const lowStockProducts = productsData.products ? 
-        productsData.products.filter((p: any) => 
-          p.stock_quantity !== undefined &&
-          p.min_stock_level !== undefined &&
-          parseInt(p.stock_quantity || 0) <= parseInt(p.min_stock_level || 5)
-        ).length : 0;
-      
-      // Calculate average order value
-      const avgOrderValue = ordersData.orders && ordersData.orders.length > 0 ? 
-        totalRevenue / ordersData.orders.length : 0;
-      
+
+      console.log('Dashboard stats loaded:', data.stats);
+
       const stats: DashboardStats = {
-        total_users: usersData.users ? usersData.users.length : 0,
-        total_clients: clientsData.clients ? clientsData.clients.length : 0,
-        total_orders: ordersData.orders ? ordersData.orders.length : 0,
-        total_products: productsData.products ? productsData.products.length : 0,
-        active_staff: activeStaff,
-        pending_orders: pendingOrders, // This now correctly counts only 'pending' status orders
-        delivered_orders: deliveredOrders,
-        completed_orders: completedOrders,
-        total_revenue: totalRevenue,
-        today_orders: todayOrders.length,
-        today_revenue: todayRevenue,
-        active_products: activeProducts,
-        low_stock_products: lowStockProducts,
-        avg_order_value: avgOrderValue
+        total_users: Number(data.stats.total_users) || 0,
+        total_clients: Number(data.stats.total_clients) || 0,
+        total_orders: Number(data.stats.total_orders) || 0,
+        total_products: Number(data.stats.total_products) || 0,
+        active_staff: Number(data.stats.active_staff) || 0,
+        pending_orders: Number(data.stats.pending_orders) || 0,
+        completed_orders: Number(data.stats.completed_orders) || 0,
+        delivered_orders: Number(data.stats.delivered_orders) || 0,
+        total_revenue: Number(data.stats.total_revenue) || 0,
+        today_orders: Number(data.stats.today_orders) || 0,
+        today_revenue: Number(data.stats.today_revenue) || 0,
+        active_products: Number(data.stats.active_products) || 0,
+        low_stock_products: Number(data.stats.low_stock_products) || 0,
+        avg_order_value: Number(data.stats.avg_order_value) || 0
       };
-      
-      console.log('Fallback dashboard stats calculated:', {
-        pendingOrders,
-        totalOrders: ordersData.orders ? ordersData.orders.length : 0,
-        statusBreakdown: ordersData.orders ? ordersData.orders.map((o: any) => o.status) : []
-      });
-      
+
       setDashboardStats(stats);
-      
-    } catch (error) {
-      console.error('Error in fallback dashboard data:', error);
-      // Set empty stats
-      setDashboardStats({
-        total_users: 0,
-        total_clients: 0,
-        total_orders: 0,
-        total_products: 0,
-        active_staff: 0,
-        pending_orders: 0,
-        delivered_orders: 0,
-        completed_orders: 0,
-        total_revenue: 0,
-        today_orders: 0,
-        today_revenue: 0,
-        active_products: 0,
-        low_stock_products: 0,
-        avg_order_value: 0
-      });
+    } catch (error: any) {
+      console.error('Error loading dashboard data:', error);
+      setDashboardStats(null);
+      throw new Error(error?.message || 'Failed to load dashboard stats from database');
     }
   };
   
@@ -2657,6 +2544,35 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     } catch (error) {
       console.error('Error loading products:', error);
       setProducts([]);
+    }
+  };
+
+  const loadCompanies = async () => {
+    try {
+      const data = await apiRequest('companys.php');
+
+      if (data.success && Array.isArray(data.companys)) {
+        const mappedCompanies: DashboardCompany[] = data.companys.map((company: any) => ({
+          id: Number(company.id) || 0,
+          company_code: String(company.company_code || `COM${company.id || ''}`),
+          company_name: String(company.company_name || ''),
+          product: String(company.product || ''),
+          contact_person: String(company.contact_person || ''),
+          phone: String(company.phone || ''),
+          email: String(company.email || ''),
+          address: String(company.address || ''),
+          notes: String(company.notes || ''),
+          source_pdf: String(company.source_pdf || ''),
+          created_at: String(company.created_at || new Date().toISOString()),
+        }));
+
+        setCompanys(mappedCompanies);
+      } else {
+        setCompanys([]);
+      }
+    } catch (error) {
+      console.error('Error loading companies:', error);
+      setCompanys([]);
     }
   };
   
@@ -4517,6 +4433,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     return matchesSearch && matchesDateRange(product.created_at);
   }), [companyToSunClaims, deferredSearchTerm, normalizedDeferredSearchTerm, dateRange.startDate, dateRange.endDate, isCompanyToSunTabActive]);
 
+  const deliveredDeliveriesCount = useMemo(
+    () => deliveries.filter((delivery) => isAdminDeliveryCompleted(delivery)).length,
+    [deliveries],
+  );
+
   const filteredDeliveriesForDashboard = useMemo(() => deliveries.filter((delivery) => {
     if (!isDeliveriesTabActive) return false;
     const search = normalizedDeferredSearchTerm;
@@ -4532,7 +4453,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         delivery.contact_phone
       ].some((value) => String(value || '').toLowerCase().includes(search));
 
-    const matchesStatus = !filters.deliveries.status || delivery.status === filters.deliveries.status;
+    const matchesStatus =
+      !filters.deliveries.status ||
+      (filters.deliveries.status === 'delivered'
+        ? isAdminDeliveryCompleted(delivery)
+        : delivery.status === filters.deliveries.status);
     const matchesType = !filters.deliveries.delivery_type || delivery.delivery_type === filters.deliveries.delivery_type;
     return matchesSearch && matchesStatus && matchesType && matchesDateRange(delivery.created_at);
   }), [deliveries, deferredSearchTerm, normalizedDeferredSearchTerm, filters.deliveries, dateRange.startDate, dateRange.endDate, isDeliveriesTabActive]);
@@ -4617,7 +4542,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         case 'replacementorders':
         case 'pending':
           await Promise.all([loadOrders(), loadStaffForDropdown(), loadClientsForDropdown(), loadProducts()]);
-          markTabsLoaded(['orders', 'replacementorders', 'pending', 'products', 'spareproducts', 'shopclaim', 'companyclaim', 'companys']);
+          markTabsLoaded(['orders', 'replacementorders', 'pending', 'products', 'spareproducts', 'shopclaim', 'companyclaim']);
           break;
         case 'clients':
           await loadClients();
@@ -4627,9 +4552,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         case 'spareproducts':
         case 'shopclaim':
         case 'companyclaim':
-        case 'companys':
           await loadProducts();
-          markTabsLoaded(['products', 'spareproducts', 'shopclaim', 'companyclaim', 'companys']);
+          markTabsLoaded(['products', 'spareproducts', 'shopclaim', 'companyclaim']);
+          break;
+        case 'companys':
+          await loadCompanies();
+          markTabsLoaded(['companys']);
           break;
         case 'suntocompany':
           await loadSunToCompanyClaims();
@@ -4653,7 +4581,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           break;
         case 'brandwiseoverallreport':
           await Promise.all([loadOrders(), loadProducts(), loadDeliveries()]);
-          markTabsLoaded(['brandwiseoverallreport', 'orders', 'replacementorders', 'pending', 'products', 'spareproducts', 'shopclaim', 'companyclaim', 'companys', 'deliveries']);
+          markTabsLoaded(['brandwiseoverallreport', 'orders', 'replacementorders', 'pending', 'products', 'spareproducts', 'shopclaim', 'companyclaim', 'deliveries']);
           break;
         case 'deliveries':
           await loadDeliveries();
@@ -4682,7 +4610,38 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       setError(error?.message || 'Failed to load data');
     });
   }, [activeTab, loadDataForTab, user]);
-  
+
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+    let timeoutId: number | null = null;
+    let idleId: number | null = null;
+    const canUseWindow = typeof window !== 'undefined';
+    const tabsToWarm = ['orders', 'clients', 'products', 'deliveries', 'companys', 'suntocompany', 'companytosun', 'staff', 'analytics'];
+
+    const warmTabData = () => {
+      if (cancelled) return;
+      void Promise.allSettled(tabsToWarm.map((tab) => loadDataForTab(tab)));
+    };
+
+    if (canUseWindow && 'requestIdleCallback' in window) {
+      idleId = window.requestIdleCallback(warmTabData, { timeout: 1600 });
+    } else {
+      timeoutId = globalThis.setTimeout(warmTabData, 600);
+    }
+
+    return () => {
+      cancelled = true;
+      if (idleId !== null && canUseWindow && 'cancelIdleCallback' in window) {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId !== null) {
+        globalThis.clearTimeout(timeoutId);
+      }
+    };
+  }, [loadDataForTab, user]);
+
   const handleLogout = () => {
     localStorage.clear();
     onLogout();
@@ -5174,24 +5133,38 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     return result;
   };
 
+  const normalizeBackupHistory = useCallback((items: BackupHistoryItem[]): BackupHistoryItem[] => {
+    const cutoffTime = Date.now() - BACKUP_HISTORY_RETENTION_MS;
+    return items
+      .filter((item) => {
+        const createdAt = new Date(String(item.created_at).replace(' ', 'T')).getTime();
+        return Number.isFinite(createdAt) && createdAt >= cutoffTime;
+      })
+      .sort((a, b) => {
+        const at = new Date(String(a.created_at).replace(' ', 'T')).getTime();
+        const bt = new Date(String(b.created_at).replace(' ', 'T')).getTime();
+        return bt - at;
+      });
+  }, []);
+
   const persistBackupHistory = useCallback((items: BackupHistoryItem[]) => {
     try {
-      localStorage.setItem(BACKUP_HISTORY_STORAGE_KEY, JSON.stringify(items));
+      localStorage.setItem(BACKUP_HISTORY_STORAGE_KEY, JSON.stringify(normalizeBackupHistory(items)));
     } catch {
       // Ignore storage errors in restricted environments.
     }
-  }, []);
+  }, [normalizeBackupHistory]);
 
   const loadBackupHistoryFromStorage = useCallback((): BackupHistoryItem[] => {
     try {
       const raw = localStorage.getItem(BACKUP_HISTORY_STORAGE_KEY);
       if (!raw) return [];
       const parsed = JSON.parse(raw);
-      return Array.isArray(parsed) ? parsed : [];
+      return Array.isArray(parsed) ? normalizeBackupHistory(parsed) : [];
     } catch {
       return [];
     }
-  }, []);
+  }, [normalizeBackupHistory]);
 
   const getAdminApiCandidates = useCallback(() => {
     const primary = `${API_BASE_URL}/admin_api.php`;
@@ -5275,10 +5248,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       const link = document.createElement('a');
       link.href = downloadUrl;
       link.download = fileName;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.style.display = 'none';
       document.body.appendChild(link);
       link.click();
-      link.remove();
-      window.URL.revokeObjectURL(downloadUrl);
+      window.setTimeout(() => {
+        link.remove();
+        window.URL.revokeObjectURL(downloadUrl);
+      }, 1000);
 
       // Show the latest backup immediately in UI after successful download.
       setBackupHistory((prev) => {
@@ -5360,11 +5338,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         });
       });
 
-      const mergedHistory = Array.from(mergedMap.values()).sort((a, b) => {
-        const at = new Date(String(a.created_at).replace(' ', 'T')).getTime();
-        const bt = new Date(String(b.created_at).replace(' ', 'T')).getTime();
-        return bt - at;
-      });
+      const mergedHistory = normalizeBackupHistory(Array.from(mergedMap.values()));
 
       setBackupHistory(mergedHistory);
       persistBackupHistory(mergedHistory);
@@ -5382,7 +5356,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     } finally {
       setBackupHistoryLoading(false);
     }
-  }, [getAdminApiCandidates, loadBackupHistoryFromStorage, persistBackupHistory]);
+  }, [getAdminApiCandidates, loadBackupHistoryFromStorage, normalizeBackupHistory, persistBackupHistory]);
 
   useEffect(() => {
     if (activeTab === 'backup') {
@@ -5817,12 +5791,30 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const isLimitedRole = false;
   const hiddenForLimitedRoles = new Set<string>();
   const visibleNavItems = navItems;
+  const normalizedDashboardStats = useMemo(() => {
+    if (!dashboardStats) return null;
+
+    return {
+      totalProducts: Number(dashboardStats.total_products) || 0,
+      todayOrders: Number(dashboardStats.today_orders) || 0,
+      totalUsers: Number(dashboardStats.total_users) || 0,
+      totalClients: Number(dashboardStats.total_clients) || 0,
+      totalOrders: Number(dashboardStats.total_orders) || 0,
+      activeStaff: Number(dashboardStats.active_staff) || 0,
+      pendingOrders: Number(dashboardStats.pending_orders) || 0,
+      deliveredOrders: deliveredDeliveriesCount,
+      completedOrders: Number(dashboardStats.completed_orders) || 0,
+      todayRevenue: Number(dashboardStats.today_revenue) || 0,
+      totalRevenue: Number(dashboardStats.total_revenue) || 0,
+      activeProducts: Number(dashboardStats.active_products) || 0,
+    };
+  }, [dashboardStats, deliveredDeliveriesCount]);
   
-  // Stats cards data - Updated to use real API data
-  const statsCards = useMemo(() => dashboardStats ? [
+  // Stats cards use only normalized database stats.
+  const statsCards = useMemo(() => normalizedDashboardStats ? [
     {
       title: 'Total Products',
-      value: dashboardStats.total_products?.toLocaleString() || '0',
+      value: normalizedDashboardStats.totalProducts.toLocaleString(),
       icon: <FiShoppingBag />,
       color: 'orange',
       description: 'Total products in inventory',
@@ -5834,7 +5826,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     },
     {
       title: "Today's Orders",
-      value: dashboardStats.today_orders?.toLocaleString() || '0',
+      value: normalizedDashboardStats.todayOrders.toLocaleString(),
       icon: <FiPackage />,
       color: 'green',
       description: "Orders received today",
@@ -5846,7 +5838,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     },
     {
       title: 'Total Users',
-      value: dashboardStats.total_users?.toLocaleString() || '0',
+      value: normalizedDashboardStats.totalUsers.toLocaleString(),
       icon: <FiUsers />,
       color: 'blue',
       description: 'Active system users',
@@ -5858,7 +5850,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     },
     {
       title: 'Total Clients',
-      value: dashboardStats.total_clients?.toLocaleString() || '0',
+      value: normalizedDashboardStats.totalClients.toLocaleString(),
       icon: <FiUsers />,
       color: 'teal',
       description: 'Registered clients',
@@ -5870,7 +5862,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     },
     {
       title: 'Total Orders',
-      value: dashboardStats.total_orders?.toLocaleString() || '0',
+      value: normalizedDashboardStats.totalOrders.toLocaleString(),
       icon: <FiPackage />,
       color: 'purple',
       description: 'All time orders',
@@ -5882,7 +5874,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     },
     {
       title: 'Active Staff',
-      value: dashboardStats.active_staff?.toLocaleString() || '0',
+      value: normalizedDashboardStats.activeStaff.toLocaleString(),
       icon: <FiUserCheck />,
       color: 'pink',
       description: 'Active staff members',
@@ -5893,7 +5885,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     },
     {
       title: 'Pending Orders',
-      value: dashboardStats.pending_orders?.toLocaleString() || '0',
+      value: normalizedDashboardStats.pendingOrders.toLocaleString(),
       icon: <FiClock />,
       color: 'orange',
       description: 'Awaiting processing',
@@ -5905,7 +5897,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     },
     {
       title: 'Delivered Orders',
-      value: dashboardStats.delivered_orders?.toLocaleString() || '0',
+      value: normalizedDashboardStats.deliveredOrders.toLocaleString(),
       icon: <FiCheckCircle />,
       color: 'green',
       description: 'Successfully delivered',
@@ -5916,20 +5908,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       }
     },
     {
-      title: 'Completed Orders',
-      value: dashboardStats.completed_orders?.toLocaleString() || '0',
-      icon: <FiCheck />,
-      color: 'green',
-      description: 'Completed services',
-      onClick: () => {
-        setActiveTab('orders');
-        setFilters(prev => ({...prev, orders: {status: 'completed', priority: '', payment_status: ''}}));
-        setSearchTerm('');
-      }
-    },
-    {
       title: 'Today Revenue',
-      value: `Rs. ${dashboardStats.today_revenue?.toLocaleString() || '0'}`,
+      value: `Rs. ${normalizedDashboardStats.todayRevenue.toLocaleString()}`,
       icon: <FiDollarSign />,
       color: 'green',
       description: "Today's revenue",
@@ -5940,7 +5920,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     },
     {
       title: 'Total Revenue',
-      value: `Rs. ${dashboardStats.total_revenue?.toLocaleString() || '0'}`,
+      value: `Rs. ${normalizedDashboardStats.totalRevenue.toLocaleString()}`,
       icon: <FiDollarSign />,
       color: 'blue',
       description: 'Overall revenue',
@@ -5948,20 +5928,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         setActiveTab('analytics');
         setSearchTerm('');
       }
-    },
-    {
-      title: 'Active Products',
-      value: dashboardStats.active_products?.toLocaleString() || '0',
-      icon: <FiBox />,
-      color: 'blue',
-      description: 'Active in inventory',
-      onClick: () => {
-        setActiveTab('products');
-        setFilters(prev => ({...prev, products: {category: '', status: 'active'}}));
-        setSearchTerm('');
-      }
     }
-  ] : [], [dashboardStats]);
+  ] : [], [normalizedDashboardStats]);
 
   const visibleStatsCards = useMemo(() => isLimitedRole
     ? statsCards.filter((stat) => stat.title !== 'Today Revenue' && stat.title !== 'Total Revenue')
@@ -6226,14 +6194,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                   Monitor and manage your entire Raj Communication ecosystem
                 </p>
               </div>
-              {dashboardStats && (
+              {normalizedDashboardStats && (
                 <div className="quick-stats">
                   <div className="stat-item" onClick={() => setActiveTab('products')}>
                     <div className="stat-icon-small">
                       <FiShoppingBag />
                     </div>
                     <div className="stat-info">
-                      <span className="stat-value-small">{dashboardStats.total_products?.toLocaleString() || '0'}</span>
+                      <span className="stat-value-small">{normalizedDashboardStats.totalProducts.toLocaleString()}</span>
                       <span className="stat-label">Products</span>
                     </div>
                   </div>
@@ -6242,7 +6210,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                       <FiPackage />
                     </div>
                     <div className="stat-info">
-                      <span className="stat-value-small">{dashboardStats.today_orders?.toLocaleString() || '0'}</span>
+                      <span className="stat-value-small">{normalizedDashboardStats.todayOrders.toLocaleString()}</span>
                       <span className="stat-label">Today's Orders</span>
                     </div>
                   </div>
@@ -6251,7 +6219,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                       <FiUsers />
                     </div>
                     <div className="stat-info">
-                      <span className="stat-value-small">{dashboardStats.total_users?.toLocaleString() || '0'}</span>
+                      <span className="stat-value-small">{normalizedDashboardStats.totalUsers.toLocaleString()}</span>
                       <span className="stat-label">Users</span>
                     </div>
                   </div>
@@ -6261,7 +6229,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                         <FiDollarSign />
                       </div>
                       <div className="stat-info">
-                        <span className="stat-value-small">Rs. {dashboardStats.today_revenue?.toLocaleString() || '0'}</span>
+                        <span className="stat-value-small">Rs. {normalizedDashboardStats.todayRevenue.toLocaleString()}</span>
                         <span className="stat-label">Today's Revenue</span>
                       </div>
                     </div>
@@ -6280,7 +6248,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             </div>
           </div>
           
-          <React.Suspense fallback={<LazySectionLoader />}>
           {/* Dashboard Tab */}
           {activeTab === 'dashboard' && (
             <div className="dashboard-tab">
@@ -6376,7 +6343,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
           {activeTab === 'pending' && (
             <PendingTab
+              orders={orders as any}
               products={products as any}
+              loading={loading.pending}
             />
           )}
 
@@ -6500,7 +6469,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           )}
 
           {activeTab === 'companys' && (
-            <CompanysTab />
+            <CompanysTab
+              companys={companys}
+              loading={loading.companys}
+              onRefresh={loadCompanies}
+            />
           )}
 
           {activeTab === 'suntocompany' && (
@@ -6566,6 +6539,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
                     {/* Deliveries Tab */}
           {activeTab === 'deliveries' && (
             <DeliveryTab
+              orders={orders as any}
               filteredDeliveries={filteredDeliveriesForDashboard as any}
               loading={loading.deliveries}
               searchTerm={searchTerm}
@@ -6576,6 +6550,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               onPrintDeliveryReceipt={(delivery) => openReceiptOptionsForDelivery(delivery as any)}
               onViewOrders={() => setActiveTab('orders')}
               onClearFilters={clearAllFilters}
+              enableLiveFetch={false}
             />
           )}
           
@@ -6677,13 +6652,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               </div>
             </div>
           )}
-          </React.Suspense>
         </main>
         
         {/* Footer */}
         <footer className="dashboard-footer">
           <p className="footer-text">
-            Copyright 2026 Jeevan Larosh. All rights reserved
+            <a
+              href="https://jeevan-sysadmin.github.io/"
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ color: 'inherit', textDecoration: 'none' }}
+            >
+              Copyright 2026 Jeevan Larosh. All rights reserved
+            </a>
           </p>
           <div className="system-status">
             <div className="status-indicator">
@@ -6699,7 +6680,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       </div>
       
       {/* Modals */}
-      <React.Suspense fallback={<LazySectionLoader />}>
       {/* User Form Modal */}
       {(showCreateUser || (showEditModal && editType === 'user' && editData?.role === 'admin')) && (
         <UserFormModal
@@ -7513,8 +7493,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           }}
         />
       )}
-      </React.Suspense>
-      
       {/* Order Details Modal */}
       <OrderDetailsModal
         isOpen={showOrderDetailsModal}

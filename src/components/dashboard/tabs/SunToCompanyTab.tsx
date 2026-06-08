@@ -1,15 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import OrdersTab from "./OrdersTab";
 import type { DateRange, Order, Product } from "../types";
-
-const API_BASE_URL = "http://cloud.anyrdp.in:3001/raj_communication/api";
-
-interface SunToCompanyApiResponse {
-  success?: boolean;
-  orders?: Order[];
-  products?: Product[];
-  rajToComClaims?: Product[];
-}
 
 interface SunToCompanyTabProps {
   sunToCompanyClaims: Product[];
@@ -53,68 +44,6 @@ const SunToCompanyTab = ({
   getWarrantyColor,
 }: SunToCompanyTabProps) => {
   void getPriorityColor;
-  const [apiLoaded, setApiLoaded] = useState(false);
-  const [apiLoading, setApiLoading] = useState(false);
-  const [apiOrders, setApiOrders] = useState<Order[]>([]);
-  const [apiClaims, setApiClaims] = useState<Product[]>([]);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadRajToComData = async () => {
-      try {
-        setApiLoading(true);
-        const query =
-          dateRange.startDate && dateRange.endDate
-            ? `?start_date=${encodeURIComponent(dateRange.startDate)}&end_date=${encodeURIComponent(dateRange.endDate)}`
-            : "";
-        const response = await fetch(`${API_BASE_URL}/suntocompany.php${query}`);
-        const data = (await response.json()) as SunToCompanyApiResponse;
-
-        if (!isMounted) return;
-
-        if (response.ok && data?.success) {
-          const normalizeOrder = (order: Order): Order => ({
-            ...order,
-            id: Number(order.id) || 0,
-            client_id: Number(order.client_id) || 0,
-            product_id: Number(order.product_id) || 0,
-          });
-
-          const normalizeProduct = (product: Product): Product => ({
-            ...product,
-            id: Number(product.id) || 0,
-          });
-
-          const rawProducts = Array.isArray(data.products) ? data.products : [];
-          const rawRajToComClaims = Array.isArray(data.rajToComClaims) ? data.rajToComClaims : [];
-
-          const mergedClaims = Array.from(
-            new Map(
-              [...rawProducts, ...rawRajToComClaims]
-                .map(normalizeProduct)
-                .filter((product) => product.id > 0)
-                .map((product) => [product.id, product]),
-            ).values(),
-          );
-
-          setApiOrders((Array.isArray(data.orders) ? data.orders : []).map(normalizeOrder));
-          setApiClaims(mergedClaims);
-          setApiLoaded(true);
-        }
-      } catch {
-        if (!isMounted) return;
-      } finally {
-        if (isMounted) setApiLoading(false);
-      }
-    };
-
-    void loadRajToComData();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [dateRange.endDate, dateRange.startDate]);
 
   const parseIds = (value: unknown): number[] => {
     const raw =
@@ -188,35 +117,11 @@ const SunToCompanyTab = ({
     parseIds((order as Order & { rajtocom_product_ids?: unknown }).rajtocom_product_ids).length > 0 ||
     parseStatusProductIds(order).length > 0;
 
-  const sourceClaims = apiLoaded ? apiClaims : sunToCompanyClaims;
+  const sourceClaims = sunToCompanyClaims;
 
   const sourceFilteredClaims = useMemo(() => {
-    if (!apiLoaded) {
-      return filteredSunToCompanyClaims;
-    }
-
-    return sourceClaims.filter((product) => {
-      const matchesSearch =
-        !searchTerm ||
-        [product.product_name, product.brand, product.model, product.product_code, product.category].some((value) =>
-          value?.toLowerCase().includes(searchTerm.toLowerCase()),
-        ) ||
-        [product.serial_number, product.claim_type].some((value) =>
-          value?.toLowerCase().includes(searchTerm.toLowerCase()),
-        );
-
-      const createdDate = product.created_at ? new Date(product.created_at) : null;
-      const createdIso =
-        createdDate && !Number.isNaN(createdDate.getTime()) ? createdDate.toISOString().split("T")[0] : "";
-
-      const matchesDate =
-        !dateRange.startDate ||
-        !dateRange.endDate ||
-        (createdIso >= dateRange.startDate && createdIso <= dateRange.endDate);
-
-      return matchesSearch && matchesDate;
-    });
-  }, [apiLoaded, sourceClaims, filteredSunToCompanyClaims, searchTerm, dateRange.startDate, dateRange.endDate]);
+    return filteredSunToCompanyClaims;
+  }, [filteredSunToCompanyClaims]);
 
   const allClaimIds = useMemo(() => new Set(sourceClaims.map((product) => Number(product.id))), [sourceClaims]);
   const filteredClaimIds = useMemo(
@@ -224,7 +129,7 @@ const SunToCompanyTab = ({
     [sourceFilteredClaims],
   );
 
-  const sourceOrders = apiLoaded ? apiOrders : orders;
+  const sourceOrders = orders;
 
   const toRajToComScopedOrder = (order: Order): Order => {
     const rajIdsFromApi = parseIds((order as Order & { rajtocom_product_ids?: unknown }).rajtocom_product_ids);
@@ -249,17 +154,13 @@ const SunToCompanyTab = ({
   };
 
   const ordersForTab = useMemo(() => {
-    if (apiLoaded) {
-      return sourceOrders.map(toRajToComScopedOrder);
-    }
-
     const base =
       allClaimIds.size === 0
         ? sourceOrders.filter(hasRajToComFlow)
         : sourceOrders.filter((order) => orderProductIds(order).some((id) => allClaimIds.has(id)));
 
     return base.map(toRajToComScopedOrder);
-  }, [apiLoaded, sourceOrders, allClaimIds, sourceClaims]);
+  }, [sourceOrders, allClaimIds, sourceClaims]);
   const filteredOrdersForTab = useMemo(
     () =>
       filteredClaimIds.size === 0
@@ -273,7 +174,7 @@ const SunToCompanyTab = ({
       orders={ordersForTab}
       filteredOrders={filteredOrdersForTab}
       products={sourceClaims}
-      loading={loading || apiLoading}
+      loading={loading}
       searchTerm={searchTerm}
       dateRange={dateRange}
       onSearchChange={onSearchChange}

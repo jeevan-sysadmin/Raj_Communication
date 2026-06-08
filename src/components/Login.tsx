@@ -1,5 +1,6 @@
 // components/Login.tsx
-import { lazy, Suspense, useState, useEffect, useRef } from "react";
+import { Component, lazy, Suspense, useState, useEffect, useRef } from "react";
+import type { ReactNode } from "react";
 
 
 import { motion, AnimatePresence } from "framer-motion";
@@ -35,6 +36,31 @@ type NetworkInformationLike = {
 
 const LoginScene = lazy(() => import("./LoginScene"));
 
+class LoginSceneErrorBoundary extends Component<
+  { children: ReactNode; fallback: ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: ReactNode; fallback: ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: unknown) {
+    console.error("LoginScene failed to render:", error);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback;
+    }
+    return this.props.children;
+  }
+}
+
 // Enhanced API login function with better error handling
 async function apiLogin(email: string, password: string): Promise<LoginResponse> {
   const loginData = {
@@ -54,15 +80,22 @@ async function apiLogin(email: string, password: string): Promise<LoginResponse>
       body: JSON.stringify(loginData)
     });
 
-    if (response.ok) {
-      const data: LoginResponse = await response.json();
-      console.log("Login response:", data);
-      return data;
-    } else {
-      throw new Error("Invalid email or password");
+    const data: LoginResponse = await response.json().catch(() => ({
+      success: false,
+      message: "Invalid email or password",
+    }));
+    console.log("Login response:", data);
+
+    if (!response.ok) {
+      throw new Error(data.message || "Invalid email or password");
     }
+
+    return data;
   } catch (error) {
     console.error(`Error with API:`, error);
+    if (error instanceof Error) {
+      throw error;
+    }
     throw new Error("Invalid email or password");
   }
 }
@@ -83,6 +116,10 @@ export default function Login({ onLoginSuccess }: LoginProps) {
 
   const clearErrors = () => {
     setLoginError("");
+  };
+
+  const openPortfolio = () => {
+    window.open("https://jeevan-sysadmin.github.io/", "_blank", "noopener,noreferrer");
   };
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -145,9 +182,10 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           if (onLoginSuccess) {
             onLoginSuccess(targetRole);
           } else {
-            const targetPath = '/admin-dashboard';
+            const targetPath = data.redirect || '/admin-dashboard';
             window.location.href = targetPath;
           }
+          redirectTimeoutRef.current = null;
         }, 1500);
       } else {
         // Show the exact error message from API
@@ -157,11 +195,10 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         setShake(true);
         setTimeout(() => setShake(false), 500);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Login error:", err);
       
-      // Show simple error message for all errors
-      setLoginError("Invalid email or password");
+      setLoginError(err instanceof Error ? err.message : "Invalid email or password");
       setShake(true);
       setTimeout(() => setShake(false), 500);
     } finally {
@@ -242,9 +279,11 @@ export default function Login({ onLoginSuccess }: LoginProps) {
       ) : !showLoginScene ? (
         <div className="canvas-fallback" aria-hidden="true" />
       ) : (
-        <Suspense fallback={<div className="canvas-fallback" aria-hidden="true" />}>
-          <LoginScene />
-        </Suspense>
+        <LoginSceneErrorBoundary fallback={<div className="canvas-fallback" aria-hidden="true" />}>
+          <Suspense fallback={<div className="canvas-fallback" aria-hidden="true" />}>
+            <LoginScene />
+          </Suspense>
+        </LoginSceneErrorBoundary>
       )}
 
       {/* Centered Login Card */}
@@ -441,6 +480,16 @@ export default function Login({ onLoginSuccess }: LoginProps) {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 1 }}
+            onClick={openPortfolio}
+            onKeyDown={(e: React.KeyboardEvent<HTMLDivElement>) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                openPortfolio();
+              }
+            }}
+            role="link"
+            tabIndex={0}
+            style={{ cursor: "pointer" }}
           >
             <p className="footer-text">© 2026 Jeevan Larosh. All rights reserved.</p>
           </motion.div>

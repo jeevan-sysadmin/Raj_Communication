@@ -14,6 +14,32 @@ const normalizeRole = (rawRole: string | null | undefined): UserRole => {
   return 'user';
 };
 
+const readStoredAuthState = () => {
+  const token = localStorage.getItem('authToken') || localStorage.getItem('token');
+  const userData = localStorage.getItem('userData');
+  const loggedInFlag = localStorage.getItem('isLoggedIn');
+  const role = normalizeRole(localStorage.getItem('userRole'));
+
+  if (!token || !userData || loggedInFlag !== 'true') {
+    return { isLoggedIn: false, role };
+  }
+
+  try {
+    const parsedUser = JSON.parse(userData);
+    if (!parsedUser || typeof parsedUser !== 'object') {
+      throw new Error('Invalid user data');
+    }
+    return { isLoggedIn: true, role };
+  } catch {
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('token');
+    localStorage.removeItem('userData');
+    localStorage.removeItem('isLoggedIn');
+    localStorage.removeItem('userRole');
+    return { isLoggedIn: false, role: 'user' as UserRole };
+  }
+};
+
 const FullscreenLoader = () => (
   <div
     style={{
@@ -35,14 +61,11 @@ const FullscreenLoader = () => (
 
 function App() {
   const [authState, setAuthState] = useState(() => {
-    const token = localStorage.getItem('authToken') || localStorage.getItem('token');
-    const userData = localStorage.getItem('userData');
-    const loggedInFlag = localStorage.getItem('isLoggedIn');
-    const role = normalizeRole(localStorage.getItem('userRole'));
+    const storedAuth = readStoredAuthState();
 
     return {
-      isLoggedIn: !!(token && userData && loggedInFlag === 'true'),
-      role,
+      isLoggedIn: storedAuth.isLoggedIn,
+      role: storedAuth.role,
       isLoading: false,
     };
   });
@@ -81,12 +104,9 @@ function App() {
     children: ReactNode;
     requiredRole?: RequiredRole;
   }) => {
-    const token = localStorage.getItem('authToken') || localStorage.getItem('token');
-    const userData = localStorage.getItem('userData');
-    const loggedInFlag = localStorage.getItem('isLoggedIn');
-    const role = normalizeRole(localStorage.getItem('userRole'));
-
-    const isAuthenticated = !!(token && userData && loggedInFlag === 'true');
+    const storedAuth = readStoredAuthState();
+    const role = storedAuth.role;
+    const isAuthenticated = storedAuth.isLoggedIn;
     const hasAccess = requiredRole === 'both' || role === requiredRole || role === 'admin';
 
     if (!isAuthenticated) {

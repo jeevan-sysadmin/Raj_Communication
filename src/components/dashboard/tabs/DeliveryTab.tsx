@@ -25,6 +25,7 @@ import type { DateRange, Delivery } from "../types";
 import { formatDisplayDate } from "../utils";
 
 interface DeliveryTabProps {
+  orders?: DeliveryOrderMeta[];
   filteredDeliveries: Delivery[];
   loading: boolean;
   searchTerm: string;
@@ -35,6 +36,7 @@ interface DeliveryTabProps {
   onPrintDeliveryReceipt: (delivery: Delivery) => void;
   onViewOrders: () => void;
   onClearFilters: () => void;
+  enableLiveFetch?: boolean;
 }
 
 const ITEMS_PER_PAGE = 20;
@@ -319,6 +321,7 @@ const toSerialListFromDelivery = (delivery: Delivery): string[] => {
 };
 
 const DeliveryTab = ({
+  orders = [],
   filteredDeliveries,
   loading,
   searchTerm,
@@ -329,6 +332,7 @@ const DeliveryTab = ({
   onPrintDeliveryReceipt,
   onViewOrders,
   onClearFilters,
+  enableLiveFetch = true,
 }: DeliveryTabProps) => {
   const [liveDeliveries, setLiveDeliveries] = useState<Delivery[]>([]);
   const [orderMetaById, setOrderMetaById] = useState<Record<number, DeliveryOrderMeta>>({});
@@ -355,6 +359,7 @@ const DeliveryTab = ({
   const [editErrors, setEditErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
+    if (!enableLiveFetch) return;
     let mounted = true;
 
     const loadLiveDeliveries = async () => {
@@ -383,9 +388,41 @@ const DeliveryTab = ({
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [enableLiveFetch]);
 
   useEffect(() => {
+    if (orders.length > 0) {
+      const map: Record<number, DeliveryOrderMeta> = {};
+      orders.forEach((order) => {
+        if (!order?.id) return;
+        map[Number(order.id)] = {
+          id: Number(order.id),
+          product_name: order.product_name,
+          product_names: order.product_names,
+          product_serial_numbers: (order as any).product_serial_numbers,
+          replacement_product_name: order.replacement_product_name,
+          replacement_product_names: order.replacement_product_names,
+          replacement_product_serial_numbers: (order as any).replacement_product_serial_numbers,
+          client_name: order.client_name,
+          company_name: order.company_name,
+          company_names: order.company_names,
+          product_model: (order as any).product_model,
+          product_brand: (order as any).product_brand,
+          company_product_map: order.company_product_map,
+          product_ids: order.product_ids,
+          product_status_map: order.product_status_map,
+          handover_type_map: order.handover_type_map,
+          warranty_status: order.warranty_status,
+          priority: order.priority,
+          estimated_cost: (order as any).estimated_cost,
+          final_cost: (order as any).final_cost,
+          amount: (order as any).final_cost || (order as any).estimated_cost || 0,
+        };
+      });
+      setOrderMetaById(map);
+      return;
+    }
+
     let mounted = true;
 
     const loadOrderMeta = async () => {
@@ -435,9 +472,9 @@ const DeliveryTab = ({
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [orders]);
 
-  const sourceDeliveries = liveDeliveries.length > 0 ? liveDeliveries : filteredDeliveries;
+  const sourceDeliveries = filteredDeliveries.length > 0 || !enableLiveFetch ? filteredDeliveries : liveDeliveries;
   const splitDeliveries = useMemo<SplitDeliveryRow[]>(
     () => {
       const grouped = new Map<number, SplitDeliveryRow>();

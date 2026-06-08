@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { FiCheckSquare, FiClock, FiPrinter } from "react-icons/fi";
 import type { Order, Product } from "../types";
 import { formatDisplayDate } from "../utils";
 
 interface PendingTabProps {
+  orders: Order[];
   products: Product[];
+  loading?: boolean;
 }
 
 interface PendingRow {
@@ -84,10 +86,14 @@ const escapeHtml = (value: string | number) =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
-const COMPANY_API_URL = "http://cloud.anyrdp.in:3001/raj_communication/api/companys.php";
-const ORDER_API_URL = "http://cloud.anyrdp.in:3001/raj_communication/api/Order.php";
-
 const toIsoDate = (date: Date) => date.toISOString().split("T")[0];
+
+const normalizeDateForRange = (value: string) => {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return toIsoDate(parsed);
+};
 
 const getPresetRange = (preset: "today" | "thisWeek" | "thisMonth" | "lastMonth") => {
   const now = new Date();
@@ -115,14 +121,9 @@ const getPresetRange = (preset: "today" | "thisWeek" | "thisMonth" | "lastMonth"
   return { startDate: toIsoDate(start), endDate: toIsoDate(end) };
 };
 
-const PendingTab = ({ products }: PendingTabProps) => {
+const PendingTab = ({ orders, products, loading = false }: PendingTabProps) => {
   const [selectedCompany, setSelectedCompany] = useState("");
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
-  const [companyOptions, setCompanyOptions] = useState<string[]>([]);
-  const [loadingCompanies, setLoadingCompanies] = useState(false);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loadingOrders, setLoadingOrders] = useState(false);
-  const [orderError, setOrderError] = useState("");
   const [dateRange, setDateRange] = useState({ startDate: "", endDate: "" });
   const [flowStatusFilter, setFlowStatusFilter] = useState<"pending" | "rajtocom" | "comtoraj" | "deliveryed">("pending");
 
@@ -132,74 +133,32 @@ const PendingTab = ({ products }: PendingTabProps) => {
     return map;
   }, [products]);
 
-  useEffect(() => {
-    const loadCompanies = async () => {
-      setLoadingCompanies(true);
-      try {
-        const response = await fetch(COMPANY_API_URL, {
-          method: "GET",
-          headers: { Accept: "application/json" },
-        });
-        const payload = await response.json().catch(() => null);
-        if (!response.ok || !payload?.success) {
-          throw new Error(payload?.message || "Failed to load companies");
-        }
-        const names = Array.isArray(payload.companys)
-          ? payload.companys
-              .map((row: any) => String(row?.company_name ?? "").trim())
-              .filter(Boolean)
-          : [];
-        const uniqueNames: string[] = Array.from(new Set(names as string[]));
-        uniqueNames.sort((a, b) => a.localeCompare(b));
-        setCompanyOptions(uniqueNames);
-      } catch {
-        setCompanyOptions([]);
-      } finally {
-        setLoadingCompanies(false);
-      }
-    };
-    void loadCompanies();
-  }, []);
+  const companyOptions = useMemo(() => {
+    const names = orders.flatMap((order) => {
+      const fromArray = parseStringList((order as any).company_names);
+      const fromText = parseStringList(order.company_name);
+      return fromArray.length > 0 ? fromArray : fromText;
+    });
 
-  useEffect(() => {
-    const loadOrders = async () => {
-      setLoadingOrders(true);
-      setOrderError("");
-      try {
-        const params = new URLSearchParams();
-        if (dateRange.startDate && dateRange.endDate) {
-          params.append("start_date", dateRange.startDate);
-          params.append("end_date", dateRange.endDate);
-        }
-        const token = localStorage.getItem("authToken") || "";
-        const response = await fetch(`${ORDER_API_URL}${params.toString() ? `?${params.toString()}` : ""}`, {
-          method: "GET",
-          headers: {
-            Accept: "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        const payload = await response.json().catch(() => null);
-        if (!response.ok || !payload?.success) {
-          throw new Error(payload?.message || "Failed to load service orders");
-        }
-        setOrders(Array.isArray(payload.orders) ? (payload.orders as Order[]) : []);
-      } catch (error: any) {
-        setOrders([]);
-        setOrderError(error?.message || "Failed to load service orders");
-      } finally {
-        setLoadingOrders(false);
-      }
-    };
-    void loadOrders();
-  }, [dateRange.endDate, dateRange.startDate]);
+    return Array.from(new Set(names.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  }, [orders]);
+
+  const filteredOrders = useMemo(
+    () =>
+      orders.filter((order) => {
+        if (!dateRange.startDate || !dateRange.endDate) return true;
+        const orderDate = normalizeDateForRange(order.created_at);
+        return Boolean(orderDate) && orderDate >= dateRange.startDate && orderDate <= dateRange.endDate;
+      }),
+    [orders, dateRange.endDate, dateRange.startDate],
+  );
 
   const pendingRows = useMemo(() => {
     if (!selectedCompany) return [] as PendingRow[];
 
     const rows: PendingRow[] = [];
 
-    orders.forEach((order) => {
+    filteredOrders.forEach((order) => {
       const companyNames = parseStringList((order as any).company_names);
       if (companyNames.length === 0) companyNames.push(...parseStringList(order.company_name));
       if (!companyNames.some((name) => name.toLowerCase() === selectedCompany.toLowerCase())) return;
@@ -244,7 +203,7 @@ const PendingTab = ({ products }: PendingTabProps) => {
     });
 
     return rows.sort((a, b) => b.pendingDays - a.pendingDays);
-  }, [flowStatusFilter, orders, productById, selectedCompany]);
+  }, [filteredOrders, flowStatusFilter, productById, selectedCompany]);
 
   const allSelected = pendingRows.length > 0 && pendingRows.every((row) => selectedKeys.includes(row.key));
   const selectedRows = pendingRows.filter((row) => selectedKeys.includes(row.key));
@@ -359,13 +318,13 @@ const PendingTab = ({ products }: PendingTabProps) => {
           id="pending-company-select"
           className="pending-company-select"
           value={selectedCompany}
-          disabled={loadingCompanies}
+          disabled={loading}
           onChange={(event) => {
             setSelectedCompany(event.target.value);
             setSelectedKeys([]);
           }}
         >
-          <option value="">{loadingCompanies ? "Loading companies..." : "Select company"}</option>
+          <option value="">{loading ? "Loading companies..." : "Select company"}</option>
           {companyOptions.map((company) => (
             <option key={company} value={company}>
               {company}
@@ -413,9 +372,6 @@ const PendingTab = ({ products }: PendingTabProps) => {
           <button type="button" className="btn btn-outline" onClick={handleClearFilters}>Clear</button>
         </div>
       </div>
-
-      {orderError && <div className="pending-empty-state">{orderError}</div>}
-
       {selectedCompany ? (
         <>
           <div className="pending-summary-row">
@@ -436,7 +392,7 @@ const PendingTab = ({ products }: PendingTabProps) => {
           </div>
 
           <div className="pending-table-shell">
-            {loadingOrders ? (
+            {loading ? (
               <div className="pending-empty-state">Loading pending products...</div>
             ) : pendingRows.length > 0 ? (
               <table className="pending-table">
