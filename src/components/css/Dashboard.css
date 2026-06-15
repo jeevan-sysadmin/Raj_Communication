@@ -419,6 +419,7 @@ html, body, #root {
   position: relative;
   flex: 1;
   max-width: 500px;
+  cursor: text;
 }
 
 .search-icon {
@@ -428,6 +429,7 @@ html, body, #root {
   transform: translateY(-50%);
   color: #667eea;
   font-size: 18px;
+  pointer-events: none;
 }
 
 .search-input {
@@ -1176,6 +1178,25 @@ html, body, #root {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.import-action-btn {
+  position: relative;
+  min-height: 44px;
+}
+
+.import-action-btn.disabled {
+  opacity: 0.65;
+  pointer-events: none;
+}
+
+.import-file-input {
+  position: fixed;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .filter-group {
@@ -3243,6 +3264,7 @@ html, body, #root {
   position: relative;
   flex: 1;
   min-width: 250px;
+  cursor: text;
 }
 
 .search-filter-icon {
@@ -3252,6 +3274,7 @@ html, body, #root {
   transform: translateY(-50%);
   color: #667eea;
   font-size: 16px;
+  pointer-events: none;
 }
 
 .search-filter-input {

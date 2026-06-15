@@ -23,7 +23,7 @@ import DeliveryDetailModal from "../modals/DeliveryDetailModal";
 import { exportStyledPdfReport } from "../pdfExport";
 import type { DateRange, Delivery } from "../types";
 import { formatDisplayDate } from "../utils";
-import { buildApiUrl } from "../../../config/api";
+import { buildApiUrl } from "../../../config/runtime";
 
 interface DeliveryTabProps {
   orders?: DeliveryOrderMeta[];

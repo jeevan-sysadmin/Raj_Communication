@@ -19,7 +19,7 @@ import CompanysFormModal from "../modals/CompanysFormModal";
 import { exportStyledPdfReport } from "../pdfExport";
 import type { Company, CompanyForm, DateRange } from "../types";
 import { formatDisplayDate } from "../utils";
-import { buildApiUrl } from "../../../config/api";
+import { buildApiUrl } from "../../../config/runtime";
 
 const ITEMS_PER_PAGE = 20;
 const COMPANY_API_URL = buildApiUrl("companys.php");

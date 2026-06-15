@@ -13,7 +13,7 @@ import {
   FiTrendingUp,
 } from "react-icons/fi";
 import { exportStyledPdfReport } from "../pdfExport";
-import { API_BASE_URL } from "../../../config/api";
+import { API_BASE_URL } from "../../../config/runtime";
 
 interface ServiceSummary {
   service_type: string;

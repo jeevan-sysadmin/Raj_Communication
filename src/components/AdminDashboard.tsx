@@ -1,5 +1,5 @@
 // src/components/AdminDashboard.tsx
-import React, { startTransition, useState, useEffect, useRef, useCallback, useDeferredValue, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import {
@@ -54,10 +54,11 @@ import {
 } from './dashboard/receiptUtils';
 import { exportStyledPdfReport } from './dashboard/pdfExport';
 import { expandProductNameSerialPairs } from './dashboard/productBatch';
+import { downloadCsvTemplate, getImportValue, readSpreadsheetRows } from './dashboard/importUtils';
 import { formatDisplayDateTime, parseAppDate } from './dashboard/utils';
 import ConfirmDeleteModal from './dashboard/modals/ConfirmDeleteModal';
 import type { Company as DashboardCompany, Order as DashboardOrder } from './dashboard/types';
-import { API_BASE_URL, API_SYNC_BASE_URL, buildApiUrl } from '../config/api';
+import { API_BASE_URL, API_SYNC_BASE_URL, buildApiUrl } from '../config/runtime';
 
 // Enhanced Type Definitions
 interface User {
@@ -102,6 +103,11 @@ interface BackupHistoryItem {
 
 const BACKUP_HISTORY_STORAGE_KEY = 'backupHistoryLocal';
 const BACKUP_HISTORY_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+
+const parseImportBoolean = (value: string) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return ['1', 'true', 'yes', 'y'].includes(normalized);
+};
 
 interface StaffPerformance {
   id: number;
@@ -1781,8 +1787,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   
   // Search and Filter States
   const [searchTerm, setSearchTerm] = useState('');
-  const deferredSearchTerm = useDeferredValue(searchTerm);
-  const normalizedDeferredSearchTerm = useMemo(() => deferredSearchTerm.trim().toLowerCase(), [deferredSearchTerm]);
+  const normalizedSearchTerm = useMemo(() => searchTerm.trim().toLowerCase(), [searchTerm]);
   const [dateRange, setDateRange] = useState({ startDate: '', endDate: '' });
   const [filters, setFilters] = useState({
     users: {
@@ -2001,16 +2006,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       const userData = localStorage.getItem('userData');
       const isLoggedIn = localStorage.getItem('isLoggedIn');
       
-      if (!token || !userData || isLoggedIn !== 'true') {
+      if (!token || isLoggedIn !== 'true') {
         navigate('/login');
         return;
       }
       
       try {
-        const parsedUser = JSON.parse(userData);
+        const parsedUser = userData ? JSON.parse(userData) : {
+          name: 'User',
+          email: '',
+          role: localStorage.getItem('userRole') || 'user',
+        };
         setUser(parsedUser);
       } catch (e) {
-        navigate('/login');
+        setUser({
+          name: 'User',
+          email: '',
+          role: localStorage.getItem('userRole') || 'user',
+        });
       }
     };
     
@@ -2061,10 +2074,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
   
-  const apiRequest = async (endpoint: string, method: string = 'GET', data: any = null) => {
+  const apiRequest = async (
+    endpoint: string,
+    method: string = 'GET',
+    data: any = null,
+    options: { silent?: boolean } = {},
+  ) => {
     const token = getAuthToken();
     if (!token) {
-      handleLogout();
+      if (!options.silent) {
+        setError('No authentication token');
+      }
       throw new Error('No authentication token');
     }
     
@@ -2092,7 +2112,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       const parsedResult = trimmedText ? parseJsonText(trimmedText) : null;
       
       if (response.status === 401) {
-        handleLogout();
         throw new Error('Session expired');
       }
       
@@ -2126,7 +2145,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       
     } catch (error: any) {
       console.error('API request failed:', error);
-      setError(error.message || 'Network error');
+      const message = error?.message || 'Network error';
+      const shouldSuppressSessionBanner =
+        String(message).trim().toLowerCase() === 'session expired';
+
+      if (!options.silent && !shouldSuppressSessionBanner) {
+        setError(message);
+      }
       throw error;
     }
   };
@@ -2169,7 +2194,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   
   const loadUsers = async () => {
     try {
-      const data = await apiRequest('admin_api.php?action=get_users');
+      const data = await apiRequest('admin_api.php?action=get_users', 'GET', null, { silent: true });
       
       if (data.success && data.users) {
         const mappedUsers: User[] = data.users.map((user: any) => ({
@@ -2229,7 +2254,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   // Load clients specifically for dropdown in create order modal
   const loadClientsForDropdown = async () => {
     try {
-      const data = await apiRequest('admin_api.php?action=get_clients');
+      const data = await apiRequest('admin_api.php?action=get_clients', 'GET', null, { silent: true });
       
       if (data.success && data.clients) {
         const mappedClients: Client[] = data.clients.map((client: any) => ({
@@ -2875,7 +2900,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   
   const loadNotifications = async () => {
     try {
-      const data = await apiRequest('admin_api.php?action=notifications');
+      const data = await apiRequest('admin_api.php?action=notifications', 'GET', null, { silent: true });
       
       if (data.success && data.notifications) {
         const mappedNotifications: Notification[] = data.notifications.map((notification: any) => ({
@@ -3465,6 +3490,273 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const formatAmount = (value?: string | number) => {
     const amount = Number(value ?? 0);
     return Number.isFinite(amount) ? amount.toFixed(2) : '0.00';
+  };
+
+  const looksLikePhoneNumber = (value: string) => value.replace(/\D/g, '').length >= 6;
+
+  const parseCombinedClientCell = (value: string) => {
+    const text = String(value || '').trim();
+    if (!text) {
+      return { full_name: '', phone: '' };
+    }
+
+    const phoneMatch = text.match(/(?:\+?\d[\d\s\-()]{5,}\d)/);
+    const phone = phoneMatch ? phoneMatch[0].trim() : '';
+    const full_name = text
+      .replace(phone, ' ')
+      .replace(/[;,|]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    return { full_name, phone };
+  };
+
+  const getOrderedClientRowValues = (row: Record<string, string>) =>
+    Object.entries(row)
+      .map(([, value]) => String(value || '').trim())
+      .filter(Boolean);
+
+  const getFallbackClientImportValue = (row: Record<string, string>, kind: 'full_name' | 'phone') => {
+    const values = getOrderedClientRowValues(row);
+    const combined = values.join(' | ');
+    const parsedCombined = parseCombinedClientCell(combined);
+    const positionalName = values.find((value) => !looksLikePhoneNumber(value) && !value.includes('@')) || '';
+    const positionalPhone = values.find((value) => looksLikePhoneNumber(value)) || '';
+
+    if (kind === 'phone') {
+      return positionalPhone || parsedCombined.phone || values[1] || '';
+    }
+
+    return (
+      parsedCombined.full_name ||
+      positionalName ||
+      values[0] ||
+      parseCombinedClientCell(values[0] || '').full_name ||
+      values[0] ||
+      ''
+    );
+  };
+
+  const downloadClientImportSample = () => {
+    downloadCsvTemplate(
+      'clients_import_sample.csv',
+      ['full_name', 'phone', 'email', 'address', 'city', 'state', 'zip_code', 'notes'],
+      [
+        {
+          full_name: 'Ravi Kumar',
+          phone: '9876543210',
+          email: 'ravi@example.com',
+          address: '12 Main Road',
+          city: 'Chennai',
+          state: 'Tamil Nadu',
+          zip_code: '600001',
+          notes: 'Regular service customer',
+        },
+      ],
+    );
+  };
+
+  const downloadProductImportSample = () => {
+    downloadCsvTemplate(
+      'products_import_sample.csv',
+      [
+        'product_name',
+        'serial_number',
+        'stock_quantity',
+        'brand',
+        'model',
+        'category',
+        'claim_type',
+        'specifications',
+        'purchase_date',
+        'warranty_period',
+        'price',
+        'status',
+        'is_spare_product',
+      ],
+      [
+        {
+          product_name: 'Hikvision DVR 4CH',
+          serial_number: 'HKDVR0001',
+          stock_quantity: 1,
+          brand: 'Hikvision',
+          model: 'DS-7104HGHI-K1',
+          category: 'DVR',
+          claim_type: 'none',
+          specifications: '4 channel DVR',
+          purchase_date: '2026-06-14',
+          warranty_period: '1 year',
+          price: 4500,
+          status: 'active',
+          is_spare_product: 0,
+        },
+      ],
+    );
+  };
+
+  const handleImportClients = async (file: File) => {
+    const rows = await readSpreadsheetRows(file);
+    if (rows.length === 0) {
+      throw new Error('The selected file is empty or has no readable rows.');
+    }
+
+    const clientsPayload = rows.map((row) => {
+      const full_name =
+        getImportValue(row, ['full_name', 'full_name_', 'name', 'client_name', 'customer_name', 'client']) ||
+        getFallbackClientImportValue(row, 'full_name');
+      const phone =
+        getImportValue(row, ['phone', 'phone_number', 'mobile', 'mobile_no', 'mobile_number', 'contact', 'contact_number', 'whatsapp', 'whatsapp_number']) ||
+        getFallbackClientImportValue(row, 'phone');
+
+      return {
+        full_name,
+        phone,
+        email: getImportValue(row, ['email', 'mail']),
+        address: getImportValue(row, ['address']),
+        city: getImportValue(row, ['city']),
+        state: getImportValue(row, ['state']),
+        zip_code: getImportValue(row, ['zip_code', 'zipcode', 'pin_code', 'pincode']),
+        notes: getImportValue(row, ['notes', 'remark', 'remarks']),
+        _raw_import_row: row,
+      };
+    });
+
+    setError(null);
+    let createdCount = 0;
+    let failedCount = 0;
+    let firstError = '';
+
+    try {
+      const data = await apiRequest('admin_api.php?action=create_client', 'POST', { clients: clientsPayload });
+      if (!(data.success || data.partial)) {
+        throw new Error(data.message || 'Failed to import clients');
+      }
+
+      createdCount = typeof data.created_count === 'number' ? data.created_count : clientsPayload.length;
+      failedCount = typeof data.failed_count === 'number' ? data.failed_count : 0;
+      firstError = Array.isArray(data.errors) && data.errors.length > 0 ? data.errors[0]?.message || '' : '';
+    } catch {
+      const token = getAuthToken();
+      if (!token) {
+        handleLogout();
+        throw new Error('No authentication token');
+      }
+
+      const fallbackErrors: Array<{ row: number; message: string }> = [];
+
+      for (const [index, clientRow] of clientsPayload.entries()) {
+        if (!String(clientRow.full_name || '').trim() || !String(clientRow.phone || '').trim()) {
+          fallbackErrors.push({
+            row: index + 1,
+            message: 'Full name and phone are required',
+          });
+          continue;
+        }
+
+        try {
+          const response = await fetch(buildApiUrl('Client.php'), {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(clientRow),
+          });
+          const responseText = await response.text();
+          const trimmedText = responseText.trim();
+          const parsedResult = trimmedText ? parseJsonText(trimmedText) : null;
+
+          if (!response.ok) {
+            const message =
+              parsedResult && typeof parsedResult === 'object'
+                ? (parsedResult as any).message || 'Failed to import client'
+                : summarizeServerBody(trimmedText) || 'Failed to import client';
+            throw new Error(message);
+          }
+
+          if (!parsedResult || typeof parsedResult !== 'object' || !(parsedResult as any).success) {
+            throw new Error(
+              (parsedResult as any)?.message || 'Failed to import client',
+            );
+          }
+
+          createdCount += 1;
+        } catch (error: any) {
+          fallbackErrors.push({
+            row: index + 1,
+            message: error?.message || 'Failed to import client',
+          });
+        }
+      }
+
+      failedCount = fallbackErrors.length;
+      firstError = fallbackErrors[0]?.message || '';
+
+      if (createdCount === 0) {
+        throw new Error(firstError || 'Failed to import clients');
+      }
+    }
+
+    await Promise.all([loadClients(), loadClientsForDropdown(), loadDashboardData()]);
+
+    setSuccessMessage(
+      failedCount > 0
+        ? `${createdCount} clients imported. ${failedCount} row(s) could not be added.`
+        : `${createdCount} clients imported successfully.`,
+    );
+    setTimeout(() => setSuccessMessage(null), 3000);
+
+    if (failedCount > 0) {
+      setError(firstError ? `Client import warning: ${firstError}` : 'Some client rows could not be imported.');
+    }
+  };
+
+  const handleImportProducts = async (file: File) => {
+    const rows = await readSpreadsheetRows(file);
+    if (rows.length === 0) {
+      throw new Error('The selected file is empty or has no readable rows.');
+    }
+
+    const productsPayload = rows.map((row) => ({
+      product_name: getImportValue(row, ['product_name', 'name']),
+      serial_number: getImportValue(row, ['serial_number', 'serial_no', 'serial']),
+      stock_quantity: getImportValue(row, ['stock_quantity', 'quantity', 'qty']) || '1',
+      brand: getImportValue(row, ['brand']),
+      model: getImportValue(row, ['model']),
+      category: getImportValue(row, ['category']) || 'OTHERS',
+      claim_type: getImportValue(row, ['claim_type']) || 'none',
+      specifications: getImportValue(row, ['specifications', 'description']),
+      purchase_date: getImportValue(row, ['purchase_date', 'date']) || '',
+      warranty_period: getImportValue(row, ['warranty_period', 'warranty']) || '1 year',
+      price: getImportValue(row, ['price', 'amount', 'rate']) || '0',
+      status: getImportValue(row, ['status']) || 'active',
+      is_spare_product: parseImportBoolean(getImportValue(row, ['is_spare_product', 'spare_product', 'is_spare']))
+        ? 1
+        : 0,
+    }));
+
+    setError(null);
+    const data = await apiRequest('admin_api.php?action=create_product', 'POST', { products: productsPayload });
+    if (!(data.success || data.partial)) {
+      throw new Error(data.message || 'Failed to import products');
+    }
+
+    await Promise.all([loadProducts(), loadDashboardData()]);
+
+    const createdCount = typeof data.created_count === 'number' ? data.created_count : productsPayload.length;
+    const failedCount = typeof data.failed_count === 'number' ? data.failed_count : 0;
+    const firstError = Array.isArray(data.errors) && data.errors.length > 0 ? data.errors[0]?.message : '';
+
+    setSuccessMessage(
+      failedCount > 0
+        ? `${createdCount} products imported. ${failedCount} row(s) could not be added.`
+        : `${createdCount} products imported successfully.`,
+    );
+    setTimeout(() => setSuccessMessage(null), 3000);
+
+    if (failedCount > 0) {
+      setError(firstError ? `Product import warning: ${firstError}` : 'Some product rows could not be imported.');
+    }
   };
 
   const normalizeWhatsappPhone = (value: string) => {
@@ -4146,12 +4438,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
     
     // Apply search filter
-    if (deferredSearchTerm) {
+    if (normalizedSearchTerm) {
       data = data.filter(item => {
         const searchableFields = Object.values(item)
           .map(val => String(val).toLowerCase())
           .join(' ');
-        return searchableFields.includes(deferredSearchTerm.toLowerCase());
+        return searchableFields.includes(normalizedSearchTerm);
       });
     }
     
@@ -4188,7 +4480,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
     
     return data;
-  }, [activeTab, clients, deferredSearchTerm, deliveries, filters, orders, products, sortConfig, users]);
+  }, [activeTab, clients, deliveries, filters, normalizedSearchTerm, orders, products, sortConfig, users]);
 
   const matchesDateRange = (dateString: string) => {
     const normalized = toISODate(dateString);
@@ -4235,9 +4527,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   };
 
   const handleSearchChange = useCallback((value: string) => {
-    startTransition(() => {
-      setSearchTerm(value);
-    });
+    setSearchTerm(value);
   }, []);
 
   const isOrdersTabActive = activeTab === 'orders';
@@ -4253,15 +4543,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   const filteredOrdersForDashboard = useMemo(() => orders.filter((order) => {
     if (!isOrdersTabActive) return false;
-    const search = normalizedDeferredSearchTerm;
+    const search = normalizedSearchTerm;
     const matchesSearch =
-      !deferredSearchTerm ||
+      !search ||
       [
         order.order_code,
         order.client_name,
         order.client_phone,
         order.issue_description,
-        order.staff_name || ''
+        order.staff_name || '',
+        order.product_name || '',
+        order.replacement_product_name || '',
+        order.company_name || '',
+        order.brand || '',
+        order.model || '',
+        order.notes || '',
       ].some((value) => String(value || '').toLowerCase().includes(search)) ||
       getOrderProductSearchBlob(order).includes(search) ||
       getOrderSerialSearchBlob(order).includes(search);
@@ -4271,19 +4567,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     const matchesPayment = !filters.orders.payment_status || order.payment_status === filters.orders.payment_status;
 
     return matchesSearch && matchesStatus && matchesPriority && matchesPayment && matchesDateRange(order.created_at);
-  }), [orders, deferredSearchTerm, normalizedDeferredSearchTerm, filters.orders, dateRange.startDate, dateRange.endDate, isOrdersTabActive]);
+  }), [orders, normalizedSearchTerm, filters.orders, dateRange.startDate, dateRange.endDate, isOrdersTabActive]);
 
   const filteredReplacementOrdersForDashboard = useMemo(() => orders.filter((order) => {
     if (!isReplacementOrdersTabActive) return false;
-    const search = normalizedDeferredSearchTerm;
+    const search = normalizedSearchTerm;
     const matchesSearch =
-      !deferredSearchTerm ||
+      !search ||
       [
         order.order_code,
         order.client_name,
         order.client_phone,
         order.issue_description,
-        order.staff_name || ''
+        order.staff_name || '',
+        order.product_name || '',
+        order.replacement_product_name || '',
+        order.company_name || '',
+        order.brand || '',
+        order.model || '',
+        order.notes || '',
       ].some((value) => String(value || '').toLowerCase().includes(search)) ||
       getOrderProductSearchBlob(order).includes(search) ||
       getOrderSerialSearchBlob(order).includes(search);
@@ -4294,13 +4596,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     const hasReplacement = Boolean(order.replacement_product_id);
 
     return hasReplacement && matchesSearch && matchesStatus && matchesPriority && matchesPayment && matchesDateRange(order.created_at);
-  }), [orders, deferredSearchTerm, normalizedDeferredSearchTerm, filters.orders, dateRange.startDate, dateRange.endDate, isReplacementOrdersTabActive]);
+  }), [orders, normalizedSearchTerm, filters.orders, dateRange.startDate, dateRange.endDate, isReplacementOrdersTabActive]);
 
   const filteredClientsForDashboard = useMemo(() => clients.filter((client) => {
     if (!isClientsTabActive) return false;
-    const search = normalizedDeferredSearchTerm;
+    const search = normalizedSearchTerm;
     const matchesSearch =
-      !deferredSearchTerm ||
+      !search ||
       [
         client.client_code,
         client.full_name,
@@ -4311,16 +4613,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
     const matchesCity = !filters.clients.city || client.city?.toLowerCase().includes(filters.clients.city.toLowerCase());
     return matchesSearch && matchesCity && matchesDateRange(client.created_at);
-  }), [clients, deferredSearchTerm, normalizedDeferredSearchTerm, filters.clients.city, dateRange.startDate, dateRange.endDate, isClientsTabActive]);
+  }), [clients, normalizedSearchTerm, filters.clients.city, dateRange.startDate, dateRange.endDate, isClientsTabActive]);
 
   const filteredProductsForDashboard = useMemo(() => products.filter((product) => {
     if (!isProductsTabActive) return false;
-    const search = normalizedDeferredSearchTerm;
-    const normalizedSearch = deferredSearchTerm.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+    const search = normalizedSearchTerm;
+    const normalizedSearch = searchTerm.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
     const productSerial = String(product.serial_number || '');
     const normalizedProductSerial = productSerial.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
     const matchesSearch =
-      !deferredSearchTerm ||
+      !search ||
       [
         product.product_code,
         product.product_name,
@@ -4334,13 +4636,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     const matchesStatus = !filters.products.status || product.status === filters.products.status;
     const matchesCategory = !filters.products.category || product.category === filters.products.category;
     return matchesSearch && matchesStatus && matchesCategory && matchesDateRange(product.created_at);
-  }), [products, deferredSearchTerm, normalizedDeferredSearchTerm, filters.products, dateRange.startDate, dateRange.endDate, isProductsTabActive]);
+  }), [products, searchTerm, normalizedSearchTerm, filters.products, dateRange.startDate, dateRange.endDate, isProductsTabActive]);
 
   const filteredSpareProductsForDashboard = useMemo(() => products.filter((product) => {
     if (!isSpareProductsTabActive) return false;
-    const search = normalizedDeferredSearchTerm;
+    const search = normalizedSearchTerm;
     const matchesSearch =
-      !deferredSearchTerm ||
+      !search ||
       [
         product.product_code,
         product.product_name,
@@ -4354,13 +4656,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     const matchesStatus = !filters.products.status || product.status === filters.products.status;
     const matchesCategory = !filters.products.category || product.category === filters.products.category;
     return Boolean(Number(product.is_spare_product || 0)) && matchesSearch && matchesStatus && matchesCategory && matchesDateRange(product.created_at);
-  }), [products, deferredSearchTerm, normalizedDeferredSearchTerm, filters.products, dateRange.startDate, dateRange.endDate, isSpareProductsTabActive]);
+  }), [products, normalizedSearchTerm, filters.products, dateRange.startDate, dateRange.endDate, isSpareProductsTabActive]);
 
   const filteredShopClaimsForDashboard = useMemo(() => products.filter((product) => {
     if (!isShopClaimTabActive) return false;
-    const search = normalizedDeferredSearchTerm;
+    const search = normalizedSearchTerm;
     const matchesSearch =
-      !deferredSearchTerm ||
+      !search ||
       [
         product.product_code,
         product.product_name,
@@ -4372,13 +4674,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       ].some((value) => String(value || '').toLowerCase().includes(search));
 
     return product.claim_type === 'shop_claim' && matchesSearch && matchesDateRange(product.created_at);
-  }), [products, deferredSearchTerm, normalizedDeferredSearchTerm, dateRange.startDate, dateRange.endDate, isShopClaimTabActive]);
+  }), [products, normalizedSearchTerm, dateRange.startDate, dateRange.endDate, isShopClaimTabActive]);
 
   const filteredCompanyClaimsForDashboard = useMemo(() => products.filter((product) => {
     if (!isCompanyClaimTabActive) return false;
-    const search = normalizedDeferredSearchTerm;
+    const search = normalizedSearchTerm;
     const matchesSearch =
-      !deferredSearchTerm ||
+      !search ||
       [
         product.product_code,
         product.product_name,
@@ -4390,13 +4692,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       ].some((value) => String(value || '').toLowerCase().includes(search));
 
     return product.claim_type === 'company_claim' && matchesSearch && matchesDateRange(product.created_at);
-  }), [products, deferredSearchTerm, normalizedDeferredSearchTerm, dateRange.startDate, dateRange.endDate, isCompanyClaimTabActive]);
+  }), [products, normalizedSearchTerm, dateRange.startDate, dateRange.endDate, isCompanyClaimTabActive]);
 
   const filteredSunToCompanyForDashboard = useMemo(() => sunToCompanyClaims.filter((product) => {
     if (!isSunToCompanyTabActive) return false;
-    const search = normalizedDeferredSearchTerm;
+    const search = normalizedSearchTerm;
     const matchesSearch =
-      !deferredSearchTerm ||
+      !search ||
       [
         product.product_code,
         product.product_name,
@@ -4408,13 +4710,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       ].some((value) => String(value || '').toLowerCase().includes(search));
 
     return matchesSearch && matchesDateRange(product.created_at);
-  }), [sunToCompanyClaims, deferredSearchTerm, normalizedDeferredSearchTerm, dateRange.startDate, dateRange.endDate, isSunToCompanyTabActive]);
+  }), [sunToCompanyClaims, normalizedSearchTerm, dateRange.startDate, dateRange.endDate, isSunToCompanyTabActive]);
 
   const filteredCompanyToSunForDashboard = useMemo(() => companyToSunClaims.filter((product) => {
     if (!isCompanyToSunTabActive) return false;
-    const search = normalizedDeferredSearchTerm;
+    const search = normalizedSearchTerm;
     const matchesSearch =
-      !deferredSearchTerm ||
+      !search ||
       [
         product.product_code,
         product.product_name,
@@ -4426,7 +4728,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       ].some((value) => String(value || '').toLowerCase().includes(search));
 
     return matchesSearch && matchesDateRange(product.created_at);
-  }), [companyToSunClaims, deferredSearchTerm, normalizedDeferredSearchTerm, dateRange.startDate, dateRange.endDate, isCompanyToSunTabActive]);
+  }), [companyToSunClaims, normalizedSearchTerm, dateRange.startDate, dateRange.endDate, isCompanyToSunTabActive]);
 
   const deliveredDeliveriesCount = useMemo(
     () => deliveries.filter((delivery) => isAdminDeliveryCompleted(delivery)).length,
@@ -4435,9 +4737,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   const filteredDeliveriesForDashboard = useMemo(() => deliveries.filter((delivery) => {
     if (!isDeliveriesTabActive) return false;
-    const search = normalizedDeferredSearchTerm;
+    const search = normalizedSearchTerm;
     const matchesSearch =
-      !deferredSearchTerm ||
+      !search ||
       [
         delivery.delivery_code,
         delivery.order_code,
@@ -4455,7 +4757,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         : delivery.status === filters.deliveries.status);
     const matchesType = !filters.deliveries.delivery_type || delivery.delivery_type === filters.deliveries.delivery_type;
     return matchesSearch && matchesStatus && matchesType && matchesDateRange(delivery.created_at);
-  }), [deliveries, deferredSearchTerm, normalizedDeferredSearchTerm, filters.deliveries, dateRange.startDate, dateRange.endDate, isDeliveriesTabActive]);
+  }), [deliveries, normalizedSearchTerm, filters.deliveries, dateRange.startDate, dateRange.endDate, isDeliveriesTabActive]);
   
   // Handle selection
   const handleSelectAll = (type: string) => {
@@ -6385,12 +6687,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               onSearchChange={handleSearchChange}
               onDateRangeChange={handleDateRangeChange}
               onPresetClick={setDateRangePreset}
-              onEditClient={(client) => handleEdit('client', client)}
-              onDeleteClient={handleDeleteClient}
-              onCreateClient={() => setShowCreateClient(true)}
-              onClearFilters={clearAllFilters}
-            />
-          )}
+                onEditClient={(client) => handleEdit('client', client)}
+                onDeleteClient={handleDeleteClient}
+                onCreateClient={() => setShowCreateClient(true)}
+                onClearFilters={clearAllFilters}
+                onImportClients={handleImportClients}
+                onDownloadClientSample={downloadClientImportSample}
+              />
+            )}
           
                     {/* Products Tab */}
           {activeTab === 'products' && (
@@ -6406,15 +6710,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               onFilterStatusChange={(value) => handleFilterChange('products', 'status', value === 'all' ? '' : value)}
               onDateRangeChange={handleDateRangeChange}
               onPresetClick={setDateRangePreset}
-              onEditProduct={(product) => handleEdit('product', product)}
-              onDeleteProduct={handleDeleteProduct}
-              onCreateProduct={() => {
-                setNewProduct(getDefaultNewProduct());
-                setShowCreateProduct(true);
-              }}
-              onClearFilters={clearAllFilters}
-            />
-          )}
+                onEditProduct={(product) => handleEdit('product', product)}
+                onDeleteProduct={handleDeleteProduct}
+                onCreateProduct={() => {
+                  setNewProduct(getDefaultNewProduct());
+                  setShowCreateProduct(true);
+                }}
+                onClearFilters={clearAllFilters}
+                onImportProducts={handleImportProducts}
+                onDownloadProductSample={downloadProductImportSample}
+              />
+            )}
 
           {activeTab === 'spareproducts' && (
             <SpareProductsTab

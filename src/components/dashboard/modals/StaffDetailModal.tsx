@@ -19,7 +19,7 @@ import {
   FiX,
 } from "react-icons/fi";
 import { exportStyledPdfReport } from "../pdfExport";
-import { API_SYNC_BASE_URL } from "../../../config/api";
+import { API_SYNC_BASE_URL } from "../../../config/runtime";
 
 interface StaffRecord {
   id: number;

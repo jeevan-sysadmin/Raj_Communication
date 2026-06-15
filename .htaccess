@@ -1,0 +1,7 @@
+RewriteEngine On
+RewriteBase /raj/
+
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+
+RewriteRule ^(.*)$ /raj/index.html [L]

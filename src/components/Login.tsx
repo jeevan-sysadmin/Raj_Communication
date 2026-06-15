@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 
 import { motion, AnimatePresence } from "framer-motion";
 import { FiUser, FiLock, FiEye, FiEyeOff, FiLogIn, FiAlertCircle, FiShield, FiUsers, FiTool } from "react-icons/fi";
-import { buildApiUrl } from "../config/api";
+import { buildApiUrl, resolveAppRedirect } from "../config/runtime";
 
 
 // Import your logo
@@ -160,9 +160,13 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         // Store authentication data
         localStorage.setItem('authToken', data.token);
         localStorage.setItem('token', data.token);
-        if (data.user) {
-          localStorage.setItem('userData', JSON.stringify(data.user));
-        }
+        const storedUserData = data.user || {
+          id: '',
+          email,
+          name: email.split('@')[0] || 'User',
+          role: userRole,
+        };
+        localStorage.setItem('userData', JSON.stringify(storedUserData));
         localStorage.setItem('isLoggedIn', 'true');
         localStorage.setItem('userRole', userRole);
         
@@ -184,7 +188,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           if (onLoginSuccess) {
             onLoginSuccess(targetRole);
           } else {
-            const targetPath = data.redirect || '/admin-dashboard';
+            const targetPath = resolveAppRedirect(data.redirect || '/admin-dashboard');
             window.location.href = targetPath;
           }
           redirectTimeoutRef.current = null;

@@ -2075,54 +2075,317 @@ class AdminAPI {
     private function createClient() {
         try {
             $data = json_decode(file_get_contents("php://input"), true);
-            
-            if (empty($data['full_name']) || empty($data['phone'])) {
-                $this->sendError("Full name and phone are required", 400);
+            if (!is_array($data)) {
+                $data = [];
+            }
+
+            $insertClient = function(array $row): array {
+                if (isset($row['_raw_import_row']) && is_array($row['_raw_import_row'])) {
+                    $row = array_merge($row['_raw_import_row'], $row);
+                }
+
+                $normalizedRow = [];
+                foreach ($row as $key => $value) {
+                    if ($key === '_raw_import_row') {
+                        continue;
+                    }
+
+                    $normalizedKey = strtolower(trim((string)$key));
+                    $normalizedKey = preg_replace('/[\s\-\.\/]+/', '_', $normalizedKey);
+                    $normalizedKey = preg_replace('/[^\w]/', '', $normalizedKey);
+                    $normalizedKey = trim((string)$normalizedKey, '_');
+
+                    if ($normalizedKey !== '') {
+                        $normalizedRow[$normalizedKey] = $value;
+                    }
+                }
+
+                $getFirstValue = function(array $keys) use ($row, $normalizedRow): string {
+                    foreach ($keys as $key) {
+                        $rawValue = $row[$key] ?? $normalizedRow[$key] ?? null;
+                        $value = trim((string)($rawValue ?? ''));
+                        if ($value !== '') {
+                            return $value;
+                        }
+                    }
+
+                    return '';
+                };
+
+                $getFuzzyValue = function(array $preferredKeys, array $containsPatterns, callable $validator = null) use ($normalizedRow, $getFirstValue): string {
+                    $direct = $getFirstValue($preferredKeys);
+                    if ($direct !== '') {
+                        return $direct;
+                    }
+
+                    foreach ($normalizedRow as $key => $rawValue) {
+                        $value = trim((string)($rawValue ?? ''));
+                        if ($value === '') {
+                            continue;
+                        }
+
+                        $matched = false;
+                        foreach ($containsPatterns as $pattern) {
+                            if ($pattern !== '' && strpos($key, $pattern) !== false) {
+                                $matched = true;
+                                break;
+                            }
+                        }
+
+                        if (!$matched) {
+                            continue;
+                        }
+
+                        if ($validator && !$validator($value, $key)) {
+                            continue;
+                        }
+
+                        return $value;
+                    }
+
+                    return '';
+                };
+
+                $looksLikePhone = function(string $value): bool {
+                    $digits = preg_replace('/\D+/', '', $value);
+                    return strlen($digits) >= 6;
+                };
+
+                $extractCombinedClientCell = function(string $value): array {
+                    $value = trim($value);
+                    if ($value === '') {
+                        return ['full_name' => '', 'phone' => ''];
+                    }
+
+                    preg_match('/(?:\+?\d[\d\s\-\(\)]{5,}\d)/', $value, $matches);
+                    $phone = isset($matches[0]) ? trim((string)$matches[0]) : '';
+                    $full_name = trim(preg_replace('/\s+/', ' ', str_replace([';', ',', '|'], ' ', str_replace($phone, ' ', $value))));
+
+                    return ['full_name' => $full_name, 'phone' => $phone];
+                };
+
+                $orderedValues = array_values(array_filter(array_map(function($value) {
+                    return trim((string)($value ?? ''));
+                }, array_values($normalizedRow)), function($value) {
+                    return $value !== '';
+                }));
+
+                $full_name = $getFuzzyValue(
+                    ['full_name', 'full_name_', 'name', 'client_name', 'customer_name', 'client', 'customer'],
+                    ['full_name', 'client_name', 'customer_name', 'name', 'client', 'customer']
+                );
+                $phone = $getFuzzyValue(
+                    ['phone', 'phone_number', 'mobile', 'mobile_no', 'mobile_number', 'contact', 'contact_number', 'whatsapp', 'whatsapp_number'],
+                    ['phone', 'mobile', 'contact', 'whatsapp', 'tel'],
+                    function(string $value) use ($looksLikePhone): bool {
+                        return $looksLikePhone($value);
+                    }
+                );
+                $email = $getFirstValue(['email', 'mail']);
+                $address = $getFirstValue(['address']);
+                $city = $getFirstValue(['city']);
+                $state = $getFirstValue(['state']);
+                $zip_code = $getFirstValue(['zip_code', 'zipcode', 'pin_code', 'pincode']);
+                $notes = $getFirstValue(['notes', 'remark', 'remarks']);
+
+                if ($full_name === '') {
+                    foreach ($normalizedRow as $key => $rawValue) {
+                        $value = trim((string)($rawValue ?? ''));
+                        if ($value === '') {
+                            continue;
+                        }
+
+                        if (strpos($key, 'email') !== false || strpos($key, 'phone') !== false || strpos($key, 'mobile') !== false || strpos($key, 'contact') !== false || strpos($key, 'address') !== false) {
+                            continue;
+                        }
+
+                        if ($looksLikePhone($value) || filter_var($value, FILTER_VALIDATE_EMAIL)) {
+                            continue;
+                        }
+
+                        $full_name = $value;
+                        break;
+                    }
+                }
+
+                if ($full_name === '' || $phone === '') {
+                    foreach ($normalizedRow as $rawValue) {
+                        $value = trim((string)($rawValue ?? ''));
+                        if ($value === '') {
+                            continue;
+                        }
+
+                        $combined = $extractCombinedClientCell($value);
+
+                        if ($full_name === '' && $combined['full_name'] !== '') {
+                            $full_name = $combined['full_name'];
+                        }
+
+                        if ($phone === '' && $combined['phone'] !== '') {
+                            $phone = $combined['phone'];
+                        }
+
+                        if ($full_name !== '' && $phone !== '') {
+                            break;
+                        }
+                    }
+                }
+
+                if ($full_name === '' && count($orderedValues) > 0) {
+                    foreach ($orderedValues as $value) {
+                        if (!$looksLikePhone($value) && filter_var($value, FILTER_VALIDATE_EMAIL) === false) {
+                            $full_name = $value;
+                            break;
+                        }
+                    }
+                }
+
+                if ($full_name === '' && count($orderedValues) > 0) {
+                    $firstCell = $extractCombinedClientCell((string)$orderedValues[0]);
+                    if ($firstCell['full_name'] !== '') {
+                        $full_name = $firstCell['full_name'];
+                    } else {
+                        $full_name = trim((string)$orderedValues[0]);
+                    }
+                }
+
+                if ($phone === '' && count($orderedValues) > 1) {
+                    $secondCell = $extractCombinedClientCell((string)$orderedValues[1]);
+                    if ($secondCell['phone'] !== '') {
+                        $phone = $secondCell['phone'];
+                    } elseif ($looksLikePhone((string)$orderedValues[1])) {
+                        $phone = trim((string)$orderedValues[1]);
+                    }
+                }
+
+                if ($full_name === '') {
+                    $full_name = 'Imported Client ' . date('YmdHis');
+                }
+
+                if ($phone === '') {
+                    $phone = 'IMP' . date('YmdHis') . strtoupper(substr(uniqid(), -4));
+                }
+
+                if ($notes === '') {
+                    $notes = 'Imported from CSV';
+                }
+
+                $checkQuery = "SELECT id FROM clients WHERE phone = :phone";
+                $checkStmt = $this->conn->prepare($checkQuery);
+                $checkStmt->bindValue(':phone', $phone, PDO::PARAM_STR);
+                $checkStmt->execute();
+
+                if ($checkStmt->rowCount() > 0) {
+                    return ['success' => false, 'message' => 'Client with this phone number already exists'];
+                }
+
+                $client_code = 'CLT' . date('Ymd') . strtoupper(substr(uniqid(), -6));
+
+                $query = "INSERT INTO clients (
+                            client_code, full_name, email, phone, address, city, state, zip_code, notes, created_at
+                          ) VALUES (
+                            :client_code, :full_name, :email, :phone, :address, :city, :state, :zip_code, :notes, NOW()
+                          )";
+
+                $stmt = $this->conn->prepare($query);
+                $stmt->bindValue(':client_code', $client_code, PDO::PARAM_STR);
+                $stmt->bindValue(':full_name', $full_name, PDO::PARAM_STR);
+                $stmt->bindValue(':email', $email, PDO::PARAM_STR);
+                $stmt->bindValue(':phone', $phone, PDO::PARAM_STR);
+                $stmt->bindValue(':address', $address, PDO::PARAM_STR);
+                $stmt->bindValue(':city', $city, PDO::PARAM_STR);
+                $stmt->bindValue(':state', $state, PDO::PARAM_STR);
+                $stmt->bindValue(':zip_code', $zip_code, PDO::PARAM_STR);
+                $stmt->bindValue(':notes', $notes, PDO::PARAM_STR);
+
+                if (!$stmt->execute()) {
+                    return ['success' => false, 'message' => 'Failed to create client'];
+                }
+
+                return [
+                    'success' => true,
+                    'client_id' => (int)$this->conn->lastInsertId(),
+                    'client_code' => $client_code,
+                    'full_name' => $full_name
+                ];
+            };
+
+            $isBatch = isset($data['clients']) && is_array($data['clients']);
+            if ($isBatch) {
+                $rows = $data['clients'];
+                if (count($rows) === 0) {
+                    $this->sendError("Clients array is empty", 400);
+                    return;
+                }
+
+                $createdClients = [];
+                $errors = [];
+
+                foreach ($rows as $index => $row) {
+                    if (!is_array($row)) {
+                        $errors[] = ['index' => $index, 'message' => 'Invalid row format'];
+                        continue;
+                    }
+
+                    $result = $insertClient($row);
+                    if (!empty($result['success'])) {
+                        $createdClients[] = [
+                            'index' => $index,
+                            'client_id' => $result['client_id'],
+                            'client_code' => $result['client_code'],
+                            'full_name' => $result['full_name'],
+                        ];
+                    } else {
+                        $errors[] = [
+                            'index' => $index,
+                            'full_name' => trim((string)($row['full_name'] ?? $row['name'] ?? $row['client_name'] ?? '')),
+                            'message' => $result['message'] ?? 'Failed to create client',
+                        ];
+                    }
+                }
+
+                $createdCount = count($createdClients);
+                $failedCount = count($errors);
+                $allSuccess = $createdCount > 0 && $failedCount === 0;
+
+                if ($createdCount === 0) {
+                    http_response_code(400);
+                    echo json_encode([
+                        'success' => false,
+                        'message' => 'No clients were created',
+                        'created_count' => 0,
+                        'failed_count' => $failedCount,
+                        'errors' => $errors,
+                    ]);
+                    return;
+                }
+
+                http_response_code($allSuccess ? 201 : 207);
+                echo json_encode([
+                    'success' => $allSuccess,
+                    'partial' => !$allSuccess,
+                    'message' => $allSuccess
+                        ? 'All clients created successfully'
+                        : 'Some clients were created, but some rows failed',
+                    'created_count' => $createdCount,
+                    'failed_count' => $failedCount,
+                    'created_clients' => $createdClients,
+                    'errors' => $errors,
+                ]);
                 return;
             }
-            
-            // Check if client already exists with same phone
-            $checkQuery = "SELECT id FROM clients WHERE phone = :phone";
-            $checkStmt = $this->conn->prepare($checkQuery);
-            $checkStmt->bindValue(':phone', $data['phone'], PDO::PARAM_STR);
-            $checkStmt->execute();
-            
-            if ($checkStmt->rowCount() > 0) {
-                $this->sendError("Client with this phone number already exists", 400);
-                return;
-            }
-            
-            // Generate client code
-            $client_code = 'CLT' . date('Ymd') . strtoupper(substr(uniqid(), -6));
-            
-            $query = "INSERT INTO clients (client_code, full_name, email, phone, address, 
-                     city, state, zip_code, notes, created_at)
-                     VALUES (:client_code, :full_name, :email, :phone, :address,
-                     :city, :state, :zip_code, :notes, NOW())";
-            
-            $stmt = $this->conn->prepare($query);
-            $stmt->bindValue(':client_code', $client_code, PDO::PARAM_STR);
-            $stmt->bindValue(':full_name', $data['full_name'], PDO::PARAM_STR);
-            $stmt->bindValue(':email', isset($data['email']) ? $data['email'] : '', PDO::PARAM_STR);
-            $stmt->bindValue(':phone', $data['phone'], PDO::PARAM_STR);
-            $stmt->bindValue(':address', isset($data['address']) ? $data['address'] : '', PDO::PARAM_STR);
-            $stmt->bindValue(':city', isset($data['city']) ? $data['city'] : '', PDO::PARAM_STR);
-            $stmt->bindValue(':state', isset($data['state']) ? $data['state'] : '', PDO::PARAM_STR);
-            $stmt->bindValue(':zip_code', isset($data['zip_code']) ? $data['zip_code'] : '', PDO::PARAM_STR);
-            $stmt->bindValue(':notes', isset($data['notes']) ? $data['notes'] : '', PDO::PARAM_STR);
-            
-            if ($stmt->execute()) {
-                $client_id = $this->conn->lastInsertId();
-                
+
+            $result = $insertClient($data);
+            if (!empty($result['success'])) {
                 $this->sendSuccess([
                     'message' => 'Client created successfully',
-                    'client_id' => $client_id,
-                    'client_code' => $client_code
+                    'client_id' => $result['client_id'],
+                    'client_code' => $result['client_code']
                 ]);
             } else {
-                $this->sendError("Failed to create client", 500);
+                $this->sendError($result['message'] ?? "Failed to create client", 400);
             }
-            
+
         } catch (Exception $e) {
             $this->sendError("Failed to create client: " . $e->getMessage(), 500);
         }

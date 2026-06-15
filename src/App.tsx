@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState } from 'react';
 import type { ReactNode } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { APP_BASE_PATH } from './config/runtime';
 
 const Login = lazy(() => import('./components/Login'));
 const AdminDashboard = lazy(() => import('./components/AdminDashboard'));
@@ -20,23 +21,23 @@ const readStoredAuthState = () => {
   const loggedInFlag = localStorage.getItem('isLoggedIn');
   const role = normalizeRole(localStorage.getItem('userRole'));
 
-  if (!token || !userData || loggedInFlag !== 'true') {
+  if (!token || loggedInFlag !== 'true') {
     return { isLoggedIn: false, role };
+  }
+
+  if (!userData) {
+    return { isLoggedIn: true, role };
   }
 
   try {
     const parsedUser = JSON.parse(userData);
     if (!parsedUser || typeof parsedUser !== 'object') {
-      throw new Error('Invalid user data');
+      return { isLoggedIn: true, role };
     }
     return { isLoggedIn: true, role };
   } catch {
-    localStorage.removeItem('authToken');
-    localStorage.removeItem('token');
     localStorage.removeItem('userData');
-    localStorage.removeItem('isLoggedIn');
-    localStorage.removeItem('userRole');
-    return { isLoggedIn: false, role: 'user' as UserRole };
+    return { isLoggedIn: true, role };
   }
 };
 
@@ -120,57 +121,62 @@ function App() {
     return <>{children}</>;
   };
 
-  return (
-    <Router>
-      <div className="App">
-        <Suspense fallback={<FullscreenLoader />}>
-          <Routes>
-            <Route
-              path="/login"
-              element={
-                authState.isLoggedIn ? (
-                  <Navigate to="/admin-dashboard" replace />
-                ) : (
-                  <Login onLoginSuccess={handleLoginSuccess} />
-                )
-              }
-            />
+return (
+  <Router basename={APP_BASE_PATH}>
+    <div className="App">
+      <Suspense fallback={<FullscreenLoader />}>
+        <Routes>
 
-            <Route
-              path="/dashboard"
-              element={
-                <ProtectedRoute requiredRole="both">
-                  <Navigate to="/admin-dashboard" replace />
-                </ProtectedRoute>
-              }
-            />
+          <Route
+            path="/login"
+            element={
+              authState.isLoggedIn ? (
+                <Navigate to="/admin-dashboard" replace />
+              ) : (
+                <Login onLoginSuccess={handleLoginSuccess} />
+              )
+            }
+          />
 
-            <Route
-              path="/admin-dashboard"
-              element={
-                <ProtectedRoute requiredRole="both">
-                  <AdminDashboard onLogout={handleLogout} />
-                </ProtectedRoute>
-              }
-            />
+          <Route
+            path="/dashboard"
+            element={
+              <ProtectedRoute requiredRole="both">
+                <Navigate to="/admin-dashboard" replace />
+              </ProtectedRoute>
+            }
+          />
 
-            <Route
-              path="/"
-              element={
-                authState.isLoggedIn ? (
-                  <Navigate to="/admin-dashboard" replace />
-                ) : (
-                  <Navigate to="/login" replace />
-                )
-              }
-            />
+          <Route
+            path="/admin-dashboard"
+            element={
+              <ProtectedRoute requiredRole="both">
+                <AdminDashboard onLogout={handleLogout} />
+              </ProtectedRoute>
+            }
+          />
 
-            <Route path="*" element={<Navigate to="/login" replace />} />
-          </Routes>
-        </Suspense>
-      </div>
-    </Router>
-  );
+          <Route
+            path="/"
+            element={
+              authState.isLoggedIn ? (
+                <Navigate to="/admin-dashboard" replace />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
+          />
+
+          <Route
+            path="*"
+            element={<Navigate to="/login" replace />}
+          />
+
+        </Routes>
+      </Suspense>
+    </div>
+  </Router>
+);
 }
 
 export default App;

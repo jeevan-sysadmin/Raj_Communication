@@ -1,14 +1,18 @@
 ﻿import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import type { ChangeEvent } from "react";
+import { useRef } from "react";
 import {
   FiBox,
   FiChevronLeft,
   FiChevronRight,
+  FiDownload,
   FiEdit,
   FiPackage,
   FiPlus,
   FiSearch,
   FiTrash2,
+  FiUpload,
   FiX,
 } from "react-icons/fi";
 import BulkActionPanel from "../BulkActionPanel";
@@ -34,6 +38,8 @@ interface ProductsTabProps {
   onDeleteProduct: (id: number) => void;
   onCreateProduct: () => void;
   onClearFilters: () => void;
+  onImportProducts?: (file: File) => Promise<void>;
+  onDownloadProductSample?: () => void;
 }
 
 const ITEMS_PER_PAGE = 20;
@@ -60,10 +66,14 @@ const ProductsTab = ({
   onDeleteProduct,
   onCreateProduct,
   onClearFilters,
+  onImportProducts,
+  onDownloadProductSample,
 }: ProductsTabProps) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedProductIds, setSelectedProductIds] = useState<number[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(filteredProducts.length / ITEMS_PER_PAGE));
   const pageStartIndex = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -116,6 +126,19 @@ const ProductsTab = ({
 
   const clearSelection = () => {
     setSelectedProductIds([]);
+  };
+
+  const handleImportFileSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !onImportProducts) return;
+
+    try {
+      setIsImporting(true);
+      await onImportProducts(file);
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   const downloadFile = (content: string, filename: string, type: string) => {
@@ -335,7 +358,32 @@ const ProductsTab = ({
             <FiPlus />
             <span>Add New Product</span>
           </motion.button>
-          <div className="filter-group"></div>
+          <button
+            type="button"
+            className={`btn secondary import-action-btn ${isImporting ? "disabled" : ""}`}
+            onClick={() => importInputRef.current?.click()}
+            disabled={!onImportProducts || isImporting}
+          >
+            <FiUpload />
+            <span>{isImporting ? "Importing..." : "Import"}</span>
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".csv,.xlsx,.xls"
+            className="import-file-input"
+            onChange={(e) => void handleImportFileSelected(e)}
+            disabled={!onImportProducts || isImporting}
+          />
+          <button
+            type="button"
+            className="btn secondary import-action-btn"
+            onClick={onDownloadProductSample}
+            disabled={!onDownloadProductSample || isImporting}
+          >
+            <FiDownload />
+            <span>Sample CSV</span>
+          </button>
         </div>
       </div>
 

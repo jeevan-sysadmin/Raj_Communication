@@ -1,12 +1,16 @@
 ﻿import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
+import type { ChangeEvent } from "react";
+import { useRef } from "react";
 import {
   FiChevronLeft,
   FiChevronRight,
+  FiDownload,
   FiEdit,
   FiPlus,
   FiSearch,
   FiTrash2,
+  FiUpload,
   FiUsers,
   FiX,
 } from "react-icons/fi";
@@ -31,6 +35,8 @@ interface ClientsTabProps {
   onDeleteClient: (id: number) => void;
   onCreateClient: () => void;
   onClearFilters: () => void;
+  onImportClients?: (file: File) => Promise<void>;
+  onDownloadClientSample?: () => void;
 }
 
 const ITEMS_PER_PAGE = 20;
@@ -57,10 +63,14 @@ const ClientsTab = ({
   onDeleteClient,
   onCreateClient,
   onClearFilters,
+  onImportClients,
+  onDownloadClientSample,
 }: ClientsTabProps) => {
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedClientIds, setSelectedClientIds] = useState<number[]>([]);
   const [selectedClient, setSelectedClient] = useState<Client | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(filteredClients.length / ITEMS_PER_PAGE));
   const pageStartIndex = (currentPage - 1) * ITEMS_PER_PAGE;
@@ -103,6 +113,19 @@ const ClientsTab = ({
 
   const clearSelection = () => {
     setSelectedClientIds([]);
+  };
+
+  const handleImportFileSelected = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !onImportClients) return;
+
+    try {
+      setIsImporting(true);
+      await onImportClients(file);
+    } finally {
+      setIsImporting(false);
+    }
   };
 
   const downloadFile = (content: string, filename: string, type: string) => {
@@ -267,6 +290,32 @@ const ClientsTab = ({
             <FiPlus />
             <span>Add New Client</span>
           </motion.button>
+          <button
+            type="button"
+            className={`btn secondary import-action-btn ${isImporting ? "disabled" : ""}`}
+            onClick={() => importInputRef.current?.click()}
+            disabled={!onImportClients || isImporting}
+          >
+            <FiUpload />
+            <span>{isImporting ? "Importing..." : "Import"}</span>
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".csv,.xlsx,.xls"
+            className="import-file-input"
+            onChange={(e) => void handleImportFileSelected(e)}
+            disabled={!onImportClients || isImporting}
+          />
+          <button
+            type="button"
+            className="btn secondary import-action-btn"
+            onClick={onDownloadClientSample}
+            disabled={!onDownloadClientSample || isImporting}
+          >
+            <FiDownload />
+            <span>Sample CSV</span>
+          </button>
         </div>
       </div>
 
