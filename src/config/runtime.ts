@@ -1,4 +1,9 @@
 const trimTrailingSlash = (value: string) => value.replace(/\/+$/, "");
+const normalizeAbsoluteUrl = (value: unknown) => {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return "";
+  return trimTrailingSlash(trimmed);
+};
 
 const normalizeBasePath = (value: string) => {
   const trimmed = String(value || "").trim();
@@ -39,12 +44,19 @@ const buildProductionApiBase = (suffix: "/api" | "/api_sync") => {
   return `${origin}${basePath}${suffix}`;
 };
 
+const configuredApiBaseUrl = normalizeAbsoluteUrl(import.meta.env.VITE_API_BASE_URL);
+const configuredApiSyncBaseUrl = normalizeAbsoluteUrl(
+  import.meta.env.VITE_API_SYNC_BASE_URL,
+);
+
 export const API_BASE_URL = trimTrailingSlash(
-  import.meta.env.DEV ? "/api" : buildProductionApiBase("/api"),
+  configuredApiBaseUrl ||
+    (import.meta.env.DEV ? "/api" : buildProductionApiBase("/api")),
 );
 
 export const API_SYNC_BASE_URL = trimTrailingSlash(
-  import.meta.env.DEV ? "/api_sync" : buildProductionApiBase("/api_sync"),
+  configuredApiSyncBaseUrl ||
+    (import.meta.env.DEV ? "/api_sync" : buildProductionApiBase("/api_sync")),
 );
 
 export const buildApiUrl = (path: string) =>
