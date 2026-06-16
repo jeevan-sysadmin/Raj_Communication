@@ -20,6 +20,9 @@ error_reporting(E_ALL);
 ini_set('display_errors', 0);
 ini_set('html_errors', 0);
 ini_set('log_errors', 1);
+@ini_set('memory_limit', '512M');
+@set_time_limit(0);
+@ignore_user_abort(true);
 
 // Include required files
 require_once __DIR__ . '/config/database.php';
@@ -917,7 +920,7 @@ class AdminAPI {
                 $types[':role'] = PDO::PARAM_STR;
             }
             
-            $query .= " ORDER BY created_at DESC";
+            $query .= " ORDER BY id DESC";
             
             $stmt = $this->conn->prepare($query);
             
@@ -2052,7 +2055,7 @@ class AdminAPI {
                 $types[':search'] = PDO::PARAM_STR;
             }
             
-            $query .= " ORDER BY c.created_at DESC";
+            $query .= " ORDER BY c.id DESC";
             
             $stmt = $this->conn->prepare($query);
             
@@ -2079,7 +2082,7 @@ class AdminAPI {
                 $data = [];
             }
 
-            $insertClient = function(array $row): array {
+            $insertClient = function(array $row, ?string $createdAtOverride = null): array {
                 if (isset($row['_raw_import_row']) && is_array($row['_raw_import_row'])) {
                     $row = array_merge($row['_raw_import_row'], $row);
                 }
@@ -2281,10 +2284,12 @@ class AdminAPI {
 
                 $client_code = 'CLT' . date('Ymd') . strtoupper(substr(uniqid(), -6));
 
+                $createdAt = $createdAtOverride ?: $this->currentTimestamp();
+
                 $query = "INSERT INTO clients (
                             client_code, full_name, email, phone, address, city, state, zip_code, notes, created_at
                           ) VALUES (
-                            :client_code, :full_name, :email, :phone, :address, :city, :state, :zip_code, :notes, NOW()
+                            :client_code, :full_name, :email, :phone, :address, :city, :state, :zip_code, :notes, :created_at
                           )";
 
                 $stmt = $this->conn->prepare($query);
@@ -2297,6 +2302,7 @@ class AdminAPI {
                 $stmt->bindValue(':state', $state, PDO::PARAM_STR);
                 $stmt->bindValue(':zip_code', $zip_code, PDO::PARAM_STR);
                 $stmt->bindValue(':notes', $notes, PDO::PARAM_STR);
+                $stmt->bindValue(':created_at', $createdAt, PDO::PARAM_STR);
 
                 if (!$stmt->execute()) {
                     return ['success' => false, 'message' => 'Failed to create client'];
@@ -2320,28 +2326,42 @@ class AdminAPI {
 
                 $createdClients = [];
                 $errors = [];
+                $importStartedAt = isset($data['import_started_at']) ? (int)$data['import_started_at'] : time();
 
-                foreach ($rows as $index => $row) {
-                    if (!is_array($row)) {
-                        $errors[] = ['index' => $index, 'message' => 'Invalid row format'];
-                        continue;
+                $this->conn->beginTransaction();
+                try {
+                    foreach ($rows as $index => $row) {
+                        if (!is_array($row)) {
+                            $errors[] = ['index' => $index, 'message' => 'Invalid row format'];
+                            continue;
+                        }
+
+                        $importSequence = isset($row['_import_sequence']) ? max(0, (int)$row['_import_sequence']) : $index;
+                        $createdAt = date('Y-m-d H:i:s', max(0, $importStartedAt - $importSequence));
+                        $result = $insertClient($row, $createdAt);
+
+                        if (!empty($result['success'])) {
+                            $createdClients[] = [
+                                'index' => $index,
+                                'client_id' => $result['client_id'],
+                                'client_code' => $result['client_code'],
+                                'full_name' => $result['full_name'],
+                            ];
+                        } else {
+                            $errors[] = [
+                                'index' => $index,
+                                'full_name' => trim((string)($row['full_name'] ?? $row['name'] ?? $row['client_name'] ?? '')),
+                                'message' => $result['message'] ?? 'Failed to create client',
+                            ];
+                        }
                     }
 
-                    $result = $insertClient($row);
-                    if (!empty($result['success'])) {
-                        $createdClients[] = [
-                            'index' => $index,
-                            'client_id' => $result['client_id'],
-                            'client_code' => $result['client_code'],
-                            'full_name' => $result['full_name'],
-                        ];
-                    } else {
-                        $errors[] = [
-                            'index' => $index,
-                            'full_name' => trim((string)($row['full_name'] ?? $row['name'] ?? $row['client_name'] ?? '')),
-                            'message' => $result['message'] ?? 'Failed to create client',
-                        ];
+                    $this->conn->commit();
+                } catch (Throwable $e) {
+                    if ($this->conn->inTransaction()) {
+                        $this->conn->rollBack();
                     }
+                    throw $e;
                 }
 
                 $createdCount = count($createdClients);
@@ -2642,29 +2662,38 @@ class AdminAPI {
 
                 $createdProducts = [];
                 $errors = [];
+                $this->conn->beginTransaction();
+                try {
+                    foreach ($rows as $index => $row) {
+                        if (!is_array($row)) {
+                            $errors[] = ['index' => $index, 'message' => 'Invalid row format'];
+                            continue;
+                        }
 
-                foreach ($rows as $index => $row) {
-                    if (!is_array($row)) {
-                        $errors[] = ['index' => $index, 'message' => 'Invalid row format'];
-                        continue;
+                        $normalizedRow = $this->normalizeProductPayload($row);
+                        $result = $insertProduct($normalizedRow);
+                        if (!empty($result['success'])) {
+                            $createdProducts[] = [
+                                'index' => $index,
+                                'product_name' => $result['product_name'],
+                                'product_id' => $result['product_id'],
+                                'product_code' => $result['product_code']
+                            ];
+                        } else {
+                            $errors[] = [
+                                'index' => $index,
+                                'product_name' => isset($normalizedRow['product_name']) ? trim((string)$normalizedRow['product_name']) : '',
+                                'message' => $result['message'] ?? 'Failed to create product'
+                            ];
+                        }
                     }
 
-                    $normalizedRow = $this->normalizeProductPayload($row);
-                    $result = $insertProduct($normalizedRow);
-                    if (!empty($result['success'])) {
-                        $createdProducts[] = [
-                            'index' => $index,
-                            'product_name' => $result['product_name'],
-                            'product_id' => $result['product_id'],
-                            'product_code' => $result['product_code']
-                        ];
-                    } else {
-                        $errors[] = [
-                            'index' => $index,
-                            'product_name' => isset($normalizedRow['product_name']) ? trim((string)$normalizedRow['product_name']) : '',
-                            'message' => $result['message'] ?? 'Failed to create product'
-                        ];
+                    $this->conn->commit();
+                } catch (Throwable $e) {
+                    if ($this->conn->inTransaction()) {
+                        $this->conn->rollBack();
                     }
+                    throw $e;
                 }
 
                 $createdCount = count($createdProducts);

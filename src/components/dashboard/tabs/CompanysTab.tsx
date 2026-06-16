@@ -16,6 +16,7 @@ import BulkActionPanel from "../BulkActionPanel";
 import DateRangeSelector from "../DateRangeSelector";
 import CompanysDetailModal from "../modals/CompanysDetailModal";
 import CompanysFormModal from "../modals/CompanysFormModal";
+import ConfirmDeleteModal from "../modals/ConfirmDeleteModal";
 import { exportStyledPdfReport } from "../pdfExport";
 import type { Company, CompanyForm, DateRange } from "../types";
 import { formatDisplayDate } from "../utils";
@@ -109,6 +110,8 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
   const [showFormModal, setShowFormModal] = useState(false);
   const [editCompany, setEditCompany] = useState<Company | null>(null);
   const [companyForm, setCompanyForm] = useState<CompanyForm>(emptyForm);
+  const [deleteCompanyTarget, setDeleteCompanyTarget] = useState<Company | null>(null);
+  const [deleteCompanyPending, setDeleteCompanyPending] = useState(false);
   const [loadingData, setLoadingData] = useState(false);
   const [savingCompany, setSavingCompany] = useState(false);
 
@@ -290,15 +293,17 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
     }
   };
 
-  const deleteCompany = async (id: number) => {
+  const handleDeleteCompany = (id: number) => {
     const target = companys.find((item) => item.id === id);
     if (!target) return;
+    setDeleteCompanyTarget(target);
+  };
 
-    const confirmed = window.confirm(`Delete ${target.company_name}?`);
-    if (!confirmed) return;
-
+  const confirmDeleteCompany = async () => {
+    if (!deleteCompanyTarget) return;
+    setDeleteCompanyPending(true);
     try {
-      const response = await fetch(`${COMPANY_API_URL}?id=${id}`, {
+      const response = await fetch(`${COMPANY_API_URL}?id=${deleteCompanyTarget.id}`, {
         method: "DELETE",
         headers: { Accept: "application/json" },
       });
@@ -307,8 +312,9 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
         throw new Error(result?.message || "Failed to delete company");
       }
 
-      setSelectedCompanyIds((prev) => prev.filter((selectedId) => selectedId !== id));
-      if (selectedCompany?.id === id) setSelectedCompany(null);
+      setSelectedCompanyIds((prev) => prev.filter((selectedId) => selectedId !== deleteCompanyTarget.id));
+      if (selectedCompany?.id === deleteCompanyTarget.id) setSelectedCompany(null);
+      setDeleteCompanyTarget(null);
       if (onRefresh) {
         await onRefresh();
       } else {
@@ -317,6 +323,8 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
     } catch (error: any) {
       console.error("Company delete error:", error);
       window.alert(error?.message || "Failed to delete company");
+    } finally {
+      setDeleteCompanyPending(false);
     }
   };
 
@@ -661,7 +669,7 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
                           className="action-btn delete"
                           onClick={(e) => {
                             e.stopPropagation();
-                            void deleteCompany(company.id);
+                            handleDeleteCompany(company.id);
                           }}
                           whileHover={{ scale: 1.1 }}
                           whileTap={{ scale: 0.9 }}
@@ -732,6 +740,10 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
         <CompanysDetailModal
           company={selectedCompany}
           onClose={() => setSelectedCompany(null)}
+          onDelete={(company) => {
+            setSelectedCompany(null);
+            handleDeleteCompany(company.id);
+          }}
           onEdit={(company) => {
             setSelectedCompany(null);
             openEditModal(company);
@@ -748,6 +760,32 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
         onChange={onCompanyFormChange}
         onSubmit={(event) => {
           void onCompanyFormSubmit(event);
+        }}
+      />
+
+      <ConfirmDeleteModal
+        open={Boolean(deleteCompanyTarget)}
+        title={deleteCompanyTarget ? `Delete ${deleteCompanyTarget.company_name}` : "Delete Company"}
+        description="This will permanently remove the company record."
+        details={
+          deleteCompanyTarget
+            ? [
+                { label: "Company Code", value: deleteCompanyTarget.company_code || "-" },
+                { label: "Company Name", value: deleteCompanyTarget.company_name || "-" },
+                { label: "Products", value: deleteCompanyTarget.product || "-" },
+                { label: "Contact Person", value: deleteCompanyTarget.contact_person || "-" },
+                { label: "Created", value: formatDisplayDate(deleteCompanyTarget.created_at) },
+              ]
+            : []
+        }
+        confirmLabel="Delete Company"
+        cancelLabel="Keep Company"
+        isProcessing={deleteCompanyPending}
+        onConfirm={() => {
+          void confirmDeleteCompany();
+        }}
+        onCancel={() => {
+          if (!deleteCompanyPending) setDeleteCompanyTarget(null);
         }}
       />
 

@@ -9,6 +9,7 @@ import {
   FiPackage,
   FiShoppingBag,
   FiTag,
+  FiTrash2,
   FiX,
   FiZap,
 } from "react-icons/fi";
@@ -20,6 +21,7 @@ interface ProductDetailModalProps {
   relatedOrders: Order[];
   onClose: () => void;
   onEdit: (product: Product) => void;
+  onDelete: (product: Product) => void;
 }
 
 const formatLabel = (value?: string) =>
@@ -30,7 +32,7 @@ const formatLabel = (value?: string) =>
         .join(" ")
     : "N/A";
 
-const ProductDetailModal = ({ product, relatedOrders, onClose, onEdit }: ProductDetailModalProps) => {
+const ProductDetailModal = ({ product, relatedOrders, onClose, onEdit, onDelete }: ProductDetailModalProps) => {
   const isSpareProduct = Boolean(Number(product.is_spare_product || 0));
   const recentOrders = [...relatedOrders]
     .sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime())
@@ -184,6 +186,9 @@ const ProductDetailModal = ({ product, relatedOrders, onClose, onEdit }: Product
           <div className="order-detail-actions">
             <motion.button className="btn outline" onClick={onClose} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}>
               Close
+            </motion.button>
+            <motion.button className="btn danger" onClick={() => onDelete(product)} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}>
+              <FiTrash2 /> Delete Product
             </motion.button>
             <motion.button className="btn primary" onClick={() => onEdit(product)} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}>
               <FiEdit /> Edit Product

@@ -38,18 +38,19 @@ const detectDelimiter = (text: string) => {
   return best;
 };
 
-const parseDelimitedLine = (line: string, delimiter: string) => {
-  const cells: string[] = [];
-  let current = "";
+const parseCsvRecords = (text: string, delimiter: string) => {
+  const records: string[][] = [];
+  let currentCell = "";
+  let currentRow: string[] = [];
   let inQuotes = false;
 
-  for (let i = 0; i < line.length; i += 1) {
-    const char = line[i];
-    const nextChar = line[i + 1];
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const nextChar = text[i + 1];
 
     if (char === '"') {
       if (inQuotes && nextChar === '"') {
-        current += '"';
+        currentCell += '"';
         i += 1;
       } else {
         inQuotes = !inQuotes;
@@ -58,31 +59,51 @@ const parseDelimitedLine = (line: string, delimiter: string) => {
     }
 
     if (char === delimiter && !inQuotes) {
-      cells.push(current);
-      current = "";
+      currentRow.push(normalizeCellValue(currentCell));
+      currentCell = "";
       continue;
     }
 
-    current += char;
+    if ((char === "\n" || char === "\r") && !inQuotes) {
+      if (char === "\r" && nextChar === "\n") {
+        i += 1;
+      }
+
+      currentRow.push(normalizeCellValue(currentCell));
+      currentCell = "";
+
+      if (currentRow.some((value) => value !== "")) {
+        records.push(currentRow);
+      }
+
+      currentRow = [];
+      continue;
+    }
+
+    currentCell += char;
   }
 
-  cells.push(current);
-  return cells.map((cell) => normalizeCellValue(cell));
+  currentRow.push(normalizeCellValue(currentCell));
+  if (currentRow.some((value) => value !== "")) {
+    records.push(currentRow);
+  }
+
+  return records;
 };
 
 const parseCsvTextRows = (text: string): ImportedSpreadsheetRow[] => {
-  const normalizedText = text.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  const lines = normalizedText.split("\n").filter((line) => line.trim() !== "");
-  if (lines.length === 0) return [];
+  const normalizedText = text.replace(/^\uFEFF/, "");
 
   const delimiter = detectDelimiter(normalizedText);
-  const headerCells = parseDelimitedLine(lines[0], delimiter);
+  const records = parseCsvRecords(normalizedText, delimiter);
+  if (records.length === 0) return [];
+
+  const headerCells = records[0];
   const normalizedHeaders = headerCells.map((header, index) => normalizeHeader(header) || `column_${index + 1}`);
 
-  return lines
+  return records
     .slice(1)
-    .map((line) => {
-      const cells = parseDelimitedLine(line, delimiter);
+    .map((cells) => {
       return normalizedHeaders.reduce<ImportedSpreadsheetRow>((acc, header, index) => {
         acc[header] = normalizeCellValue(cells[index] ?? "");
         return acc;

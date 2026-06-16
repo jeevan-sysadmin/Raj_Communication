@@ -35,6 +35,7 @@ interface DeliveryTabProps {
   onDateRangeChange: (start: string, end: string) => void;
   onPresetClick: (preset: "today" | "yesterday" | "thisWeek" | "thisMonth" | "lastMonth" | "thisYear") => void;
   onPrintDeliveryReceipt: (delivery: Delivery) => void;
+  onDeleteDelivery?: (id: number) => void | Promise<void>;
   onViewOrders: () => void;
   onClearFilters: () => void;
   enableLiveFetch?: boolean;
@@ -331,6 +332,7 @@ const DeliveryTab = ({
   onDateRangeChange,
   onPresetClick,
   onPrintDeliveryReceipt,
+  onDeleteDelivery,
   onViewOrders,
   onClearFilters,
   enableLiveFetch = true,
@@ -1326,6 +1328,10 @@ const DeliveryTab = ({
         <DeliveryDetailModal
           delivery={selectedDelivery}
           onClose={() => setSelectedDelivery(null)}
+          onDelete={(delivery) => {
+            setSelectedDelivery(null);
+            void onDeleteDelivery?.(delivery.id);
+          }}
           onPrint={onPrintDeliveryReceipt}
         />
       )}

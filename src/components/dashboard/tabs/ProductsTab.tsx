@@ -561,6 +561,10 @@ const ProductsTab = ({
           product={selectedProduct}
           relatedOrders={getRelatedOrdersForProduct(selectedProduct.id)}
           onClose={() => setSelectedProduct(null)}
+          onDelete={(product) => {
+            setSelectedProduct(null);
+            onDeleteProduct(product.id);
+          }}
           onEdit={(product) => {
             setSelectedProduct(null);
             onEditProduct(product);

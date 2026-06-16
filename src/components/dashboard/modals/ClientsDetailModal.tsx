@@ -6,6 +6,7 @@ import {
   FiMapPin,
   FiPhone,
   FiShoppingBag,
+  FiTrash2,
   FiUser,
   FiUsers,
   FiX,
@@ -18,9 +19,10 @@ interface ClientsDetailModalProps {
   relatedOrders: Order[];
   onClose: () => void;
   onEdit: (client: Client) => void;
+  onDelete: (client: Client) => void;
 }
 
-const ClientsDetailModal = ({ client, relatedOrders, onClose, onEdit }: ClientsDetailModalProps) => {
+const ClientsDetailModal = ({ client, relatedOrders, onClose, onEdit, onDelete }: ClientsDetailModalProps) => {
   const recentOrders = relatedOrders.slice(0, 5);
 
   return (
@@ -144,6 +146,7 @@ const ClientsDetailModal = ({ client, relatedOrders, onClose, onEdit }: ClientsD
 
           <div className="order-detail-actions">
             <motion.button className="btn outline" onClick={onClose} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}>Close</motion.button>
+            <motion.button className="btn danger" onClick={() => onDelete(client)} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}><FiTrash2 /> Delete Client</motion.button>
             <motion.button className="btn primary" onClick={() => onEdit(client)} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}><FiEdit /> Edit Client</motion.button>
           </div>
         </div>

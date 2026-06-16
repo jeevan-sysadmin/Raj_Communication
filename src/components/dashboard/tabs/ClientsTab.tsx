@@ -201,12 +201,12 @@ const ClientsTab = ({
       ]),
       columnStyles: {
         0: { cellWidth: 24 },
-        1: { cellWidth: 40 },
-        2: { cellWidth: 44 },
-        3: { cellWidth: 24 },
-        4: { cellWidth: 20, halign: "center" },
-        5: { cellWidth: 75 },
-        6: { cellWidth: 24 },
+        1: { cellWidth: 38 },
+        2: { cellWidth: 42 },
+        3: { cellWidth: 22 },
+        4: { cellWidth: 18, halign: "center" },
+        5: { cellWidth: 68 },
+        6: { cellWidth: 22 },
       },
     });
   };
@@ -478,6 +478,10 @@ const ClientsTab = ({
           client={selectedClient}
           relatedOrders={orders.filter((order) => order.client_id === selectedClient.id)}
           onClose={() => setSelectedClient(null)}
+          onDelete={(client) => {
+            setSelectedClient(null);
+            onDeleteClient(client.id);
+          }}
           onEdit={(client) => {
             setSelectedClient(null);
             onEditClient(client);

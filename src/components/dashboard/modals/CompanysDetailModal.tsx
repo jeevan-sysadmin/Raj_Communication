@@ -6,6 +6,7 @@ import {
   FiMapPin,
   FiPhone,
   FiTag,
+  FiTrash2,
   FiUsers,
   FiX,
 } from "react-icons/fi";
@@ -16,9 +17,10 @@ interface CompanysDetailModalProps {
   company: Company;
   onClose: () => void;
   onEdit: (company: Company) => void;
+  onDelete: (company: Company) => void;
 }
 
-const CompanysDetailModal = ({ company, onClose, onEdit }: CompanysDetailModalProps) => (
+const CompanysDetailModal = ({ company, onClose, onEdit, onDelete }: CompanysDetailModalProps) => (
   <motion.div
     className="modal-overlay"
     initial={{ opacity: 0 }}
@@ -133,6 +135,9 @@ const CompanysDetailModal = ({ company, onClose, onEdit }: CompanysDetailModalPr
         <div className="order-detail-actions">
           <motion.button className="btn outline" onClick={onClose} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}>
             Close
+          </motion.button>
+          <motion.button className="btn danger" onClick={() => onDelete(company)} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}>
+            <FiTrash2 /> Delete Company
           </motion.button>
           <motion.button className="btn primary" onClick={() => onEdit(company)} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}>
             <FiEdit /> Edit Company

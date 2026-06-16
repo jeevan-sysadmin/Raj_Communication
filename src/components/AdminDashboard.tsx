@@ -1852,6 +1852,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<Order | null>(null);
   const [deleteOrderTarget, setDeleteOrderTarget] = useState<DashboardOrder | Order | null>(null);
   const [deleteOrderPending, setDeleteOrderPending] = useState(false);
+  const [deleteClientTarget, setDeleteClientTarget] = useState<Client | null>(null);
+  const [deleteClientPending, setDeleteClientPending] = useState(false);
+  const [deleteProductTarget, setDeleteProductTarget] = useState<Product | null>(null);
+  const [deleteProductPending, setDeleteProductPending] = useState(false);
   const [createSubmitState, setCreateSubmitState] = useState({
     user: false,
     order: false,
@@ -2273,7 +2277,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           total_orders: parseInt(client.total_orders) || 0,
           total_spent: parseFloat(client.total_spent) || 0,
           customer_since: client.created_at
-        }));
+        }))
+          .sort((a: Client, b: Client) => b.id - a.id);
         
         // Keep client list in sync for the order form dropdown.
         setClients(mappedClients);
@@ -2516,7 +2521,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           total_orders: parseInt(client.total_orders) || 0,
           total_spent: parseFloat(client.total_spent) || 0,
           customer_since: client.created_at
-        }));
+        }))
+          .sort((a: Client, b: Client) => b.id - a.id);
         
         setClients(mappedClients);
         setSelectedClients([]);
@@ -2554,7 +2560,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           status: (product.status as 'active' | 'inactive' | 'discontinued') || 'active',
           created_at: product.created_at,
           updated_at: product.updated_at || product.created_at
-        }));
+        }))
+          .sort((a: Product, b: Product) => b.id - a.id);
         
         setProducts(mappedProducts);
         setSelectedProducts([]);
@@ -3600,7 +3607,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       throw new Error('The selected file is empty or has no readable rows.');
     }
 
-    const clientsPayload = rows.map((row) => {
+    const clientsPayload = rows.map((row, index) => {
       const full_name =
         getImportValue(row, ['full_name', 'full_name_', 'name', 'client_name', 'customer_name', 'client']) ||
         getFallbackClientImportValue(row, 'full_name');
@@ -3617,7 +3624,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         state: getImportValue(row, ['state']),
         zip_code: getImportValue(row, ['zip_code', 'zipcode', 'pin_code', 'pincode']),
         notes: getImportValue(row, ['notes', 'remark', 'remarks']),
-        _raw_import_row: row,
+        _import_sequence: index,
       };
     });
 
@@ -3625,79 +3632,68 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     let createdCount = 0;
     let failedCount = 0;
     let firstError = '';
-
-    try {
-      const data = await apiRequest('admin_api.php?action=create_client', 'POST', { clients: clientsPayload });
-      if (!(data.success || data.partial)) {
-        throw new Error(data.message || 'Failed to import clients');
+    const importStartedAt = Math.floor(Date.now() / 1000);
+    const chunkSize = 25;
+    const normalizedMessage = (message: string) => {
+      const text = String(message || '').trim();
+      if (!text) return 'Failed to import client';
+      if (text.toLowerCase() === 'full name and phone are required') {
+        return 'Row could not be parsed correctly from the CSV';
       }
-
-      createdCount = typeof data.created_count === 'number' ? data.created_count : clientsPayload.length;
-      failedCount = typeof data.failed_count === 'number' ? data.failed_count : 0;
-      firstError = Array.isArray(data.errors) && data.errors.length > 0 ? data.errors[0]?.message || '' : '';
-    } catch {
-      const token = getAuthToken();
-      if (!token) {
-        handleLogout();
-        throw new Error('No authentication token');
-      }
-
-      const fallbackErrors: Array<{ row: number; message: string }> = [];
-
-      for (const [index, clientRow] of clientsPayload.entries()) {
-        if (!String(clientRow.full_name || '').trim() || !String(clientRow.phone || '').trim()) {
-          fallbackErrors.push({
-            row: index + 1,
-            message: 'Full name and phone are required',
-          });
-          continue;
+      return text;
+    };
+    const importSingleClient = async (
+      clientRow: typeof clientsPayload[number],
+      rowNumber: number,
+    ) => {
+      try {
+        const data = await apiRequest('admin_api.php?action=create_client', 'POST', clientRow, { silent: true });
+        if (!data?.success) {
+          throw new Error(data?.message || 'Failed to import client');
         }
-
-        try {
-          const response = await fetch(buildApiUrl('Client.php'), {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${token}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(clientRow),
-          });
-          const responseText = await response.text();
-          const trimmedText = responseText.trim();
-          const parsedResult = trimmedText ? parseJsonText(trimmedText) : null;
-
-          if (!response.ok) {
-            const message =
-              parsedResult && typeof parsedResult === 'object'
-                ? (parsedResult as any).message || 'Failed to import client'
-                : summarizeServerBody(trimmedText) || 'Failed to import client';
-            throw new Error(message);
-          }
-
-          if (!parsedResult || typeof parsedResult !== 'object' || !(parsedResult as any).success) {
-            throw new Error(
-              (parsedResult as any)?.message || 'Failed to import client',
-            );
-          }
-
-          createdCount += 1;
-        } catch (error: any) {
-          fallbackErrors.push({
-            row: index + 1,
-            message: error?.message || 'Failed to import client',
-          });
+        createdCount += 1;
+      } catch (error: any) {
+        failedCount += 1;
+        const message = normalizedMessage(error?.message || 'Failed to import client');
+        if (!firstError) {
+          firstError = `Row ${rowNumber}: ${message}`;
         }
       }
+    };
 
-      failedCount = fallbackErrors.length;
-      firstError = fallbackErrors[0]?.message || '';
+    for (let start = 0; start < clientsPayload.length; start += chunkSize) {
+      const chunk = clientsPayload.slice(start, start + chunkSize);
 
-      if (createdCount === 0) {
-        throw new Error(firstError || 'Failed to import clients');
+      try {
+        const data = await apiRequest('admin_api.php?action=create_client', 'POST', {
+          clients: chunk,
+          import_started_at: importStartedAt,
+        }, { silent: true });
+
+        if (!(data.success || data.partial)) {
+          throw new Error(data.message || 'Failed to import clients');
+        }
+
+        createdCount += typeof data.created_count === 'number' ? data.created_count : chunk.length;
+        failedCount += typeof data.failed_count === 'number' ? data.failed_count : 0;
+
+        if (!firstError && Array.isArray(data.errors) && data.errors.length > 0) {
+          const firstChunkError = data.errors[0];
+          const chunkRowNumber = start + Number(firstChunkError?.index ?? 0) + 2;
+          firstError = `Row ${chunkRowNumber}: ${normalizedMessage(firstChunkError?.message || 'Failed to import client')}`;
+        }
+      } catch {
+        for (const [index, clientRow] of chunk.entries()) {
+          await importSingleClient(clientRow, start + index + 2);
+        }
       }
     }
 
-    await Promise.all([loadClients(), loadClientsForDropdown(), loadDashboardData()]);
+    if (createdCount === 0) {
+      throw new Error(firstError || 'Failed to import clients');
+    }
+
+    await Promise.allSettled([loadClients(), loadClientsForDropdown(), loadDashboardData()]);
 
     setSuccessMessage(
       failedCount > 0
@@ -3736,16 +3732,63 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }));
 
     setError(null);
-    const data = await apiRequest('admin_api.php?action=create_product', 'POST', { products: productsPayload });
-    if (!(data.success || data.partial)) {
-      throw new Error(data.message || 'Failed to import products');
+    let createdCount = 0;
+    let failedCount = 0;
+    let firstError = '';
+    const chunkSize = 50;
+    const normalizedMessage = (message: string) => {
+      const text = String(message || '').trim();
+      if (!text) return 'Failed to import product';
+      return text;
+    };
+    const importSingleProduct = async (
+      productRow: typeof productsPayload[number],
+      rowNumber: number,
+    ) => {
+      try {
+        const data = await apiRequest('admin_api.php?action=create_product', 'POST', productRow, { silent: true });
+        if (!data?.success) {
+          throw new Error(data?.message || 'Failed to import product');
+        }
+        createdCount += 1;
+      } catch (error: any) {
+        failedCount += 1;
+        const message = normalizedMessage(error?.message || 'Failed to import product');
+        if (!firstError) {
+          firstError = `Row ${rowNumber}: ${message}`;
+        }
+      }
+    };
+
+    for (let start = 0; start < productsPayload.length; start += chunkSize) {
+      const chunk = productsPayload.slice(start, start + chunkSize);
+
+      try {
+        const data = await apiRequest('admin_api.php?action=create_product', 'POST', { products: chunk }, { silent: true });
+        if (!(data.success || data.partial)) {
+          throw new Error(data.message || 'Failed to import products');
+        }
+
+        createdCount += typeof data.created_count === 'number' ? data.created_count : chunk.length;
+        failedCount += typeof data.failed_count === 'number' ? data.failed_count : 0;
+
+        if (!firstError && Array.isArray(data.errors) && data.errors.length > 0) {
+          const firstChunkError = data.errors[0];
+          const chunkRowNumber = start + Number(firstChunkError?.index ?? 0) + 2;
+          firstError = `Row ${chunkRowNumber}: ${normalizedMessage(firstChunkError?.message || 'Failed to import product')}`;
+        }
+      } catch {
+        for (const [index, productRow] of chunk.entries()) {
+          await importSingleProduct(productRow, start + index + 2);
+        }
+      }
     }
 
-    await Promise.all([loadProducts(), loadDashboardData()]);
+    if (createdCount === 0) {
+      throw new Error(firstError || 'Failed to import products');
+    }
 
-    const createdCount = typeof data.created_count === 'number' ? data.created_count : productsPayload.length;
-    const failedCount = typeof data.failed_count === 'number' ? data.failed_count : 0;
-    const firstError = Array.isArray(data.errors) && data.errors.length > 0 ? data.errors[0]?.message : '';
+    await Promise.allSettled([loadProducts(), loadDashboardData()]);
 
     setSuccessMessage(
       failedCount > 0
@@ -3915,40 +3958,57 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   };
 
   const handleDeleteClient = async (id: number) => {
-    if (window.confirm('Are you sure you want to delete this client?')) {
-      try {
-        const data = await apiRequest(`admin_api.php?action=delete_client&id=${id}`, 'DELETE');
-        
-        if (data.success) {
-          setSuccessMessage('Client deleted successfully');
-          await loadClients();
-          await loadDashboardData();
-          setTimeout(() => setSuccessMessage(null), 3000);
-        } else {
-          setError(data.message || 'Failed to delete client');
-        }
-      } catch (error: any) {
-        setError(error.message);
+    const target = clients.find((client) => client.id === id) || null;
+    setDeleteClientTarget(target);
+  };
+
+  const confirmDeleteClient = async () => {
+    if (!deleteClientTarget) return;
+
+    setDeleteClientPending(true);
+    try {
+      const data = await apiRequest(`admin_api.php?action=delete_client&id=${deleteClientTarget.id}`, 'DELETE');
+      
+      if (data.success) {
+        setSuccessMessage('Client deleted successfully');
+        setDeleteClientTarget(null);
+        await loadClients();
+        await loadDashboardData();
+        setTimeout(() => setSuccessMessage(null), 3000);
+      } else {
+        setError(data.message || 'Failed to delete client');
       }
+    } catch (error: any) {
+      setError(error.message);
+    } finally {
+      setDeleteClientPending(false);
     }
   };
   
-  const handleDeleteProduct = async (id: number) => {
-    if (window.confirm('Are you sure you want to delete this product?')) {
-      try {
-        const data = await apiRequest(`admin_api.php?action=delete_product&id=${id}`, 'DELETE');
-        
-        if (data.success) {
-          setSuccessMessage('Product deleted successfully');
-          await loadProducts();
-          await loadDashboardData();
-          setTimeout(() => setSuccessMessage(null), 3000);
-        } else {
-          setError(data.message || 'Failed to delete product');
-        }
-      } catch (error: any) {
-        setError(error.message);
+  const handleDeleteProduct = (id: number) => {
+    const target = products.find((product) => product.id === id) || null;
+    setDeleteProductTarget(target);
+  };
+
+  const confirmDeleteProduct = async () => {
+    if (!deleteProductTarget) return;
+    setDeleteProductPending(true);
+    try {
+      const data = await apiRequest(`admin_api.php?action=delete_product&id=${deleteProductTarget.id}`, 'DELETE');
+      
+      if (data.success) {
+        setSuccessMessage('Product deleted successfully');
+        setDeleteProductTarget(null);
+        await loadProducts();
+        await loadDashboardData();
+        setTimeout(() => setSuccessMessage(null), 3000);
+      } else {
+        setError(data.message || 'Failed to delete product');
       }
+    } catch (error: any) {
+      setError(error.message);
+    } finally {
+      setDeleteProductPending(false);
     }
   };
   
@@ -6847,6 +6907,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               onDateRangeChange={handleDateRangeChange}
               onPresetClick={setDateRangePreset}
               onPrintDeliveryReceipt={(delivery) => openReceiptOptionsForDelivery(delivery as any)}
+              onDeleteDelivery={handleDeleteDelivery}
               onViewOrders={() => setActiveTab('orders')}
               onClearFilters={clearAllFilters}
               enableLiveFetch={false}
@@ -7804,6 +7865,53 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         onEdit={handleOrderDetailsEdit}
         onGenerateReceipt={handleOrderDetailsReceipt}
         onDelete={handleOrderDetailsDelete}
+      />
+
+      <ConfirmDeleteModal
+        open={Boolean(deleteProductTarget)}
+        title={deleteProductTarget ? `Delete ${deleteProductTarget.product_name}` : 'Delete Product'}
+        description="This will permanently remove the product record."
+        details={
+          deleteProductTarget
+            ? [
+                { label: 'Product Code', value: deleteProductTarget.product_code || '-' },
+                { label: 'Product Name', value: deleteProductTarget.product_name || '-' },
+                { label: 'Serial Number', value: deleteProductTarget.serial_number || '-' },
+                { label: 'Brand / Model', value: `${deleteProductTarget.brand || '-'} / ${deleteProductTarget.model || '-'}` },
+                { label: 'Created', value: formatShortDate(deleteProductTarget.created_at) },
+              ]
+            : []
+        }
+        confirmLabel="Delete Product"
+        cancelLabel="Keep Product"
+        isProcessing={deleteProductPending}
+        onConfirm={confirmDeleteProduct}
+        onCancel={() => {
+          if (!deleteProductPending) setDeleteProductTarget(null);
+        }}
+      />
+
+      <ConfirmDeleteModal
+        open={Boolean(deleteClientTarget)}
+        title={deleteClientTarget ? `Delete ${deleteClientTarget.full_name}` : 'Delete Client'}
+        description="Are you sure you want to delete this client?"
+        details={
+          deleteClientTarget
+            ? [
+                { label: 'Client Code', value: deleteClientTarget.client_code || '-' },
+                { label: 'Name', value: deleteClientTarget.full_name || '-' },
+                { label: 'Phone', value: deleteClientTarget.phone || '-' },
+                { label: 'Created', value: formatShortDate(deleteClientTarget.created_at) },
+              ]
+            : []
+        }
+        confirmLabel="Delete Client"
+        cancelLabel="Keep Client"
+        isProcessing={deleteClientPending}
+        onConfirm={confirmDeleteClient}
+        onCancel={() => {
+          if (!deleteClientPending) setDeleteClientTarget(null);
+        }}
       />
 
       <ConfirmDeleteModal

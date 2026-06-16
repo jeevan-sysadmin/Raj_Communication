@@ -8,6 +8,7 @@ import {
   FiMapPin,
   FiPackage,
   FiPrinter,
+  FiTrash2,
   FiTruck,
   FiUser,
   FiX,
@@ -19,6 +20,7 @@ interface DeliveryDetailModalProps {
   delivery: Delivery;
   onClose: () => void;
   onPrint: (delivery: Delivery) => void;
+  onDelete: (delivery: Delivery) => void;
 }
 
 const formatValue = (value?: string) => {
@@ -55,7 +57,7 @@ const parseNameList = (value: unknown): string[] => {
   return [];
 };
 
-const DeliveryDetailModal = ({ delivery, onClose, onPrint }: DeliveryDetailModalProps) => {
+const DeliveryDetailModal = ({ delivery, onClose, onPrint, onDelete }: DeliveryDetailModalProps) => {
   const deliveryAny = delivery as Delivery & {
     product_serial_number?: string;
     serial_number?: string;
@@ -268,6 +270,9 @@ const DeliveryDetailModal = ({ delivery, onClose, onPrint }: DeliveryDetailModal
           <div className="order-detail-actions">
             <motion.button className="btn outline" onClick={onClose} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}>
               Close
+            </motion.button>
+            <motion.button className="btn danger" onClick={() => onDelete(delivery)} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}>
+              <FiTrash2 /> Delete Delivery
             </motion.button>
             <motion.button className="btn secondary" onClick={() => onPrint(delivery)} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}>
               <FiPrinter /> Receipt Options
