@@ -131,6 +131,7 @@ const inputStyle = {
 } as const;
 
 const RevenueTab = () => {
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
   const [year, setYear] = useState<number>(new Date().getFullYear());
   const [month, setMonth] = useState<number | "">("");
   const [serviceType, setServiceType] = useState("all");
@@ -140,6 +141,14 @@ const RevenueTab = () => {
   const [data, setData] = useState<RevenueResponse | null>(null);
   const [showIncomeForm, setShowIncomeForm] = useState(false);
   const [submittingIncome, setSubmittingIncome] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
   const [incomeForm, setIncomeForm] = useState({
     service_type: "general",
     income_source: "manual",
@@ -498,15 +507,15 @@ const RevenueTab = () => {
             <FiBarChart2 />
             Income And Costs
           </div>
-          <h3 style={{ fontSize: "30px", lineHeight: 1.1, marginBottom: "10px", color: "#0f172a" }}>
+          <h3 style={{ fontSize: isMobile ? "22px" : "30px", lineHeight: 1.1, marginBottom: "10px", color: "#0f172a" }}>
             Revenue Dashboard
           </h3>
-          <p style={{ fontSize: "15px", lineHeight: 1.7, color: "#64748b", margin: 0 }}>
+          <p style={{ fontSize: isMobile ? "14px" : "15px", lineHeight: 1.7, color: "#64748b", margin: 0 }}>
             Review revenue from service order amounts only, together with staff salaries and operating expenses across each service type.
           </p>
         </div>
 
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center", width: isMobile ? "100%" : undefined }}>
           <div style={{ display: "inline-flex", alignItems: "center", gap: "8px", padding: "0 12px", minHeight: "48px", borderRadius: "16px", background: "#fff", border: "1px solid rgba(203,213,225,0.9)" }}>
             <FiFilter style={{ color: "#64748b" }} />
             <select value={year} onChange={(event) => setYear(Number(event.target.value))} style={{ border: "none", outline: "none", background: "transparent", fontSize: "14px" }}>
@@ -572,7 +581,7 @@ const RevenueTab = () => {
 
       {data ? (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px", marginBottom: "18px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(220px, 1fr))", gap: "14px", marginBottom: "18px" }}>
             {summaryCards.map(([label, value, icon, accent], index) => (
               <motion.div
                 key={String(label)}
@@ -596,7 +605,7 @@ const RevenueTab = () => {
             ))}
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "18px", marginBottom: "18px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(320px, 1fr))", gap: "18px", marginBottom: "18px" }}>
             <div style={{ padding: "18px", borderRadius: "22px", background: "#fff", border: "1px solid rgba(148,163,184,0.14)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center", marginBottom: "12px" }}>
                 <div>
@@ -629,7 +638,7 @@ const RevenueTab = () => {
                 </button>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "12px", marginBottom: showIncomeForm ? "16px" : 0 }}>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(140px, 1fr))", gap: "12px", marginBottom: showIncomeForm ? "16px" : 0 }}>
                 <div style={{ padding: "12px", borderRadius: "14px", background: "#f8fafc" }}>
                   <div style={{ fontSize: "12px", color: "#64748b", marginBottom: "6px" }}>Manual Income</div>
                   <div style={{ fontSize: "18px", fontWeight: 800, color: "#0f172a" }}>{formatCurrency(data.summary.manual_income_total)}</div>
@@ -646,7 +655,7 @@ const RevenueTab = () => {
 
               {showIncomeForm ? (
                 <form autoComplete="off" onSubmit={submitIncome} style={{ display: "grid", gap: "12px" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px" }}>
                     <select value={incomeForm.service_type} onChange={(event) => setIncomeForm((prev) => ({ ...prev, service_type: event.target.value }))} style={inputStyle}>
                       {manualIncomeServices.map((option) => (
                         <option key={option} value={option}>
@@ -675,7 +684,7 @@ const RevenueTab = () => {
                   <input value={incomeForm.description} onChange={(event) => setIncomeForm((prev) => ({ ...prev, description: event.target.value }))} placeholder="Description" required style={inputStyle} />
                   <textarea value={incomeForm.notes} onChange={(event) => setIncomeForm((prev) => ({ ...prev, notes: event.target.value }))} rows={3} placeholder="Notes" style={{ ...inputStyle, resize: "vertical" }} />
 
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap", flexDirection: isMobile ? "column" : "row" }}>
                     <strong style={{ color: "#0f172a" }}>New entry: {formatCurrency(incomeForm.amount)}</strong>
                     <button type="submit" disabled={submittingIncome} style={{ border: "none", background: "#0f172a", color: "#fff", padding: "10px 16px", borderRadius: "12px", fontWeight: 700, cursor: "pointer" }}>
                       {submittingIncome ? "Saving..." : "Save Income"}
@@ -690,7 +699,7 @@ const RevenueTab = () => {
               <div style={{ display: "grid", gap: "10px" }}>
                 {data.recent_income.length > 0 ? (
                   data.recent_income.map((item) => (
-                    <div key={item.id} style={{ padding: "12px 14px", borderRadius: "14px", background: "#f8fafc", display: "flex", justifyContent: "space-between", gap: "12px" }}>
+                    <div key={item.id} style={{ padding: "12px 14px", borderRadius: "14px", background: "#f8fafc", display: "flex", justifyContent: "space-between", gap: "12px", flexDirection: isMobile ? "column" : "row" }}>
                       <div>
                         <div style={{ fontWeight: 800, color: "#0f172a" }}>{item.description}</div>
                         <div style={{ fontSize: "13px", color: "#64748b", textTransform: "capitalize" }}>
@@ -714,11 +723,11 @@ const RevenueTab = () => {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "18px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(320px, 1fr))", gap: "18px" }}>
             <div style={{ display: "grid", gap: "18px" }}>
               <div style={{ padding: "18px", borderRadius: "22px", background: "#fff", border: "1px solid rgba(148,163,184,0.14)" }}>
                 <h4 style={{ margin: "0 0 12px 0", color: "#0f172a" }}>Period Summary</h4>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "12px" }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(150px, 1fr))", gap: "12px" }}>
                   {[
                     ["Period", data.summary.period_label],
                     ["Date Range", `${formatDate(data.summary.date_range.from)} to ${formatDate(data.summary.date_range.to)}`],
@@ -814,7 +823,7 @@ const RevenueTab = () => {
                 <div style={{ display: "grid", gap: "10px" }}>
                   {data.top_customers.length > 0 ? (
                     data.top_customers.map((item) => (
-                      <div key={item.client_id} style={{ padding: "12px 14px", borderRadius: "14px", background: "#f8fafc", display: "flex", justifyContent: "space-between", gap: "12px" }}>
+                    <div key={item.client_id} style={{ padding: "12px 14px", borderRadius: "14px", background: "#f8fafc", display: "flex", justifyContent: "space-between", gap: "12px", flexDirection: isMobile ? "column" : "row" }}>
                         <div>
                           <div style={{ fontWeight: 800, color: "#0f172a" }}>{item.client_name}</div>
                           <div style={{ fontSize: "13px", color: "#64748b" }}>

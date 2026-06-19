@@ -362,85 +362,157 @@ const ClientsTab = ({
             <p>Loading clients...</p>
           </div>
         ) : filteredClients.length > 0 ? (
-          <table className="orders-table">
-            <thead>
-              <tr>
-                <th>
-                  <input
-                    type="checkbox"
-                    className="row-checkbox"
-                    checked={allPageSelected}
-                    onChange={togglePageSelection}
-                    aria-label="Select all clients on this page"
-                  />
-                </th>
-                <th>Client Code</th>
-                <th>Name</th>
-                <th>Phone</th>
-                <th>Email</th>
-                <th>City</th>
-                <th>Orders</th>
-                <th>Created</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <div className="desktop-table-view">
+              <table className="orders-table">
+                <thead>
+                  <tr>
+                    <th>
+                      <input
+                        type="checkbox"
+                        className="row-checkbox"
+                        checked={allPageSelected}
+                        onChange={togglePageSelection}
+                        aria-label="Select all clients on this page"
+                      />
+                    </th>
+                    <th>Client Code</th>
+                    <th>Name</th>
+                    <th>Phone</th>
+                    <th>Email</th>
+                    <th>City</th>
+                    <th>Orders</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedClients.map((client, index) => {
+                    const isSelected = selectedClientIds.includes(client.id);
+
+                    return (
+                      <motion.tr key={client.id} className={isSelected ? "selected-row" : ""} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }} whileHover={{ backgroundColor: "#f8fafc", cursor: "pointer" }} onClick={() => setSelectedClient(client)}>
+                        <td onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            className="row-checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleClientSelection(client.id)}
+                            aria-label={`Select ${client.full_name}`}
+                          />
+                        </td>
+                        <td>
+                          <span className="client-code">{client.client_code}</span>
+                        </td>
+                        <td>
+                          <div className="client-cell">
+                            <div className="client-avatar-placeholder">{client.full_name?.charAt(0) || "C"}</div>
+                            <div className="client-info">
+                              <span className="client-name">{client.full_name}</span>
+                              <span className="client-address">{client.address ? `${client.address.substring(0, 30)}...` : "N/A"}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <span className="client-phone">{client.phone}</span>
+                        </td>
+                        <td>
+                          <span className="client-email">{client.email || "N/A"}</span>
+                        </td>
+                        <td>
+                          <span className="client-city">{client.city || "N/A"}</span>
+                        </td>
+                        <td>
+                          <span className="client-orders">{orders.filter((order) => order.client_id === client.id).length}</span>
+                        </td>
+                        <td>
+                          <span className="client-date">{formatDisplayDate(client.created_at)}</span>
+                        </td>
+                        <td>
+                          <div className="action-buttons">
+                            <motion.button className="action-btn edit" onClick={(e) => { e.stopPropagation(); onEditClient(client); }} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} title="Edit Client">
+                              <FiEdit />
+                            </motion.button>
+                            <motion.button className="action-btn delete" onClick={(e) => { e.stopPropagation(); onDeleteClient(client.id); }} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} title="Delete Client">
+                              <FiTrash2 />
+                            </motion.button>
+                          </div>
+                        </td>
+                      </motion.tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="mobile-record-list">
               {paginatedClients.map((client, index) => {
                 const isSelected = selectedClientIds.includes(client.id);
-
+                const orderCount = orders.filter((order) => order.client_id === client.id).length;
                 return (
-                  <motion.tr key={client.id} className={isSelected ? "selected-row" : ""} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }} whileHover={{ backgroundColor: "#f8fafc", cursor: "pointer" }} onClick={() => setSelectedClient(client)}>
-                    <td onClick={(e) => e.stopPropagation()}>
+                  <motion.div
+                    key={`mobile-${client.id}`}
+                    className={`mobile-record-card${isSelected ? " selected-row" : ""}`}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    onClick={() => setSelectedClient(client)}
+                  >
+                    <div className="mobile-record-header">
+                      <div className="mobile-record-header-main">
+                        <span className="mobile-record-kicker">Client</span>
+                        <strong className="mobile-record-title">{client.full_name}</strong>
+                        <span className="mobile-record-subtitle">{client.client_code}</span>
+                      </div>
                       <input
                         type="checkbox"
                         className="row-checkbox"
                         checked={isSelected}
+                        onClick={(e) => e.stopPropagation()}
                         onChange={() => toggleClientSelection(client.id)}
                         aria-label={`Select ${client.full_name}`}
                       />
-                    </td>
-                    <td>
-                      <span className="client-code">{client.client_code}</span>
-                    </td>
-                    <td>
-                      <div className="client-cell">
-                        <div className="client-avatar-placeholder">{client.full_name?.charAt(0) || "C"}</div>
-                        <div className="client-info">
-                          <span className="client-name">{client.full_name}</span>
-                          <span className="client-address">{client.address ? `${client.address.substring(0, 30)}...` : "N/A"}</span>
-                        </div>
+                    </div>
+
+                    <div className="mobile-record-grid">
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Phone</span>
+                        <span className="client-phone">{client.phone || "N/A"}</span>
                       </div>
-                    </td>
-                    <td>
-                      <span className="client-phone">{client.phone}</span>
-                    </td>
-                    <td>
-                      <span className="client-email">{client.email || "N/A"}</span>
-                    </td>
-                    <td>
-                      <span className="client-city">{client.city || "N/A"}</span>
-                    </td>
-                    <td>
-                      <span className="client-orders">{orders.filter((order) => order.client_id === client.id).length}</span>
-                    </td>
-                    <td>
-                      <span className="client-date">{formatDisplayDate(client.created_at)}</span>
-                    </td>
-                    <td>
-                      <div className="action-buttons">
-                        <motion.button className="action-btn edit" onClick={(e) => { e.stopPropagation(); onEditClient(client); }} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} title="Edit Client">
-                          <FiEdit />
-                        </motion.button>
-                        <motion.button className="action-btn delete" onClick={(e) => { e.stopPropagation(); onDeleteClient(client.id); }} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} title="Delete Client">
-                          <FiTrash2 />
-                        </motion.button>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Email</span>
+                        <span className="client-email">{client.email || "N/A"}</span>
                       </div>
-                    </td>
-                  </motion.tr>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">City</span>
+                        <span>{client.city || "N/A"}</span>
+                      </div>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Orders</span>
+                        <span className="client-orders">{orderCount}</span>
+                      </div>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Created</span>
+                        <span>{formatDisplayDate(client.created_at)}</span>
+                      </div>
+                      <div className="mobile-record-field full">
+                        <span className="mobile-record-label">Address</span>
+                        <span>{client.address || "Not added"}</span>
+                      </div>
+                    </div>
+
+                    <div className="mobile-record-actions" onClick={(e) => e.stopPropagation()}>
+                      <button type="button" className="action-btn edit" onClick={() => onEditClient(client)} title="Edit Client">
+                        <FiEdit />
+                      </button>
+                      <button type="button" className="action-btn delete" onClick={() => onDeleteClient(client.id)} title="Delete Client">
+                        <FiTrash2 />
+                      </button>
+                    </div>
+                  </motion.div>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+          </>
         ) : (
           <div className="empty-state">
             <FiUsers className="empty-icon" />

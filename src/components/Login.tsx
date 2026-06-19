@@ -429,6 +429,16 @@ export default function Login({ onLoginSuccess }: LoginProps) {
               </label>
             </motion.div>
 
+            <div className="login-helper-card">
+              <div className="login-helper-icon">
+                <FiLock />
+              </div>
+              <div>
+                <strong>Use your registered account</strong>
+                <span>Enter the email and password created for your admin or staff profile.</span>
+              </div>
+            </div>
+
             <AnimatePresence>
               {success ? (
                 <motion.div
@@ -568,6 +578,7 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           width: 100%;
           box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
           border: 1px solid rgba(255, 255, 255, 0.1);
+          overflow: hidden;
         }
 
         /* Logo Container */
@@ -621,9 +632,10 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         .login-subtitle {
           text-align: center;
           color: #ccc;
-          margin-bottom: 30px;
+          margin-bottom: 18px;
           font-size: 1rem;
           letter-spacing: 0.5px;
+          line-height: 1.7;
         }
 
         /* Input Fields */
@@ -645,9 +657,9 @@ export default function Login({ onLoginSuccess }: LoginProps) {
         .login-input {
           width: 100%;
           padding: 15px 15px 15px 45px;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          border-radius: 10px;
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          border-radius: 16px;
           color: white;
           font-size: 1rem;
           outline: none;
@@ -749,6 +761,45 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           justify-content: space-between;
           align-items: center;
           margin-bottom: 25px;
+          gap: 12px;
+        }
+
+        .login-helper-card {
+          display: grid;
+          grid-template-columns: 40px minmax(0, 1fr);
+          gap: 12px;
+          align-items: flex-start;
+          padding: 14px;
+          margin-bottom: 18px;
+          border-radius: 18px;
+          background: rgba(255, 255, 255, 0.07);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .login-helper-icon {
+          width: 40px;
+          height: 40px;
+          border-radius: 14px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: linear-gradient(135deg, rgba(255,215,0,0.22), rgba(255,140,0,0.18));
+          color: #ffd54a;
+          font-size: 1rem;
+        }
+
+        .login-helper-card strong {
+          display: block;
+          margin-bottom: 4px;
+          font-size: 0.88rem;
+          color: #fff;
+        }
+
+        .login-helper-card span {
+          display: block;
+          font-size: 0.8rem;
+          line-height: 1.6;
+          color: #cbd5e1;
         }
 
         /* Login Button */
@@ -868,43 +919,66 @@ export default function Login({ onLoginSuccess }: LoginProps) {
 
         /* Responsive Design */
         @media (max-width: 768px) {
+          .login-container {
+            min-height: 100dvh;
+          }
+
           .login-card-wrapper {
-            max-width: 400px;
-            padding: 0 15px;
+            width: 100%;
+            max-width: none;
+            padding: max(10px, env(safe-area-inset-top)) 10px 0;
+            top: auto;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            transform: none;
+            max-height: 100dvh;
+            overflow-y: auto;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
           }
 
           .login-card {
-            padding: 25px;
-            border-radius: 25px;
+            width: min(100%, 430px);
+            min-height: min(76dvh, 720px);
+            padding: 24px 22px max(22px, env(safe-area-inset-bottom));
+            border-radius: 30px 30px 0 0;
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
+            box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
           }
 
           .logo-container {
-            width: 120px;
-            height: 120px;
-            margin-bottom: 15px;
+            width: 108px;
+            height: 108px;
+            margin-bottom: 12px;
           }
 
           .logo-glow {
-            width: 140px;
-            height: 140px;
+            width: 132px;
+            height: 132px;
           }
 
           .title {
-            font-size: 1.8rem;
+            font-size: 1.7rem;
+            margin-bottom: 10px;
           }
 
           .company-name {
-            font-size: 2rem;
+            font-size: 1.95rem;
           }
 
           .login-subtitle {
             font-size: 0.9rem;
-            margin-bottom: 25px;
+            margin-bottom: 14px;
           }
 
           .login-input {
             padding: 14px 14px 14px 40px;
             font-size: 0.95rem;
+            min-height: 48px;
+            border-radius: 15px;
           }
 
           .input-icon {
@@ -915,47 +989,67 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           .btn-login {
             padding: 14px;
             font-size: 1rem;
+            min-height: 48px;
+            border-radius: 15px;
+          }
+
+          .form-options {
+            flex-direction: column;
+            align-items: flex-start;
+            margin-bottom: 16px;
+          }
+
+          .success-container,
+          .login-error-message {
+            border-radius: 16px;
           }
         }
 
         @media (max-width: 480px) {
           .login-card-wrapper {
-            max-width: 90%;
-            padding: 0 10px;
+            padding: max(8px, env(safe-area-inset-top)) 0 0;
           }
 
           .login-card {
-            padding: 20px;
-            border-radius: 20px;
+            width: 100%;
+            min-height: min(82dvh, 760px);
+            padding: 20px 18px max(20px, env(safe-area-inset-bottom));
+            border-radius: 24px 24px 0 0;
           }
 
           .logo-container {
-            width: 100px;
-            height: 100px;
-            margin-bottom: 10px;
+            width: 88px;
+            height: 88px;
+            margin-bottom: 8px;
           }
 
           .logo-glow {
-            width: 120px;
-            height: 120px;
+            width: 110px;
+            height: 110px;
           }
 
           .title {
-            font-size: 1.5rem;
+            font-size: 1.38rem;
+            margin-bottom: 8px;
           }
 
           .company-name {
-            font-size: 1.7rem;
+            font-size: 1.58rem;
           }
 
           .login-subtitle {
-            font-size: 0.85rem;
-            margin-bottom: 20px;
+            font-size: 0.82rem;
+            margin-bottom: 12px;
+          }
+
+          .login-helper-card span {
+            font-size: 0.76rem;
           }
 
           .login-input {
             padding: 12px 12px 12px 35px;
             font-size: 0.9rem;
+            min-height: 46px;
           }
 
           .input-icon {
@@ -971,10 +1065,24 @@ export default function Login({ onLoginSuccess }: LoginProps) {
           .btn-login {
             padding: 12px;
             font-size: 0.95rem;
+            min-height: 46px;
           }
 
           .form-options {
             margin-bottom: 20px;
+          }
+
+          .login-helper-card {
+            grid-template-columns: 36px minmax(0, 1fr);
+            gap: 10px;
+            padding: 12px;
+            border-radius: 16px;
+          }
+
+          .login-helper-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 12px;
           }
 
           .checkbox-custom {
@@ -995,25 +1103,61 @@ export default function Login({ onLoginSuccess }: LoginProps) {
 
         @media (max-width: 320px) {
           .login-card-wrapper {
-            max-width: 95%;
+            padding-top: max(6px, env(safe-area-inset-top));
           }
 
           .logo-container {
-            width: 80px;
-            height: 80px;
+            width: 76px;
+            height: 76px;
           }
 
           .logo-glow {
-            width: 100px;
-            height: 100px;
+            width: 94px;
+            height: 94px;
           }
 
           .title {
-            font-size: 1.3rem;
+            font-size: 1.2rem;
           }
 
           .company-name {
-            font-size: 1.5rem;
+            font-size: 1.4rem;
+          }
+        }
+
+        @media (max-height: 760px) and (max-width: 768px) {
+          .login-card-wrapper {
+            padding-top: max(6px, env(safe-area-inset-top));
+          }
+
+          .logo-container {
+            width: 82px;
+            height: 82px;
+            margin-bottom: 6px;
+          }
+
+          .logo-glow {
+            width: 104px;
+            height: 104px;
+          }
+
+          .title {
+            font-size: 1.28rem;
+            margin-bottom: 6px;
+          }
+
+          .company-name {
+            font-size: 1.46rem;
+          }
+
+          .login-subtitle {
+            font-size: 0.8rem;
+            margin-bottom: 10px;
+          }
+
+          .login-card {
+            min-height: min(88dvh, 760px);
+            padding-top: 18px;
           }
         }
 

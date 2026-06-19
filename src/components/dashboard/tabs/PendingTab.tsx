@@ -395,44 +395,89 @@ const PendingTab = ({ orders, products, loading = false }: PendingTabProps) => {
             {loading ? (
               <div className="pending-empty-state">Loading pending products...</div>
             ) : pendingRows.length > 0 ? (
-              <table className="pending-table">
-                <thead>
-                  <tr>
-                    <th>
-                      <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />
-                    </th>
-                    <th>Company</th>
-                    <th>Service Order Date</th>
-                    <th>Product Name</th>
-                    <th>Model</th>
-                    <th>Serial</th>
-                    <th>Fault Description</th>
-                    <th>Pending Days</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <>
+                <div className="desktop-table-view">
+                  <table className="pending-table">
+                    <thead>
+                      <tr>
+                        <th>
+                          <input type="checkbox" checked={allSelected} onChange={toggleSelectAll} />
+                        </th>
+                        <th>Company</th>
+                        <th>Service Order Date</th>
+                        <th>Product Name</th>
+                        <th>Model</th>
+                        <th>Serial</th>
+                        <th>Fault Description</th>
+                        <th>Pending Days</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingRows.map((row) => (
+                        <tr key={row.key}>
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={selectedKeys.includes(row.key)}
+                              onChange={() => toggleRow(row.key)}
+                            />
+                          </td>
+                          <td>{row.company}</td>
+                          <td>{row.serviceDate}</td>
+                          <td>{row.productName}</td>
+                          <td>{row.model}</td>
+                          <td>{row.serial}</td>
+                          <td>{row.faultDescription}</td>
+                          <td>
+                            <span className="pending-day-pill">{row.pendingDays} days</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mobile-record-list">
                   {pendingRows.map((row) => (
-                    <tr key={row.key}>
-                      <td>
+                    <div key={`mobile-${row.key}`} className="mobile-record-card">
+                      <div className="mobile-record-header">
+                        <div className="mobile-record-header-main">
+                          <span className="mobile-record-kicker">Pending Product</span>
+                          <strong className="mobile-record-title">{row.productName}</strong>
+                          <span className="mobile-record-subtitle">{row.company}</span>
+                        </div>
                         <input
                           type="checkbox"
                           checked={selectedKeys.includes(row.key)}
                           onChange={() => toggleRow(row.key)}
                         />
-                      </td>
-                      <td>{row.company}</td>
-                      <td>{row.serviceDate}</td>
-                      <td>{row.productName}</td>
-                      <td>{row.model}</td>
-                      <td>{row.serial}</td>
-                      <td>{row.faultDescription}</td>
-                      <td>
-                        <span className="pending-day-pill">{row.pendingDays} days</span>
-                      </td>
-                    </tr>
+                      </div>
+
+                      <div className="mobile-record-grid">
+                        <div className="mobile-record-field">
+                          <span className="mobile-record-label">Service Date</span>
+                          <span>{row.serviceDate}</span>
+                        </div>
+                        <div className="mobile-record-field">
+                          <span className="mobile-record-label">Pending Days</span>
+                          <span className="pending-day-pill">{row.pendingDays} days</span>
+                        </div>
+                        <div className="mobile-record-field">
+                          <span className="mobile-record-label">Model</span>
+                          <span>{row.model || "N/A"}</span>
+                        </div>
+                        <div className="mobile-record-field">
+                          <span className="mobile-record-label">Serial</span>
+                          <span>{row.serial || "N/A"}</span>
+                        </div>
+                        <div className="mobile-record-field full">
+                          <span className="mobile-record-label">Fault Description</span>
+                          <span>{row.faultDescription || "Not added"}</span>
+                        </div>
+                      </div>
+                    </div>
                   ))}
-                </tbody>
-              </table>
+                </div>
+              </>
             ) : (
               <div className="pending-empty-state">No pending products found for this company.</div>
             )}

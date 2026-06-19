@@ -1085,6 +1085,8 @@ const DeliveryTab = ({
             <p>Loading deliveries...</p>
           </div>
         ) : sortedDeliveries.length > 0 ? (
+          <>
+          <div className="desktop-table-view">
           <table className="orders-table delivery-compact-table">
             <thead>
               <tr>
@@ -1290,6 +1292,165 @@ const DeliveryTab = ({
               })}
             </tbody>
           </table>
+          </div>
+          <div className="mobile-record-list">
+            {paginatedDeliveries.map((delivery, index) => {
+              const isDelivered = isDeliveryCompleted(delivery);
+              const isSelected = selectedDeliveryIds.includes(delivery.__rowKey);
+              const orderMeta = orderMetaById[delivery.order_id];
+              const deliveredProductNames = getDeliveredProductNames(orderMeta);
+              const deliveryItemNames = toList((delivery as any).delivery_item_product_names);
+              const productValue =
+                (deliveryItemNames.length > 0 ? deliveryItemNames.join(", ") : "") ||
+                (deliveredProductNames.length > 0 ? deliveredProductNames.join(", ") : "") ||
+                (delivery.product_name && String(delivery.product_name).trim()) ||
+                "N/A";
+              const replacementValue =
+                (toList(orderMeta?.replacement_product_names).length > 0
+                  ? toList(orderMeta?.replacement_product_names).join(", ")
+                  : orderMeta?.replacement_product_name) || "N/A";
+              const productSerialList =
+                toList((delivery as any).delivery_item_serial_numbers).length > 0
+                  ? toList((delivery as any).delivery_item_serial_numbers)
+                  : toList((delivery as any).product_serial_numbers).length > 0
+                    ? toList((delivery as any).product_serial_numbers)
+                  : toList(orderMeta?.product_serial_numbers);
+              const replacementNamesList =
+                toList(orderMeta?.replacement_product_names).length > 0
+                  ? toList(orderMeta?.replacement_product_names)
+                  : toList(orderMeta?.replacement_product_name);
+              const replacementSerialList = toList((orderMeta as any)?.replacement_product_serial_numbers);
+              const companiesValue = getDeliveryCompanyName(orderMeta, delivery);
+              const productNamesList =
+                deliveryItemNames.length > 0
+                  ? deliveryItemNames
+                  : deliveredProductNames.length > 0
+                  ? deliveredProductNames
+                  : toList(orderMeta?.product_names).length > 0
+                    ? toList(orderMeta?.product_names)
+                    : toList(orderMeta?.product_name);
+              const productIds =
+                parseIds((delivery as any).delivery_item_product_ids).length > 0
+                  ? parseIds((delivery as any).delivery_item_product_ids)
+                  : parseIds(orderMeta?.product_ids);
+              const productMultiLine = getNumberedNameSerialLines(
+                productNamesList.length > 0 ? productNamesList : [productValue],
+                productSerialList,
+              );
+              const replacementMultiLine =
+                replacementNamesList.length > 0
+                  ? getNumberedNameSerialLines(replacementNamesList, replacementSerialList)
+                  : "N/A";
+              const companyNamesList =
+                toList(orderMeta?.company_names).length > 0 ? toList(orderMeta?.company_names) : toList(orderMeta?.company_name);
+              const parsedCompanyMap = (() => {
+                const raw = orderMeta?.company_product_map;
+                if (!raw) return {} as Record<string, unknown>;
+                if (typeof raw === "string") {
+                  try {
+                    const parsed = JSON.parse(raw);
+                    return typeof parsed === "object" && parsed ? (parsed as Record<string, unknown>) : {};
+                  } catch {
+                    return {};
+                  }
+                }
+                return typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+              })();
+              const companyProductNameMap = (() => {
+                const result: Record<string, { company_name?: string; product_names?: string[] | string }> = {};
+                if (companyNamesList.length === 0) return result;
+                const productNameById = new Map<number, string>();
+                productIds.forEach((id, index) => {
+                  productNameById.set(id, productNamesList[index] || `Product #${id}`);
+                });
+                const mapKeys = Object.keys(parsedCompanyMap);
+                companyNamesList.forEach((company, index) => {
+                  const mapKey = mapKeys[index];
+                  const mappedIds = mapKey ? parseIds(parsedCompanyMap[mapKey]) : [];
+                  const names =
+                    mappedIds.length > 0
+                      ? mappedIds.map((id) => productNameById.get(id) || `Product #${id}`)
+                      : productNamesList;
+                  result[company] = {
+                    company_name: company,
+                    product_names: names,
+                  };
+                });
+                return result;
+              })();
+              const enrichedDeliveryForReceipt = {
+                ...delivery,
+                client_name: orderMeta?.client_name || delivery.client_name,
+                product_name: productValue,
+                product_names: productNamesList,
+                product_ids: productIds,
+                product_serial_numbers:
+                  toList((delivery as any).delivery_item_serial_numbers).length > 0
+                    ? toList((delivery as any).delivery_item_serial_numbers)
+                    : toList((delivery as any).product_serial_numbers).length > 0
+                      ? toList((delivery as any).product_serial_numbers)
+                    : orderMeta?.product_serial_numbers,
+                product_status_map: orderMeta?.product_status_map,
+                replacement_product_name: replacementValue === "N/A" ? "" : replacementValue,
+                replacement_product_names:
+                  toList(orderMeta?.replacement_product_names).length > 0
+                    ? toList(orderMeta?.replacement_product_names)
+                    : toList(orderMeta?.replacement_product_name),
+                replacement_product_serial_numbers: (orderMeta as any)?.replacement_product_serial_numbers,
+                company_name: orderMeta?.company_name,
+                company_names: companyNamesList,
+                company_product_name_map: companyProductNameMap,
+                estimated_cost: orderMeta?.estimated_cost,
+                final_cost: orderMeta?.final_cost,
+                amount: orderMeta?.final_cost || orderMeta?.estimated_cost || (delivery as any)?.amount || 0,
+              };
+
+              return (
+                <motion.div
+                  key={`mobile-${delivery.__rowKey}`}
+                  className={`mobile-record-card${isSelected ? " selected-row" : ""}`}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.05 }}
+                  onClick={() => void openDeliveryDetailModal(delivery)}
+                >
+                  <div className="mobile-record-header">
+                    <div className="mobile-record-header-main">
+                      <span className="mobile-record-kicker">Delivery</span>
+                      <strong className="mobile-record-title">{orderMeta?.client_name || delivery.client_name || "N/A"}</strong>
+                      <span className="mobile-record-subtitle">{isDelivered ? delivery.delivered_date_formatted || formatDisplayDate(delivery.delivered_date) : "Not Delivered"}</span>
+                    </div>
+                    <input
+                      type="checkbox"
+                      className="row-checkbox"
+                      checked={isSelected}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={() => toggleDeliverySelection(delivery.__rowKey)}
+                      aria-label={`Select ${delivery.delivery_code || delivery.id}`}
+                    />
+                  </div>
+                  <div className="mobile-record-grid">
+                    <div className="mobile-record-field full"><span className="mobile-record-label">Products</span><span className="delivery-list-text">{productMultiLine}</span></div>
+                    <div className="mobile-record-field full"><span className="mobile-record-label">Replacement</span><span className="delivery-list-text">{replacementMultiLine}</span></div>
+                    <div className="mobile-record-field full"><span className="mobile-record-label">Companies</span><span>{companiesValue}</span></div>
+                    <div className="mobile-record-field"><span className="mobile-record-label">Warranty</span><span>{orderMeta?.warranty_status || "N/A"}</span></div>
+                    <div className="mobile-record-field"><span className="mobile-record-label">Delivery Type</span><span style={{ fontWeight: 600, textTransform: "capitalize" }}>{String(delivery.delivery_type || "inhand").replaceAll("_", " ")}</span></div>
+                    <div className="mobile-record-field"><span className="mobile-record-label">Status</span><span className="status-label" style={{ color: isDelivered ? "#8B5CF6" : delivery.status === "scheduled" ? "#10B981" : delivery.status === "pending" ? "#DC2626" : "#6B7280", fontWeight: "600" }}>{isDelivered ? "Delivered" : delivery.status}</span></div>
+                    <div className="mobile-record-field"><span className="mobile-record-label">Delivered Date</span><span>{isDelivered ? delivery.delivered_date_formatted || formatDisplayDate(delivery.delivered_date) : "Not Delivered"}</span></div>
+                  </div>
+                  <div className="mobile-record-actions" onClick={(e) => e.stopPropagation()}>
+                    <button className="action-btn print" onClick={() => onPrintDeliveryReceipt(enrichedDeliveryForReceipt as Delivery)} title="Receipt Options">
+                      <FiPrinter />
+                    </button>
+                    <button className="action-btn view" onClick={() => void openEditModal(delivery)} title="Edit Delivery">
+                      <FiEdit2 />
+                    </button>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+          </>
         ) : (
           <div className="empty-state">
             <FiTruck className="empty-icon" />

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties } from "react";
 import {
   Area,
@@ -89,6 +89,16 @@ const tipStyle = {
 };
 
 const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPriorityColor }: AnalyticsTabProps) => {
+  const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleResize = () => setIsMobile(window.innerWidth <= 768);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
   const revenue = useMemo(
     () => (analyticsData?.monthly_revenue || []).map((i) => ({ month: monthLabel(i.month), revenue: num(i.revenue) })),
     [analyticsData],
@@ -340,8 +350,8 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
               <FiBarChart2 />
               Operations Intelligence
             </div>
-            <h3 style={{ fontSize: 30, lineHeight: 1.08, marginBottom: 10, color: "#0f172a" }}>Analytics & Performance</h3>
-            <p style={{ fontSize: 15, lineHeight: 1.7, color: "#64748b", margin: 0 }}>
+            <h3 style={{ fontSize: isMobile ? 22 : 30, lineHeight: 1.08, marginBottom: 10, color: "#0f172a" }}>Analytics & Performance</h3>
+            <p style={{ fontSize: isMobile ? 14 : 15, lineHeight: 1.7, color: "#64748b", margin: 0 }}>
               Read service momentum, service profit (Final Cost - Deposit Amount), queue pressure, and category demand from one cleaner analytics workspace.
             </p>
           </div>
@@ -368,7 +378,7 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
 
         {analyticsData && hasData ? (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginTop: 22, marginBottom: 22 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginTop: 22, marginBottom: 22 }}>
               {statCards.map((card) => (
                 <div key={card.label} style={smallPanel}>
                   <div style={{ width: 44, height: 44, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", background: card.bg, color: "#fff", marginBottom: 14 }}>{card.icon}</div>
@@ -379,7 +389,7 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
               ))}
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1.8fr) minmax(280px, 0.9fr)", gap: 18, marginBottom: 18 }}>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1.8fr) minmax(280px, 0.9fr)", gap: 18, marginBottom: 18 }}>
               <div style={panel}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 16 }}>
                   <div>
@@ -392,7 +402,7 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
                     <div style={{ fontSize: 13, color: "#0f766e", fontWeight: 700 }}>{bestMonth ? money(bestMonth.revenue) : "Profit unavailable"}</div>
                   </div>
                 </div>
-                <div style={{ height: 320 }}>
+                <div style={{ height: isMobile ? 260 : 320 }}>
                   {revenue.length ? (
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={revenue} margin={{ top: 10, right: 8, left: 0, bottom: 0 }}>
@@ -430,7 +440,7 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
               </div>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 18 }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(320px, 1fr))", gap: 18 }}>
               <div style={panel}>
                 <h4 style={{ margin: "0 0 6px 0", fontSize: 20, color: "#0f172a" }}>Order Velocity</h4>
                 <p style={{ margin: "0 0 14px 0", color: "#64748b", lineHeight: 1.7 }}>Follow the daily order rhythm and spot intake spikes quickly.</p>
@@ -452,7 +462,7 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
               <div style={panel}>
                 <h4 style={{ margin: "0 0 6px 0", fontSize: 20, color: "#0f172a" }}>Status Mix</h4>
                 <p style={{ margin: "0 0 14px 0", color: "#64748b", lineHeight: 1.7 }}>See how the current workload is split across service stages.</p>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, alignItems: "center" }}>
+                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, alignItems: "center" }}>
                   <div style={{ height: 260 }}>
                     {statuses.length ? (
                       <ResponsiveContainer width="100%" height="100%">

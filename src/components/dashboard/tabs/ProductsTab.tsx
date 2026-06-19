@@ -430,100 +430,183 @@ const ProductsTab = ({
             <p>Loading products...</p>
           </div>
         ) : filteredProducts.length > 0 ? (
-          <table className="orders-table">
-            <thead>
-              <tr>
-                <th>
-                  <input
-                    type="checkbox"
-                    className="row-checkbox"
-                    checked={allPageSelected}
-                    onChange={togglePageSelection}
-                    aria-label="Select all products on this page"
-                  />
-                </th>
-                <th>Product Code</th>
-                <th>Name</th>
-                <th>Serial Number</th>
-                <th>Brand</th>
-                <th>Model</th>
-                <th>Category</th>
-                <th>Price (Rs.)</th>
-                <th>Qty</th>
-                <th>Status</th>
-                <th>Orders</th>
-                <th>Created</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <div className="desktop-table-view">
+              <table className="orders-table">
+                <thead>
+                  <tr>
+                    <th>
+                      <input
+                        type="checkbox"
+                        className="row-checkbox"
+                        checked={allPageSelected}
+                        onChange={togglePageSelection}
+                        aria-label="Select all products on this page"
+                      />
+                    </th>
+                    <th>Product Code</th>
+                    <th>Name</th>
+                    <th>Serial Number</th>
+                    <th>Brand</th>
+                    <th>Model</th>
+                    <th>Category</th>
+                    <th>Price (Rs.)</th>
+                    <th>Qty</th>
+                    <th>Status</th>
+                    <th>Orders</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedProducts.map((product, index) => {
+                    const isSelected = selectedProductIds.includes(product.id);
+
+                    return (
+                      <motion.tr key={product.id} className={isSelected ? "selected-row" : ""} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }} whileHover={{ backgroundColor: "#f8fafc", cursor: "pointer" }} onClick={() => setSelectedProduct(product)}>
+                        <td onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            className="row-checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleProductSelection(product.id)}
+                            aria-label={`Select ${product.product_name}`}
+                          />
+                        </td>
+                        <td>
+                          <span className="product-code">{product.product_code}</span>
+                        </td>
+                        <td>
+                          <div className="product-cell">
+                            <FiPackage className="product-icon" />
+                            <span>{product.product_name}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <span className="product-code">{product.serial_number || "N/A"}</span>
+                        </td>
+                        <td>
+                          <span className="product-brand">{product.brand || "N/A"}</span>
+                        </td>
+                        <td>
+                          <span className="product-model">{product.model || "N/A"}</span>
+                        </td>
+                        <td>
+                          <span className={`category-badge ${product.category}`}>{product.category}</span>
+                        </td>
+                        <td>
+                          <span className="product-price">Rs. {formatCurrency(product.price)}</span>
+                        </td>
+                        <td>
+                          <span className="product-orders">{Number(product.stock_quantity ?? 0)}</span>
+                        </td>
+                        <td>
+                          <span className={`status-badge ${product.status}`}>
+                            {product.status === "handover" ? "Handover" : "Active"}
+                          </span>
+                        </td>
+                        <td>
+                          <span className="product-orders">{getOrderCountForProduct(product.id)}</span>
+                        </td>
+                        <td>
+                          <span className="client-date">{formatDisplayDate(product.created_at)}</span>
+                        </td>
+                        <td>
+                          <div className="action-buttons">
+                            <motion.button className="action-btn edit" onClick={(e) => { e.stopPropagation(); onEditProduct(product); }} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} title="Edit Product">
+                              <FiEdit />
+                            </motion.button>
+                            <motion.button className="action-btn delete" onClick={(e) => { e.stopPropagation(); onDeleteProduct(product.id); }} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} title="Delete Product">
+                              <FiTrash2 />
+                            </motion.button>
+                          </div>
+                        </td>
+                      </motion.tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="mobile-record-list">
               {paginatedProducts.map((product, index) => {
                 const isSelected = selectedProductIds.includes(product.id);
-
                 return (
-                  <motion.tr key={product.id} className={isSelected ? "selected-row" : ""} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: index * 0.05 }} whileHover={{ backgroundColor: "#f8fafc", cursor: "pointer" }} onClick={() => setSelectedProduct(product)}>
-                    <td onClick={(e) => e.stopPropagation()}>
+                  <motion.div
+                    key={`mobile-${product.id}`}
+                    className={`mobile-record-card${isSelected ? " selected-row" : ""}`}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    onClick={() => setSelectedProduct(product)}
+                  >
+                    <div className="mobile-record-header">
+                      <div className="mobile-record-header-main">
+                        <span className="mobile-record-kicker">Product</span>
+                        <strong className="mobile-record-title">{product.product_name}</strong>
+                        <span className="mobile-record-subtitle">{product.product_code}</span>
+                      </div>
                       <input
                         type="checkbox"
                         className="row-checkbox"
                         checked={isSelected}
+                        onClick={(e) => e.stopPropagation()}
                         onChange={() => toggleProductSelection(product.id)}
                         aria-label={`Select ${product.product_name}`}
                       />
-                    </td>
-                    <td>
-                      <span className="product-code">{product.product_code}</span>
-                    </td>
-                    <td>
-                      <div className="product-cell">
-                        <FiPackage className="product-icon" />
-                        <span>{product.product_name}</span>
+                    </div>
+
+                    <div className="mobile-record-grid">
+                      <div className="mobile-record-field full">
+                        <span className="mobile-record-label">Serial Number</span>
+                        <span className="product-code">{product.serial_number || "N/A"}</span>
                       </div>
-                    </td>
-                    <td>
-                      <span className="product-code">{product.serial_number || "N/A"}</span>
-                    </td>
-                    <td>
-                      <span className="product-brand">{product.brand || "N/A"}</span>
-                    </td>
-                    <td>
-                      <span className="product-model">{product.model || "N/A"}</span>
-                    </td>
-                    <td>
-                      <span className={`category-badge ${product.category}`}>{product.category}</span>
-                    </td>
-                    <td>
-                      <span className="product-price">Rs. {formatCurrency(product.price)}</span>
-                    </td>
-                    <td>
-                      <span className="product-orders">{Number(product.stock_quantity ?? 0)}</span>
-                    </td>
-                    <td>
-                      <span className={`status-badge ${product.status}`}>
-                        {product.status === "handover" ? "Handover" : "Active"}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="product-orders">{getOrderCountForProduct(product.id)}</span>
-                    </td>
-                    <td>
-                      <span className="client-date">{formatDisplayDate(product.created_at)}</span>
-                    </td>
-                    <td>
-                      <div className="action-buttons">
-                        <motion.button className="action-btn edit" onClick={(e) => { e.stopPropagation(); onEditProduct(product); }} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} title="Edit Product">
-                          <FiEdit />
-                        </motion.button>
-                        <motion.button className="action-btn delete" onClick={(e) => { e.stopPropagation(); onDeleteProduct(product.id); }} whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.9 }} title="Delete Product">
-                          <FiTrash2 />
-                        </motion.button>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Brand</span>
+                        <span>{product.brand || "N/A"}</span>
                       </div>
-                    </td>
-                  </motion.tr>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Model</span>
+                        <span>{product.model || "N/A"}</span>
+                      </div>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Category</span>
+                        <span className={`category-badge ${product.category}`}>{product.category}</span>
+                      </div>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Price</span>
+                        <span className="product-price">Rs. {formatCurrency(product.price)}</span>
+                      </div>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Quantity</span>
+                        <span className="product-orders">{Number(product.stock_quantity ?? 0)}</span>
+                      </div>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Status</span>
+                        <span className={`status-badge ${product.status}`}>{product.status === "handover" ? "Handover" : "Active"}</span>
+                      </div>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Orders</span>
+                        <span className="product-orders">{getOrderCountForProduct(product.id)}</span>
+                      </div>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Created</span>
+                        <span>{formatDisplayDate(product.created_at)}</span>
+                      </div>
+                    </div>
+
+                    <div className="mobile-record-actions" onClick={(e) => e.stopPropagation()}>
+                      <button type="button" className="action-btn edit" onClick={() => onEditProduct(product)} title="Edit Product">
+                        <FiEdit />
+                      </button>
+                      <button type="button" className="action-btn delete" onClick={() => onDeleteProduct(product.id)} title="Delete Product">
+                        <FiTrash2 />
+                      </button>
+                    </div>
+                  </motion.div>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+          </>
         ) : (
           <div className="empty-state">
             <FiBox className="empty-icon" />

@@ -3884,7 +3884,10 @@
   }
 
   .dashboard-main-content {
-    padding: 0.75rem;
+    padding: 0.9rem;
+    background:
+      radial-gradient(circle at top left, rgba(219, 234, 254, 0.55), transparent 30%),
+      linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
   }
 
   .section-header,
@@ -3901,6 +3904,33 @@
   .search-container {
     width: 100%;
     min-width: 0;
+  }
+
+  .dashboard-header {
+    padding: 0.85rem 1rem;
+    align-items: flex-start;
+    gap: 0.85rem;
+    flex-wrap: wrap;
+  }
+
+  .header-left-section,
+  .header-right-section,
+  .table-controls,
+  .filter-controls,
+  .table-filters,
+  .section-filters-row {
+    width: 100%;
+  }
+
+  .header-left-section,
+  .header-right-section,
+  .table-controls,
+  .filter-controls {
+    flex-wrap: wrap;
+  }
+
+  .header-right-section {
+    justify-content: flex-end;
   }
 
   .orders-table,
@@ -3932,7 +3962,8 @@
   .modal-content {
     width: 98vw;
     max-height: 94vh;
-    border-radius: 14px;
+    border-radius: 22px;
+    box-shadow: 0 22px 45px rgba(15, 23, 42, 0.16);
   }
 
   .order-form-shell,
@@ -3946,24 +3977,154 @@
   .client-form-aside {
     position: static;
   }
+
+  .data-table-wrapper,
+  .table-filters,
+  .orders-section,
+  .clients-section,
+  .products-section,
+  .delivery-section,
+  .analytics-card,
+  .detail-card,
+  .stat-card,
+  .pending-summary-card,
+  .pending-table-shell,
+  .order-overview-card-admin,
+  .product-entry-card-admin,
+  .issue-card-admin,
+  .flow-status-card-admin,
+  .staff-performance-card {
+    border-radius: 22px;
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+  }
+
+  .data-table-wrapper,
+  .table-content,
+  .table-responsive,
+  .table-container {
+    border-radius: 20px;
+  }
+
+  .data-table-wrapper::after,
+  .table-container::after,
+  .table-responsive::after {
+    content: "Swipe table";
+    display: block;
+    padding: 10px 14px 12px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #64748b;
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0) 0%, #f8fafc 100%);
+  }
 }
 
 /* Small mobile */
 @media (max-width: 480px) {
   .dashboard-header {
-    padding: 0.75rem;
+    padding: 0.8rem;
   }
 
   .orders-table,
   .data-table {
-    min-width: 700px;
+    min-width: 640px;
   }
 
   .btn,
   .btn-primary,
   .btn-secondary,
   .btn-outline {
-    min-height: 40px;
+    min-height: 46px;
+    width: 100%;
+    justify-content: center;
+    border-radius: 14px;
+  }
+
+  .header-right-section {
+    justify-content: stretch;
+  }
+
+  .header-right-section > * {
+    flex: 1 1 calc(50% - 0.5rem);
+  }
+
+  .toggle-sidebar-btn,
+  .action-button {
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+  }
+
+  .user-menu {
+    width: 100%;
+    justify-content: center;
+    padding: 0.7rem 0.85rem;
+    border-radius: 16px;
+  }
+
+  .search-input,
+  .filter-select,
+  .modal-form input,
+  .modal-form select,
+  .modal-form textarea,
+  .client-form-group input,
+  .client-form-group select,
+  .client-form-group textarea,
+  .product-form-group input,
+  .product-form-group select,
+  .product-form-group textarea,
+  .form-group-enhanced input,
+  .form-group-enhanced select,
+  .form-group-enhanced textarea {
+    min-height: 46px;
+    border-radius: 14px;
+  }
+
+  .dashboard-main-content {
+    padding: 0.75rem;
+  }
+
+  .quick-stats,
+  .table-controls,
+  .filter-controls,
+  .modal-actions,
+  .client-form-actions,
+  .product-form-actions,
+  .order-form-actions {
+    gap: 0.75rem;
+  }
+
+  .data-table-wrapper,
+  .table-filters,
+  .orders-section,
+  .clients-section,
+  .products-section,
+  .delivery-section,
+  .analytics-card,
+  .detail-card,
+  .pending-summary-card,
+  .pending-table-shell,
+  .order-overview-card-admin,
+  .product-entry-card-admin,
+  .issue-card-admin,
+  .flow-status-card-admin,
+  .staff-performance-card {
+    border-radius: 20px;
+  }
+
+  .table-header-section {
+    padding: 1rem;
+  }
+
+  .table-filters {
+    padding: 0.9rem;
+  }
+
+  .data-table th,
+  .data-table td {
+    white-space: normal;
+    word-break: break-word;
   }
 }
 

@@ -581,109 +581,180 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
             <p>Loading companies from database...</p>
           </div>
         ) : filteredCompanys.length > 0 ? (
-          <table className="orders-table">
-            <thead>
-              <tr>
-                <th>
-                  <input
-                    type="checkbox"
-                    className="row-checkbox"
-                    checked={allPageSelected}
-                    onChange={togglePageSelection}
-                    aria-label="Select all companies on this page"
-                  />
-                </th>
-                <th>Company Code</th>
-                <th>Company Name</th>
-                <th>Product Coverage</th>
-                <th>Contact</th>
-                <th>Source</th>
-                <th>Created</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <div className="desktop-table-view">
+              <table className="orders-table">
+                <thead>
+                  <tr>
+                    <th>
+                      <input
+                        type="checkbox"
+                        className="row-checkbox"
+                        checked={allPageSelected}
+                        onChange={togglePageSelection}
+                        aria-label="Select all companies on this page"
+                      />
+                    </th>
+                    <th>Company Code</th>
+                    <th>Company Name</th>
+                    <th>Product Coverage</th>
+                    <th>Contact</th>
+                    <th>Source</th>
+                    <th>Created</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedCompanys.map((company, index) => {
+                    const isSelected = selectedCompanyIds.includes(company.id);
+
+                    return (
+                      <motion.tr
+                        key={company.id}
+                        className={isSelected ? "selected-row" : ""}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.05 }}
+                        whileHover={{ backgroundColor: "#f8fafc", cursor: "pointer" }}
+                        onClick={() => setSelectedCompany(company)}
+                      >
+                        <td onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            className="row-checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleCompanySelection(company.id)}
+                            aria-label={`Select ${company.company_name}`}
+                          />
+                        </td>
+                        <td>
+                          <span className="product-code">{company.company_code}</span>
+                        </td>
+                        <td>
+                          <div className="client-cell">
+                            <div className="client-avatar-placeholder">{company.company_name?.charAt(0) || "C"}</div>
+                            <div className="client-info">
+                              <span className="client-name">{company.company_name}</span>
+                              <span className="client-address">
+                                {company.email || company.phone || "Contact details not added"}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <span className="client-email">{company.product}</span>
+                        </td>
+                        <td>
+                          <span className="client-phone">{company.contact_person || company.phone || "N/A"}</span>
+                        </td>
+                        <td>
+                          <span className="category-badge">{company.source_pdf || "Manual"}</span>
+                        </td>
+                        <td>
+                          <span className="client-date">{formatDisplayDate(company.created_at)}</span>
+                        </td>
+                        <td>
+                          <div className="action-buttons">
+                            <motion.button
+                              className="action-btn edit"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEditModal(company);
+                              }}
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.9 }}
+                              title="Edit Company"
+                            >
+                              <FiEdit />
+                            </motion.button>
+                            <motion.button
+                              className="action-btn delete"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleDeleteCompany(company.id);
+                              }}
+                              whileHover={{ scale: 1.1 }}
+                              whileTap={{ scale: 0.9 }}
+                              title="Delete Company"
+                            >
+                              <FiTrash2 />
+                            </motion.button>
+                          </div>
+                        </td>
+                      </motion.tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="mobile-record-list">
               {paginatedCompanys.map((company, index) => {
                 const isSelected = selectedCompanyIds.includes(company.id);
-
                 return (
-                  <motion.tr
-                    key={company.id}
-                    className={isSelected ? "selected-row" : ""}
+                  <motion.div
+                    key={`mobile-${company.id}`}
+                    className={`mobile-record-card${isSelected ? " selected-row" : ""}`}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.05 }}
-                    whileHover={{ backgroundColor: "#f8fafc", cursor: "pointer" }}
                     onClick={() => setSelectedCompany(company)}
                   >
-                    <td onClick={(e) => e.stopPropagation()}>
+                    <div className="mobile-record-header">
+                      <div className="mobile-record-header-main">
+                        <span className="mobile-record-kicker">Company</span>
+                        <strong className="mobile-record-title">{company.company_name}</strong>
+                        <span className="mobile-record-subtitle">{company.company_code}</span>
+                      </div>
                       <input
                         type="checkbox"
                         className="row-checkbox"
                         checked={isSelected}
+                        onClick={(e) => e.stopPropagation()}
                         onChange={() => toggleCompanySelection(company.id)}
                         aria-label={`Select ${company.company_name}`}
                       />
-                    </td>
-                    <td>
-                      <span className="product-code">{company.company_code}</span>
-                    </td>
-                    <td>
-                      <div className="client-cell">
-                        <div className="client-avatar-placeholder">{company.company_name?.charAt(0) || "C"}</div>
-                        <div className="client-info">
-                          <span className="client-name">{company.company_name}</span>
-                          <span className="client-address">
-                            {company.email || company.phone || "Contact details not added"}
-                          </span>
-                        </div>
+                    </div>
+
+                    <div className="mobile-record-grid">
+                      <div className="mobile-record-field full">
+                        <span className="mobile-record-label">Product Coverage</span>
+                        <span>{company.product || "Not added"}</span>
                       </div>
-                    </td>
-                    <td>
-                      <span className="client-email">{company.product}</span>
-                    </td>
-                    <td>
-                      <span className="client-phone">{company.contact_person || company.phone || "N/A"}</span>
-                    </td>
-                    <td>
-                      <span className="category-badge">{company.source_pdf || "Manual"}</span>
-                    </td>
-                    <td>
-                      <span className="client-date">{formatDisplayDate(company.created_at)}</span>
-                    </td>
-                    <td>
-                      <div className="action-buttons">
-                        <motion.button
-                          className="action-btn edit"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEditModal(company);
-                          }}
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          title="Edit Company"
-                        >
-                          <FiEdit />
-                        </motion.button>
-                        <motion.button
-                          className="action-btn delete"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteCompany(company.id);
-                          }}
-                          whileHover={{ scale: 1.1 }}
-                          whileTap={{ scale: 0.9 }}
-                          title="Delete Company"
-                        >
-                          <FiTrash2 />
-                        </motion.button>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Contact</span>
+                        <span>{company.contact_person || company.phone || "N/A"}</span>
                       </div>
-                    </td>
-                  </motion.tr>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Email / Phone</span>
+                        <span>{company.email || company.phone || "N/A"}</span>
+                      </div>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Source</span>
+                        <span className="category-badge">{company.source_pdf || "Manual"}</span>
+                      </div>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Created</span>
+                        <span>{formatDisplayDate(company.created_at)}</span>
+                      </div>
+                      <div className="mobile-record-field full">
+                        <span className="mobile-record-label">Address</span>
+                        <span>{company.address || "Not added"}</span>
+                      </div>
+                    </div>
+
+                    <div className="mobile-record-actions" onClick={(e) => e.stopPropagation()}>
+                      <button type="button" className="action-btn edit" onClick={() => openEditModal(company)} title="Edit Company">
+                        <FiEdit />
+                      </button>
+                      <button type="button" className="action-btn delete" onClick={() => handleDeleteCompany(company.id)} title="Delete Company">
+                        <FiTrash2 />
+                      </button>
+                    </div>
+                  </motion.div>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+          </>
         ) : (
           <div className="empty-state">
             <FiUsers className="empty-icon" />

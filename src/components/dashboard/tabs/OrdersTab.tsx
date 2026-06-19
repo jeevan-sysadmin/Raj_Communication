@@ -1058,30 +1058,172 @@ const OrdersTab = (props: OrdersTabProps) => {
             <p>Loading orders...</p>
           </div>
         ) : searchableOrders.length > 0 ? (
-          <table className="orders-table">
-            <thead>
-              <tr>
-                <th>
-                  <input
-                    type="checkbox"
-                    className="row-checkbox"
-                    checked={allPageSelected}
-                    onChange={togglePageSelection}
-                    aria-label="Select all orders on this page"
-                  />
-                </th>
-                <th>Order ID</th>
-                <th>Product</th>
-                <th>Replacement</th>
-                <th>Client</th>
-                <th>Warranty</th>
-                <th>Payment Status</th>
-                <th>Repairing Status</th>
-                <th>Pending Days</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <div className="desktop-table-view">
+              <table className="orders-table">
+                <thead>
+                  <tr>
+                    <th>
+                      <input
+                        type="checkbox"
+                        className="row-checkbox"
+                        checked={allPageSelected}
+                        onChange={togglePageSelection}
+                        aria-label="Select all orders on this page"
+                      />
+                    </th>
+                    <th>Order ID</th>
+                    <th>Product</th>
+                    <th>Replacement</th>
+                    <th>Client</th>
+                    <th>Warranty</th>
+                    <th>Payment Status</th>
+                    <th>Repairing Status</th>
+                    <th>Pending Days</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginatedOrders.map((order, index) => {
+                    const isSelected = selectedOrderIds.includes(order.id);
+                    const productEntries = getOrderProductEntries(order, products);
+                    const replacementEntries = getOrderReplacementEntries(order, products);
+                    const pendingDays = getPendingDays(order);
+                    const deliveredByProducts = isAllProductsDelivered(order);
+
+                    return (
+                      <motion.tr
+                        key={order.id}
+                        className={isSelected ? "selected-row" : ""}
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: index * 0.04 }}
+                        whileHover={{ backgroundColor: "#f8fafc", cursor: "pointer" }}
+                        onClick={() => onViewOrder(order)}
+                      >
+                        <td onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            className="row-checkbox"
+                            checked={isSelected}
+                            onChange={() => toggleOrderSelection(order.id)}
+                            aria-label={`Select ${order.order_code}`}
+                          />
+                        </td>
+                        <td>
+                          <div className="order-id-cell">
+                            <span className="order-id">{order.order_code}</span>
+                            <span className="order-date">{formatDisplayDate(order.created_at)}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <div className="product-cell order-products-cell">
+                            <div className="order-products-meta">
+                              <FiPackage className="product-icon" />
+                              <span className="order-products-label">Products</span>
+                            </div>
+                            {renderOrderProductChips(productEntries, "Not added", "product")}
+                          </div>
+                        </td>
+                        <td>
+                          <div className="product-cell order-products-cell">
+                            <div className="order-products-meta">
+                              <FiPackage className="product-icon" />
+                              <span className="order-products-label">Replacement</span>
+                            </div>
+                            {renderOrderProductChips(replacementEntries, "No replacement", "replacement")}
+                          </div>
+                        </td>
+                        <td>
+                          <div className="client-cell">
+                            <div className="client-avatar-placeholder">{order.client_name?.charAt(0) || "C"}</div>
+                            <div className="client-info">
+                              <span className="client-name">{order.client_name}</span>
+                              <span className="client-phone">{order.client_phone}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td>
+                          <span
+                            className="warranty-badge"
+                            style={{
+                              backgroundColor: `${getWarrantyColor(order.warranty_status)}20`,
+                              color: getWarrantyColor(order.warranty_status),
+                            }}
+                          >
+                            {order.warranty_status?.replace("_", " ") || "N/A"}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`payment-status ${order.payment_status}`}>{formatPaymentStatusLabel(order.payment_status)}</span>
+                        </td>
+                        <td>
+                          {getRepairingStatusSummary(order, products)}
+                        </td>
+                        <td>
+                          <span className="staff-name">
+                            {deliveredByProducts ? "Delivered" : pendingDays}
+                          </span>
+                        </td>
+                        <td>
+                          <div className="action-buttons">
+                            <motion.button
+                              className="action-btn view"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onViewOrder(order);
+                              }}
+                              whileHover={{ scale: 1.08 }}
+                              whileTap={{ scale: 0.94 }}
+                              title="View Details"
+                            >
+                              <FiEye />
+                            </motion.button>
+                            <motion.button
+                              className="action-btn edit"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onEditOrder(order);
+                              }}
+                              whileHover={{ scale: 1.08 }}
+                              whileTap={{ scale: 0.94 }}
+                              title="Edit Order"
+                            >
+                              <FiEdit />
+                            </motion.button>
+                            <motion.button
+                              className="action-btn print"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onPrintReceipt(order);
+                              }}
+                              whileHover={{ scale: 1.08 }}
+                              whileTap={{ scale: 0.94 }}
+                              title="Receipt Options"
+                            >
+                              <FiPrinter />
+                            </motion.button>
+                            <motion.button
+                              className="action-btn delete"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDeleteOrder(order);
+                              }}
+                              whileHover={{ scale: 1.08 }}
+                              whileTap={{ scale: 0.94 }}
+                              title="Delete Order"
+                            >
+                              <FiTrash2 />
+                            </motion.button>
+                          </div>
+                        </td>
+                      </motion.tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+            <div className="mobile-record-list">
               {paginatedOrders.map((order, index) => {
                 const isSelected = selectedOrderIds.includes(order.id);
                 const productEntries = getOrderProductEntries(order, products);
@@ -1090,136 +1232,97 @@ const OrdersTab = (props: OrdersTabProps) => {
                 const deliveredByProducts = isAllProductsDelivered(order);
 
                 return (
-                  <motion.tr
-                    key={order.id}
-                    className={isSelected ? "selected-row" : ""}
+                  <motion.div
+                    key={`mobile-${order.id}`}
+                    className={`mobile-record-card${isSelected ? " selected-row" : ""}`}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.04 }}
-                    whileHover={{ backgroundColor: "#f8fafc", cursor: "pointer" }}
                     onClick={() => onViewOrder(order)}
                   >
-                    <td onClick={(e) => e.stopPropagation()}>
+                    <div className="mobile-record-header">
+                      <div className="mobile-record-header-main">
+                        <span className="mobile-record-kicker">Service Order</span>
+                        <strong className="mobile-record-title">{order.order_code}</strong>
+                        <span className="mobile-record-subtitle">{formatDisplayDate(order.created_at)}</span>
+                      </div>
                       <input
                         type="checkbox"
                         className="row-checkbox"
                         checked={isSelected}
+                        onClick={(e) => e.stopPropagation()}
                         onChange={() => toggleOrderSelection(order.id)}
                         aria-label={`Select ${order.order_code}`}
                       />
-                    </td>
-                    <td>
-                      <div className="order-id-cell">
-                        <span className="order-id">{order.order_code}</span>
-                        <span className="order-date">{formatDisplayDate(order.created_at)}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="product-cell order-products-cell">
-                        <div className="order-products-meta">
-                          <FiPackage className="product-icon" />
-                          <span className="order-products-label">Products</span>
-                        </div>
-                        {renderOrderProductChips(productEntries, "Not added", "product")}
-                      </div>
-                    </td>
-                    <td>
-                      <div className="product-cell order-products-cell">
-                        <div className="order-products-meta">
-                          <FiPackage className="product-icon" />
-                          <span className="order-products-label">Replacement</span>
-                        </div>
-                        {renderOrderProductChips(replacementEntries, "No replacement", "replacement")}
-                      </div>
-                    </td>
-                    <td>
+                    </div>
+
+                    <div className="mobile-record-field full">
+                      <span className="mobile-record-label">Client</span>
                       <div className="client-cell">
                         <div className="client-avatar-placeholder">{order.client_name?.charAt(0) || "C"}</div>
                         <div className="client-info">
-                          <span className="client-name">{order.client_name}</span>
-                          <span className="client-phone">{order.client_phone}</span>
+                          <span className="client-name">{order.client_name || "Unknown client"}</span>
+                          <span className="client-phone">{order.client_phone || "No phone"}</span>
                         </div>
                       </div>
-                    </td>
-                    <td>
-                      <span
-                        className="warranty-badge"
-                        style={{
-                          backgroundColor: `${getWarrantyColor(order.warranty_status)}20`,
-                          color: getWarrantyColor(order.warranty_status),
-                        }}
-                      >
-                        {order.warranty_status?.replace("_", " ") || "N/A"}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`payment-status ${order.payment_status}`}>{formatPaymentStatusLabel(order.payment_status)}</span>
-                    </td>
-                    <td>
-                      {getRepairingStatusSummary(order, products)}
-                    </td>
-                    <td>
-                      <span className="staff-name">
-                        {deliveredByProducts ? "Delivered" : pendingDays}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="action-buttons">
-                        <motion.button
-                          className="action-btn view"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onViewOrder(order);
+                    </div>
+
+                    <div className="mobile-record-field full">
+                      <span className="mobile-record-label">Products</span>
+                      {renderOrderProductChips(productEntries, "Not added", "product")}
+                    </div>
+
+                    <div className="mobile-record-field full">
+                      <span className="mobile-record-label">Replacement</span>
+                      {renderOrderProductChips(replacementEntries, "No replacement", "replacement")}
+                    </div>
+
+                    <div className="mobile-record-grid">
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Warranty</span>
+                        <span
+                          className="warranty-badge"
+                          style={{
+                            backgroundColor: `${getWarrantyColor(order.warranty_status)}20`,
+                            color: getWarrantyColor(order.warranty_status),
                           }}
-                          whileHover={{ scale: 1.08 }}
-                          whileTap={{ scale: 0.94 }}
-                          title="View Details"
                         >
-                          <FiEye />
-                        </motion.button>
-                        <motion.button
-                          className="action-btn edit"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onEditOrder(order);
-                          }}
-                          whileHover={{ scale: 1.08 }}
-                          whileTap={{ scale: 0.94 }}
-                          title="Edit Order"
-                        >
-                          <FiEdit />
-                        </motion.button>
-                        <motion.button
-                          className="action-btn print"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onPrintReceipt(order);
-                          }}
-                          whileHover={{ scale: 1.08 }}
-                          whileTap={{ scale: 0.94 }}
-                          title="Receipt Options"
-                        >
-                          <FiPrinter />
-                        </motion.button>
-                        <motion.button
-                          className="action-btn delete"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDeleteOrder(order);
-                          }}
-                          whileHover={{ scale: 1.08 }}
-                          whileTap={{ scale: 0.94 }}
-                          title="Delete Order"
-                        >
-                          <FiTrash2 />
-                        </motion.button>
+                          {order.warranty_status?.replace("_", " ") || "N/A"}
+                        </span>
                       </div>
-                    </td>
-                  </motion.tr>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Payment</span>
+                        <span className={`payment-status ${order.payment_status}`}>{formatPaymentStatusLabel(order.payment_status)}</span>
+                      </div>
+                      <div className="mobile-record-field full">
+                        <span className="mobile-record-label">Repairing Status</span>
+                        {getRepairingStatusSummary(order, products)}
+                      </div>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Pending</span>
+                        <span className="staff-name">{deliveredByProducts ? "Delivered" : pendingDays}</span>
+                      </div>
+                    </div>
+
+                    <div className="mobile-record-actions" onClick={(e) => e.stopPropagation()}>
+                      <button type="button" className="action-btn view" onClick={() => onViewOrder(order)} title="View Details">
+                        <FiEye />
+                      </button>
+                      <button type="button" className="action-btn edit" onClick={() => onEditOrder(order)} title="Edit Order">
+                        <FiEdit />
+                      </button>
+                      <button type="button" className="action-btn print" onClick={() => onPrintReceipt(order)} title="Receipt Options">
+                        <FiPrinter />
+                      </button>
+                      <button type="button" className="action-btn delete" onClick={() => onDeleteOrder(order)} title="Delete Order">
+                        <FiTrash2 />
+                      </button>
+                    </div>
+                  </motion.div>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+          </>
         ) : (
           <div className="empty-state">
             <FiPackage className="empty-icon" />

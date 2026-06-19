@@ -2273,15 +2273,6 @@ class AdminAPI {
                     $notes = 'Imported from CSV';
                 }
 
-                $checkQuery = "SELECT id FROM clients WHERE phone = :phone";
-                $checkStmt = $this->conn->prepare($checkQuery);
-                $checkStmt->bindValue(':phone', $phone, PDO::PARAM_STR);
-                $checkStmt->execute();
-
-                if ($checkStmt->rowCount() > 0) {
-                    return ['success' => false, 'message' => 'Client with this phone number already exists'];
-                }
-
                 $client_code = 'CLT' . date('Ymd') . strtoupper(substr(uniqid(), -6));
 
                 $createdAt = $createdAtOverride ?: $this->currentTimestamp();

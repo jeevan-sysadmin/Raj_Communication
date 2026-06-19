@@ -394,90 +394,131 @@ const BrandwiseOverallReportTab = ({ orders, products, deliveries, loading = fal
       ) : null}
 
       <div className="table-responsive brand-table-responsive">
-        <table className="data-table brand-report-table">
-          <thead>
-            <tr>
-              <th style={{ width: 48, textAlign: "center" }}>
-                <input
-                  type="checkbox"
-                  className="row-checkbox"
-                  checked={isAllSelected}
-                  onChange={(event) => {
-                    if (event.target.checked) {
-                      setSelectedBrands(rows.map((row) => row.brand));
-                    } else {
-                      setSelectedBrands([]);
-                    }
-                  }}
-                  aria-label="Select all brands"
-                />
-              </th>
-              <th>Brand</th>
-              <th>Service Orders</th>
-              <th>Replacements</th>
-              <th>Spare Products</th>
-              <th>Deliveries</th>
-              <th>Pending</th>
-              <th>Delivered</th>
-              <th>Total Revenue</th>
-              <th>Avg Revenue / Order</th>
-            </tr>
-          </thead>
-          <tbody>
-            {!loading && rows.length === 0 ? (
+        <div className="desktop-table-view">
+          <table className="data-table brand-report-table">
+            <thead>
               <tr>
-                <td colSpan={10} style={{ textAlign: "center", padding: "20px" }}>
-                  No brandwise data available.
-                </td>
+                <th style={{ width: 48, textAlign: "center" }}>
+                  <input
+                    type="checkbox"
+                    className="row-checkbox"
+                    checked={isAllSelected}
+                    onChange={(event) => {
+                      if (event.target.checked) {
+                        setSelectedBrands(rows.map((row) => row.brand));
+                      } else {
+                        setSelectedBrands([]);
+                      }
+                    }}
+                    aria-label="Select all brands"
+                  />
+                </th>
+                <th>Brand</th>
+                <th>Service Orders</th>
+                <th>Replacements</th>
+                <th>Spare Products</th>
+                <th>Deliveries</th>
+                <th>Pending</th>
+                <th>Delivered</th>
+                <th>Total Revenue</th>
+                <th>Avg Revenue / Order</th>
               </tr>
-            ) : (
-              rows.map((row) => {
-                const avg = row.serviceOrders ? row.revenue / row.serviceOrders : 0;
-                const serviceIntensity = maxServiceOrders ? Math.round((row.serviceOrders / maxServiceOrders) * 100) : 0;
-                const isSelected = selectedBrands.includes(row.brand);
-                return (
-                  <tr key={row.brand} className={isSelected ? "selected-row" : ""}>
-                    <td style={{ textAlign: "center" }}>
-                      <input
-                        type="checkbox"
-                        className="row-checkbox"
-                        checked={isSelected}
-                        onChange={(event) => {
-                          const checked = event.target.checked;
-                          setSelectedBrands((prev) =>
-                            checked ? [...prev, row.brand] : prev.filter((brand) => brand !== row.brand),
-                          );
-                        }}
-                        aria-label={`Select brand ${row.brand}`}
-                      />
-                    </td>
-                    <td>
-                      <div className="brand-name-cell">
-                        <span className="brand-name">{row.brand}</span>
-                        <span className="brand-rank-chip">#{rows.findIndex((item) => item.brand === row.brand) + 1}</span>
-                      </div>
-                    </td>
-                    <td>{row.serviceOrders.toLocaleString()}</td>
-                    <td>{row.replacementOrders.toLocaleString()}</td>
-                    <td>{row.spareProducts.toLocaleString()}</td>
-                    <td>{row.deliveryRows.toLocaleString()}</td>
-                    <td>{row.pendingOrders.toLocaleString()}</td>
-                    <td>{row.deliveredOrders.toLocaleString()}</td>
-                    <td>{formatAmount(row.revenue)}</td>
-                    <td>
-                      <div className="avg-revenue-cell">
-                        <span>{formatAmount(Number(avg.toFixed(2)))}</span>
-                        <div className="service-intensity-track" aria-hidden="true">
-                          <div className="service-intensity-bar" style={{ width: `${serviceIntensity}%` }} />
+            </thead>
+            <tbody>
+              {!loading && rows.length === 0 ? (
+                <tr>
+                  <td colSpan={10} style={{ textAlign: "center", padding: "20px" }}>
+                    No brandwise data available.
+                  </td>
+                </tr>
+              ) : (
+                rows.map((row) => {
+                  const avg = row.serviceOrders ? row.revenue / row.serviceOrders : 0;
+                  const serviceIntensity = maxServiceOrders ? Math.round((row.serviceOrders / maxServiceOrders) * 100) : 0;
+                  const isSelected = selectedBrands.includes(row.brand);
+                  return (
+                    <tr key={row.brand} className={isSelected ? "selected-row" : ""}>
+                      <td style={{ textAlign: "center" }}>
+                        <input
+                          type="checkbox"
+                          className="row-checkbox"
+                          checked={isSelected}
+                          onChange={(event) => {
+                            const checked = event.target.checked;
+                            setSelectedBrands((prev) =>
+                              checked ? [...prev, row.brand] : prev.filter((brand) => brand !== row.brand),
+                            );
+                          }}
+                          aria-label={`Select brand ${row.brand}`}
+                        />
+                      </td>
+                      <td>
+                        <div className="brand-name-cell">
+                          <span className="brand-name">{row.brand}</span>
+                          <span className="brand-rank-chip">#{rows.findIndex((item) => item.brand === row.brand) + 1}</span>
                         </div>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+                      </td>
+                      <td>{row.serviceOrders.toLocaleString()}</td>
+                      <td>{row.replacementOrders.toLocaleString()}</td>
+                      <td>{row.spareProducts.toLocaleString()}</td>
+                      <td>{row.deliveryRows.toLocaleString()}</td>
+                      <td>{row.pendingOrders.toLocaleString()}</td>
+                      <td>{row.deliveredOrders.toLocaleString()}</td>
+                      <td>{formatAmount(row.revenue)}</td>
+                      <td>
+                        <div className="avg-revenue-cell">
+                          <span>{formatAmount(Number(avg.toFixed(2)))}</span>
+                          <div className="service-intensity-track" aria-hidden="true">
+                            <div className="service-intensity-bar" style={{ width: `${serviceIntensity}%` }} />
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="mobile-record-list">
+          {rows.map((row, index) => {
+            const avg = row.serviceOrders ? row.revenue / row.serviceOrders : 0;
+            const isSelected = selectedBrands.includes(row.brand);
+            return (
+              <div key={`mobile-${row.brand}`} className={`mobile-record-card${isSelected ? " selected-row" : ""}`}>
+                <div className="mobile-record-header">
+                  <div className="mobile-record-header-main">
+                    <span className="mobile-record-kicker">Brand Report</span>
+                    <strong className="mobile-record-title">{row.brand}</strong>
+                    <span className="mobile-record-subtitle">Rank #{index + 1}</span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    className="row-checkbox"
+                    checked={isSelected}
+                    onChange={(event) => {
+                      const checked = event.target.checked;
+                      setSelectedBrands((prev) =>
+                        checked ? [...prev, row.brand] : prev.filter((brand) => brand !== row.brand),
+                      );
+                    }}
+                    aria-label={`Select brand ${row.brand}`}
+                  />
+                </div>
+                <div className="mobile-record-grid">
+                  <div className="mobile-record-field"><span className="mobile-record-label">Service Orders</span><span>{row.serviceOrders.toLocaleString()}</span></div>
+                  <div className="mobile-record-field"><span className="mobile-record-label">Replacements</span><span>{row.replacementOrders.toLocaleString()}</span></div>
+                  <div className="mobile-record-field"><span className="mobile-record-label">Spare Products</span><span>{row.spareProducts.toLocaleString()}</span></div>
+                  <div className="mobile-record-field"><span className="mobile-record-label">Deliveries</span><span>{row.deliveryRows.toLocaleString()}</span></div>
+                  <div className="mobile-record-field"><span className="mobile-record-label">Pending</span><span>{row.pendingOrders.toLocaleString()}</span></div>
+                  <div className="mobile-record-field"><span className="mobile-record-label">Delivered</span><span>{row.deliveredOrders.toLocaleString()}</span></div>
+                  <div className="mobile-record-field"><span className="mobile-record-label">Revenue</span><span>{formatAmount(row.revenue)}</span></div>
+                  <div className="mobile-record-field"><span className="mobile-record-label">Avg / Order</span><span>{formatAmount(Number(avg.toFixed(2)))}</span></div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </div>
     </div>
   );

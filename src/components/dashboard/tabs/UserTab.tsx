@@ -361,9 +361,10 @@ const UserTab = ({
 
         <div className="table-content">
           {filteredUsers.length > 0 ? (
-            <div className="table-wrapper">
-              <div className="table-responsive">
-                <table className="data-table" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+            <>
+              <div className="table-wrapper desktop-table-view">
+                <div className="table-responsive">
+                  <table className="data-table" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
                   <thead>
                     <tr>
                       <th>
@@ -492,8 +493,72 @@ const UserTab = ({
                     ))}
                   </tbody>
                 </table>
+                </div>
               </div>
-            </div>
+              <div className="mobile-record-list">
+                {paginatedUsers.map((user, index) => (
+                  <motion.div
+                    key={`mobile-${user.id}`}
+                    className={`mobile-record-card${selectedUserIds.includes(user.id) ? " selected-row" : ""}`}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.02 }}
+                  >
+                    <div className="mobile-record-header">
+                      <div className="mobile-record-header-main">
+                        <span className="mobile-record-kicker">Team Account</span>
+                        <strong className="mobile-record-title">{user.name}</strong>
+                        <span className="mobile-record-subtitle">{getRoleLabel(user.role)}</span>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={selectedUserIds.includes(user.id)}
+                        onChange={() => onToggleSelectUser(user.id)}
+                        className="selection-checkbox"
+                      />
+                    </div>
+                    <div className="mobile-record-field full">
+                      <span className="mobile-record-label">Email</span>
+                      <span>{user.email}</span>
+                    </div>
+                    <div className="mobile-record-grid">
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Phone</span>
+                        <span>{user.phone || "Not set"}</span>
+                      </div>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Access</span>
+                        <span className={`role-badge ${user.role}`}>{getRoleLabel(user.role)}</span>
+                      </div>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Last Active</span>
+                        <span>{formatLastSeen(user.last_login)}</span>
+                      </div>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Status</span>
+                        <div className={`status-badge ${user.is_active ? "active" : "inactive"}`}>
+                          {user.is_active ? "Active" : "Inactive"}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mobile-record-actions">
+                      <button className="action-button btn-sm" title="View" onClick={() => onViewUser(user)}>
+                        <FiEye />
+                      </button>
+                      <button className="action-button btn-sm" title="Edit" onClick={() => onEditUser(user)}>
+                        <FiEdit />
+                      </button>
+                      <button className="action-button btn-sm" title="Reset Password" onClick={() => onResetPassword(user)}>
+                        <FiLock />
+                      </button>
+                      <button className="action-button btn-sm danger" title="Delete" onClick={() => onDeleteUser(user.id)}>
+                        <FiTrash2 />
+                      </button>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            </>
           ) : (
             <div
               className="no-data"
