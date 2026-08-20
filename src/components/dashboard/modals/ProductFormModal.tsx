@@ -168,6 +168,9 @@ const ProductFormModal = ({
     }
 
     if (!wasVisibleRef.current) {
+      if (!editMode && safeProductForm.purchase_date.trim().length > 0) {
+        emitFormFieldChange("purchase_date", "");
+      }
       const initialPairs = buildPairsFromForm();
       setProductPairs(initialPairs);
       syncFormFromPairs(initialPairs);
@@ -294,7 +297,7 @@ const ProductFormModal = ({
                 <h2>{editMode ? "Edit Product" : "Create New Product"}</h2>
                 <p>
                   {editMode
-                    ? "Update product, serial, claim, and spare-part details in one place."
+                    ? "Update product, serial, claim, and replacement-product details in one place."
                     : "Register products fast with scanner-friendly serial entry and clean inventory fields."}
                 </p>
               </div>
@@ -321,7 +324,7 @@ const ProductFormModal = ({
                     <FiBox />
                   </div>
                   <span className="product-identity-badge">
-                    {safeProductForm.is_spare_product ? "Spare Product" : "Standard Product"}
+                    {safeProductForm.is_spare_product ? "Replacement Product" : "Standard Product"}
                   </span>
                   <div className="product-identity-meta">
                     <span>{serialValue}</span>
@@ -388,7 +391,7 @@ const ProductFormModal = ({
                   <div className="product-form-panel-header">
                     <div>
                       <h3>Identity & Scanner</h3>
-                      <p>Fast entry for product name, serial number, and spare-product tagging.</p>
+                      <p>Fast entry for product name, serial number, and replacement-product tagging.</p>
                     </div>
                     <span className="product-form-badge required">Core details</span>
                   </div>
@@ -500,7 +503,7 @@ const ProductFormModal = ({
                         </span>
                         <span className="product-checkbox-copy">
                           <strong>Mark as Replacement Product</strong>
-                          <small>Use this for spare parts, stock items, and replacement components.</small>
+                          <small>Use this for replacement items, stock items, and replacement components.</small>
                         </span>
                       </label>
                     </div>
@@ -626,6 +629,7 @@ const ProductFormModal = ({
                         name="purchase_date"
                         value={safeProductForm.purchase_date}
                         onChange={onChange}
+                        autoComplete="off"
                         className="product-input"
                       />
                     </div>

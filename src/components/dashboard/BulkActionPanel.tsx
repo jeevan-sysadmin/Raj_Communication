@@ -10,10 +10,16 @@ import {
 interface BulkActionPanelProps {
   itemLabelSingular: string;
   itemLabelPlural: string;
+  summaryLabelSingular?: string;
+  summaryLabelPlural?: string;
   selectedCount: number;
   filteredCount: number;
+  extraMetricLabel?: string;
+  extraMetricValue?: number | string;
   totalPages: number;
   itemsPerPage: number;
+  itemsPerPageLabel?: string;
+  totalPagesLabel?: string;
   helperText: string;
   receiptHint?: string;
   onSelectAll: () => void;
@@ -29,10 +35,16 @@ interface BulkActionPanelProps {
 const BulkActionPanel = ({
   itemLabelSingular,
   itemLabelPlural,
+  summaryLabelSingular,
+  summaryLabelPlural,
   selectedCount,
   filteredCount,
+  extraMetricLabel,
+  extraMetricValue,
   totalPages,
   itemsPerPage,
+  itemsPerPageLabel,
+  totalPagesLabel,
   helperText,
   receiptHint,
   onSelectAll,
@@ -45,12 +57,16 @@ const BulkActionPanel = ({
   disableActions,
 }: BulkActionPanelProps) => {
   const activeCount = selectedCount > 0 ? selectedCount : filteredCount;
+  const resolvedSummarySingular = summaryLabelSingular || itemLabelSingular;
+  const resolvedSummaryPlural = summaryLabelPlural || itemLabelPlural;
   const activeScopeLabel =
-    selectedCount > 0 ? `${selectedCount} selected ${itemLabelPlural}` : `All ${filteredCount} filtered ${itemLabelPlural}`;
+    selectedCount > 0
+      ? `${selectedCount} selected ${resolvedSummaryPlural}`
+      : `All ${filteredCount} filtered ${resolvedSummaryPlural}`;
   const summaryText =
     selectedCount > 0
       ? `Exports and printouts will use only the ${itemLabelPlural} you selected.`
-      : `Nothing is selected yet, so actions will use every filtered ${itemLabelSingular}.`;
+      : `Nothing is selected yet, so actions will use every filtered ${resolvedSummarySingular}.`;
 
   return (
     <div className="data-action-panel">
@@ -63,8 +79,13 @@ const BulkActionPanel = ({
             <FiLayers />
             <strong>{activeCount}</strong> ready
           </span>
-          <span className="data-action-chip">{itemsPerPage} per page</span>
-          <span className="data-action-chip">{totalPages} pages</span>
+          {extraMetricLabel && extraMetricValue !== undefined && extraMetricValue !== null ? (
+            <span className="data-action-chip">
+              <strong>{extraMetricValue}</strong> {extraMetricLabel}
+            </span>
+          ) : null}
+          <span className="data-action-chip">{itemsPerPage} {itemsPerPageLabel || "per page"}</span>
+          <span className="data-action-chip">{totalPages} {totalPagesLabel || "pages"}</span>
         </div>
       </div>
 

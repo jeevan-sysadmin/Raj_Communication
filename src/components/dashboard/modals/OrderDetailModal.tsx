@@ -72,6 +72,33 @@ const parseJsonArray = (value: string): unknown[] | null => {
   }
 };
 
+const parsePositionedList = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry ?? "").trim());
+  }
+  if (typeof value === "number") {
+    return [String(value)];
+  }
+  if (typeof value === "object" && value !== null) {
+    return Object.values(value as Record<string, unknown>).map((entry) => String(entry ?? "").trim());
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    const parsedArray = parseJsonArray(trimmed);
+    if (parsedArray) return parsedArray.map((entry) => String(entry ?? "").trim());
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed.map((entry) => String(entry ?? "").trim());
+      if (parsed && typeof parsed === "object") return Object.values(parsed as Record<string, unknown>).map((entry) => String(entry ?? "").trim());
+    } catch {
+      // Fall through to delimited parsing.
+    }
+    return (trimmed.includes("||") ? trimmed.split("||") : trimmed.split(",")).map((entry) => entry.trim());
+  }
+  return [];
+};
+
 const normalizeNames = (value: unknown) =>
   Array.from(
     new Set(
@@ -124,6 +151,30 @@ const normalizeIds = (value: unknown) =>
     ),
   );
 
+const normalizeProductQuantityMap = (value: unknown): Record<string, number> => {
+  if (!value) return {};
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+      if (typeof parsed === "string") {
+        parsed = JSON.parse(parsed);
+      }
+    } catch {
+      const trimmed = value.trim();
+      const legacyMatch = trimmed.match(/^\{\s*"(\d+)"\s*\.\s*(\d+)\s*\}$/);
+      if (!legacyMatch) return {};
+      parsed = { [legacyMatch[1]]: Number.parseInt(legacyMatch[2], 10) };
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  return Object.fromEntries(
+    Object.entries(parsed as Record<string, unknown>)
+      .map(([productId, qty]) => [String(productId).trim(), Math.max(1, Number.parseInt(String(qty ?? "1"), 10) || 1)])
+      .filter(([productId]) => Boolean(productId)),
+  );
+};
+
 const withIdFallback = (names: string[], ids: number[], labelPrefix: string) => {
   if (names.length > 0) return names;
   return ids.map(() => labelPrefix);
@@ -132,8 +183,15 @@ const withIdFallback = (names: string[], ids: number[], labelPrefix: string) => 
 interface ProductEntry {
   label: string;
   serialNumber: string;
+  model?: string;
   quantity: number;
 }
+
+const formatProductLabelWithQuantity = (label: string, quantity?: number) => {
+  const normalizedLabel = String(label || "").trim() || "Product";
+  const normalizedQuantity = Math.max(1, Number(quantity || 1) || 1);
+  return `${normalizedLabel} (Qty. ${normalizedQuantity})`;
+};
 
 const buildOrderProductEntries = (
   order: Order,
@@ -156,13 +214,16 @@ const buildOrderProductEntries = (
   const names = namesFromList.length > 0 ? namesFromList : fallbackNames;
   const replacementSerials = isReplacement
     ? [
-        ...normalizeNames(order.replacement_product_serial_numbers),
-        ...normalizeNames(orderAny.replacement_serial_numbers),
+        ...parsePositionedList(order.replacement_product_serial_numbers),
+        ...parsePositionedList(orderAny.replacement_serial_numbers),
       ]
     : [];
   const serials = isReplacement
-    ? Array.from(new Set(replacementSerials.map((value) => String(value || "").trim()).filter(Boolean)))
-    : normalizeNames(order.product_serial_numbers);
+    ? replacementSerials
+    : parsePositionedList(order.product_serial_numbers);
+  const models = isReplacement
+    ? parsePositionedList((order as Order & { replacement_product_models?: unknown }).replacement_product_models)
+    : parsePositionedList((order as Order & { product_models?: unknown }).product_models);
   const fallbackSerial = isReplacement
     ? String(
         order.replacement_serial_number ||
@@ -172,36 +233,27 @@ const buildOrderProductEntries = (
           "",
       )
     : String(order.serial_number || "");
+  const quantityMap = normalizeProductQuantityMap((order as Order & { product_quantity_map?: unknown }).product_quantity_map);
 
   const entries = ids.map((id, index) => {
     const matched = products.find((product) => product.id === id);
     const fallbackName = names[index] || "";
-    const matchedByName =
-      !matched && fallbackName
-        ? products.find(
-            (product) =>
-              String(product.product_name || "").trim().toLowerCase() ===
-              fallbackName.trim().toLowerCase(),
-          )
-        : undefined;
     return {
-      label: fallbackName || matched?.product_name || matchedByName?.product_name || `${isReplacement ? "Replacement Product" : "Product"}`,
-      serialNumber: serials[index] || matched?.serial_number || matchedByName?.serial_number || (index === 0 ? fallbackSerial : "") || "",
-      quantity: Number((matched ?? matchedByName)?.stock_quantity ?? 0),
+      // Product IDs are more stable than legacy stored name ordering for multi-product orders.
+      label: matched?.product_name || fallbackName || `${isReplacement ? "Replacement Product" : "Product"}`,
+      serialNumber: serials[index] || matched?.serial_number || (index === 0 ? fallbackSerial : "") || "",
+      model: models[index] || matched?.model || "",
+      quantity: quantityMap[String(id)] ?? 1,
     };
   });
 
   if (entries.length > 0) return entries;
 
   return withIdFallback(names, ids, isReplacement ? "Replacement Product" : "Product").map((label, index) => ({
-    quantity: Number(
-      products.find(
-        (product) =>
-          String(product.product_name || "").trim().toLowerCase() === String(label || "").trim().toLowerCase(),
-      )?.stock_quantity ?? 0,
-    ),
+    quantity: quantityMap[String(ids[index])] ?? 1,
     label,
     serialNumber: serials[index] || (index === 0 ? fallbackSerial : "") || "",
+    model: models[index] || "",
   }));
 };
 
@@ -217,6 +269,7 @@ const renderProductCollection = (entries: ProductEntry[], emptyLabel: string) =>
           <span>S.No</span>
           <span>Product Name</span>
           <span>Qty</span>
+          <span>Model</span>
           <span>Serial Number</span>
         </div>
         {entries.map((entry, index) => (
@@ -228,6 +281,7 @@ const renderProductCollection = (entries: ProductEntry[], emptyLabel: string) =>
             <span>{index + 1}</span>
             <span>{entry.label}</span>
             <span>{entry.quantity}</span>
+            <span>{entry.model || "N/A"}</span>
             <span>{entry.serialNumber || "N/A"}</span>
           </div>
         ))}
@@ -247,7 +301,7 @@ const renderCompanyProductBlocks = (
     <div>
       {lines.map((line, index) => (
         <div key={`${line.companyLabel}-${index}`} style={{ marginBottom: "10px" }}>
-          <div><strong>{line.companyLabel}</strong></div>
+          <div><strong>{index + 1}. {line.companyLabel}</strong></div>
           {line.productNames.length > 0 ? (
             line.productNames.map((productName, productIndex) => (
               <div key={`${line.companyLabel}-${productName}-${productIndex}`}>
@@ -275,24 +329,14 @@ interface RepairingStatusEntry {
   label: string;
   status: string;
   tone: { bg: string; color: string; border: string; label: string };
+  quantity: number;
 }
-
-const buildDisplayMainProductEntries = (mainEntries: ProductEntry[], replacementEntries: ProductEntry[]) => {
-  if (mainEntries.length <= 1 || replacementEntries.length === 0) return mainEntries;
-
-  const replacementKeys = new Set(
-    replacementEntries.map((entry) => `${entry.label}`.trim().toLowerCase()),
-  );
-
-  const filtered = mainEntries.filter((entry) => !replacementKeys.has(String(entry.label || "").trim().toLowerCase()));
-  return filtered.length > 0 ? filtered : mainEntries;
-};
 
 const renderRepairingStatusRows = (entries: RepairingStatusEntry[]) => {
   const rows = entries.map((entry, index) => (
     <div key={`repairing-status-${entry.productId}`} className="repairing-status-row">
       <span className="repairing-status-label">
-        {index + 1}. {entry.label}
+        {index + 1}. {formatProductLabelWithQuantity(entry.label, entry.quantity)}
       </span>
       <span
         className="repairing-status-pill"
@@ -458,12 +502,16 @@ const normalizeProductFlowDatesMap = (
   return normalized;
 };
 
-const getRepairingStatusTone = (status: string) => {
+const getRepairingStatusTone = (status: string, flowStatus?: string) => {
   const normalized = status.trim().toLowerCase().replaceAll("_", " ");
+  const normalizedFlowStatus = String(flowStatus || "").trim().toLowerCase();
   if (normalized === "ready") {
     return { bg: "#dcfce7", color: "#166534", border: "#86efac", label: "Ready" };
   }
   if (normalized === "not ready") {
+    if (normalizedFlowStatus === "comtoraj") {
+      return { bg: "#fef3c7", color: "#92400e", border: "#fcd34d", label: "Not Ready" };
+    }
     return { bg: "#fee2e2", color: "#991b1b", border: "#fca5a5", label: "Not Ready" };
   }
   if (normalized === "replacement") {
@@ -503,7 +551,6 @@ const OrderDetailModal = ({
   );
   const productEntries = buildOrderProductEntries(order, products, false);
   const replacementEntries = buildOrderProductEntries(order, products, true);
-  const displayProductEntries = buildDisplayMainProductEntries(productEntries, replacementEntries);
   const repairingStatusMap = normalizeRepairingStatusMap((order as Order & { repairing_status_map?: unknown }).repairing_status_map);
   const issueDescriptionMap = normalizeIssueDescriptionMap((order as Order & { issue_description_map?: unknown }).issue_description_map);
   const productFlowStatusMap = normalizeProductFlowStatusMap((order as Order & { product_status_map?: unknown }).product_status_map);
@@ -518,25 +565,29 @@ const OrderDetailModal = ({
     ? mapRepairingProductIds
     : productIdsForRepairingStatus;
   const productNameById = new Map<number, string>();
-  displayProductEntries.forEach((entry, index) => {
+  const productQuantityById = new Map<number, number>();
+  productEntries.forEach((entry, index) => {
     const pid = productIdsForRepairingStatus[index];
-    if (pid) productNameById.set(pid, entry.label);
+    if (pid) {
+      productNameById.set(pid, entry.label);
+      productQuantityById.set(pid, entry.quantity);
+    }
   });
-  const productSummary = displayProductEntries.length > 1
-    ? `${displayProductEntries[0].label} +${displayProductEntries.length - 1} more`
-    : (displayProductEntries[0]?.label || "Not added");
-  const productFullList = displayProductEntries.length
-    ? displayProductEntries
-      .map((entry, index) => `${index + 1}. ${entry.serialNumber ? `${entry.label} (SN: ${entry.serialNumber})` : entry.label}`)
+  const productSummary = productEntries.length > 1
+    ? `${formatProductLabelWithQuantity(productEntries[0].label, productEntries[0].quantity)} +${productEntries.length - 1} more`
+    : (productEntries[0] ? formatProductLabelWithQuantity(productEntries[0].label, productEntries[0].quantity) : "Not added");
+  const productFullList = productEntries.length
+    ? productEntries
+      .map((entry, index) => `${index + 1}. ${entry.serialNumber ? `${formatProductLabelWithQuantity(entry.label, entry.quantity)} (SN: ${entry.serialNumber})` : formatProductLabelWithQuantity(entry.label, entry.quantity)}`)
       .join(", ")
     : "Not added";
   const replacementFullList = replacementEntries.length
     ? replacementEntries
-      .map((entry, index) => `${index + 1}. ${entry.serialNumber ? `${entry.label} (SN: ${entry.serialNumber})` : entry.label}`)
+      .map((entry, index) => `${index + 1}. ${entry.serialNumber ? `${formatProductLabelWithQuantity(entry.label, entry.quantity)} (SN: ${entry.serialNumber})` : formatProductLabelWithQuantity(entry.label, entry.quantity)}`)
       .join(", ")
     : "Not added";
-  const productCountLabel = displayProductEntries.length
-    ? `${displayProductEntries.length} product${displayProductEntries.length > 1 ? "s" : ""}`
+  const productCountLabel = productEntries.length
+    ? `${productEntries.length} product${productEntries.length > 1 ? "s" : ""}`
     : "No product";
   const replacementCountLabel = replacementEntries.length
     ? `${replacementEntries.length} replacement item${replacementEntries.length > 1 ? "s" : ""}`
@@ -556,42 +607,57 @@ const OrderDetailModal = ({
   const apiCompanyProductNameMap = (order as Order & {
     company_product_name_map?: Record<string, { company_name?: string; product_names?: string[] | string }>;
   }).company_product_name_map;
-  const companyProductLines = (
-    apiCompanyProductNameMap && typeof apiCompanyProductNameMap === "object"
-      ? Object.values(apiCompanyProductNameMap).map((entry) => {
-          const parsedNames = normalizeNames(entry?.product_names || []);
-          const rawCompanyLabel = String(entry?.company_name || "").trim() || "Company";
-          const companyLabel =
-            isCompanyIdLabel(rawCompanyLabel) && fallbackCompanyName
-              ? fallbackCompanyName
-              : rawCompanyLabel;
-          return {
-            companyLabel,
-            productNames: parsedNames,
-          };
-        })
-      : companyIds.map((companyId, index) => {
-          const rawCompanyLabel = companyNames[index] || companyNames[0] || `Company #${companyId}`;
-          const companyLabel =
-            isCompanyIdLabel(rawCompanyLabel) && fallbackCompanyName
-              ? fallbackCompanyName
-              : rawCompanyLabel;
-          const productNames = (companyProductMap[companyId.toString()] || [])
-            .map((productId) => products.find((product) => product.id === productId)?.product_name || `Product #${productId}`);
-          return {
-            companyLabel,
-            productNames,
-          };
-        })
-  );
+  const resolveCompanyLabel = (companyId: number, index: number) => {
+    const mappedEntry =
+      apiCompanyProductNameMap && typeof apiCompanyProductNameMap === "object"
+        ? apiCompanyProductNameMap[companyId.toString()]
+        : undefined;
+    const rawCompanyLabel =
+      String(mappedEntry?.company_name || "").trim() ||
+      companyNames[index] ||
+      companyNames[0] ||
+      `Company #${companyId}`;
+    return isCompanyIdLabel(rawCompanyLabel) && fallbackCompanyName
+      ? fallbackCompanyName
+      : rawCompanyLabel;
+  };
+  const productNamesByCompanyId = new Map<number, string[]>();
+  const companyOrderFromProducts: number[] = [];
+  productEntries.forEach((entry, index) => {
+    const productId = normalizeIds(order.product_ids)[index];
+    if (!productId) return;
+    const companyId =
+      companyIds.find((candidateCompanyId) => (companyProductMap[candidateCompanyId.toString()] || []).includes(productId)) ||
+      companyIds[0];
+    if (!companyId) return;
+    if (!productNamesByCompanyId.has(companyId)) {
+      productNamesByCompanyId.set(companyId, []);
+      companyOrderFromProducts.push(companyId);
+    }
+    productNamesByCompanyId.get(companyId)!.push(formatProductLabelWithQuantity(entry.label, entry.quantity));
+  });
+  const orderedCompanyIds = [...companyOrderFromProducts, ...companyIds.filter((companyId) => !companyOrderFromProducts.includes(companyId))];
+  const companyProductLines = orderedCompanyIds.map((companyId, index) => {
+    const mappedEntry =
+      apiCompanyProductNameMap && typeof apiCompanyProductNameMap === "object"
+        ? apiCompanyProductNameMap[companyId.toString()]
+        : undefined;
+    const productNamesFromApi = normalizeNames(mappedEntry?.product_names || []);
+    const productNames = productNamesByCompanyId.get(companyId) || productNamesFromApi;
+    return {
+      companyLabel: resolveCompanyLabel(companyId, index),
+      productNames,
+    };
+  });
   const allOrderData = order as unknown as Record<string, unknown>;
   const repairingStatusEntries: RepairingStatusEntry[] = resolvedRepairingProductIds
     .map((productId) => {
       const status = repairingStatusMap[String(productId)];
       if (!status) return null;
       const label = productNameById.get(productId) || `Product #${productId}`;
-      const tone = getRepairingStatusTone(status);
-      return { productId, label, status, tone };
+      const quantity = productQuantityById.get(productId) ?? 1;
+      const tone = getRepairingStatusTone(status, productFlowStatusMap[String(productId)]);
+      return { productId, label, status, tone, quantity };
     })
     .filter((entry): entry is RepairingStatusEntry => Boolean(entry));
   const issueProductIds = Array.from(
@@ -605,9 +671,10 @@ const OrderDetailModal = ({
       const text = String(issueDescriptionMap[String(pid)] || "").trim();
       if (!text) return null;
       const label = productNameById.get(pid) || products.find((product) => product.id === pid)?.product_name || "Product";
-      return { pid, label, text };
+      const quantity = productQuantityById.get(pid) ?? 1;
+      return { pid, label, text, quantity };
     })
-    .filter((entry): entry is { pid: number; label: string; text: string } => Boolean(entry));
+    .filter((entry): entry is { pid: number; label: string; text: string; quantity: number } => Boolean(entry));
   const legacyIssueText = String(order.issue_description || "").trim();
   const repairingReadyCount = repairingStatusEntries.filter((entry) => entry.status === "ready").length;
   const repairingNotReadyCount = repairingStatusEntries.filter((entry) => entry.status === "not ready").length;
@@ -746,7 +813,7 @@ const OrderDetailModal = ({
                       {perProductIssueEntries.map((entry, index) => (
                         <div key={`service-issue-product-${entry.pid}-${index}`} className="flow-status-card">
                           <div className="flow-status-head">
-                            <strong>{index + 1}. {entry.label}</strong>
+                            <strong>{index + 1}. {formatProductLabelWithQuantity(entry.label, entry.quantity)}</strong>
                           </div>
                           <div>{entry.text}</div>
                         </div>
@@ -779,7 +846,7 @@ const OrderDetailModal = ({
               <div className="detail-item detail-item-product-list">
                 <span className="detail-label">Main Products</span>
                 <div className="detail-value">
-                  {renderProductCollection(displayProductEntries, "Not added")}
+                  {renderProductCollection(productEntries, "Not added")}
                 </div>
               </div>
               <div className="detail-item detail-item-product-list">
@@ -789,7 +856,15 @@ const OrderDetailModal = ({
                 </div>
               </div>
               <div className="detail-item"><span className="detail-label">Brand</span><span className="detail-value">{order.product_brand || "N/A"}</span></div>
-              <div className="detail-item"><span className="detail-label">Model</span><span className="detail-value">{order.product_model || "N/A"}</span></div>
+              <div className="detail-item">
+                <span className="detail-label">Model</span>
+                <span className="detail-value">
+                  {(() => {
+                    const models = normalizeNames((order as Order & { product_models?: unknown }).product_models);
+                    return models.length > 0 ? models.join(", ") : order.product_model || "N/A";
+                  })()}
+                </span>
+              </div>
               <div className="detail-item">
                 <span className="detail-label">Repairing Status</span>
                 <div className="detail-value">
@@ -803,13 +878,14 @@ const OrderDetailModal = ({
                     <div className="flow-status-list">
                       {productFlowIds.map((productId, index) => {
                         const label = productNameById.get(productId) || `Product #${productId}`;
+                        const quantity = productQuantityById.get(productId) ?? 1;
                         const current = productFlowStatusMap[String(productId)] || "pending";
                         const dates = productFlowDatesMap[String(productId)] || {};
-                        const pendingTime = order.created_at || dates.pending;
+                        const pendingTime = dates.pending || order.created_at;
                         return (
                           <div key={`flow-${productId}`} className="flow-status-card">
                             <div className="flow-status-head">
-                              <strong>{index + 1}. {label}</strong>
+                              <strong>{index + 1}. {formatProductLabelWithQuantity(label, quantity)}</strong>
                               <span className={`flow-status-pill flow-${current}`}>{prettify(current)}</span>
                             </div>
                             <div className="flow-status-dates">
@@ -883,7 +959,7 @@ const OrderDetailModal = ({
                 <span className="detail-label">Companies</span>
                 <span className="detail-value companies-value" title={companyNamesText}>{companyNamesText}</span>
               </div>
-              <div className="detail-item">
+              <div className="detail-item detail-item-product-list">
                 <span className="detail-label">Company Products</span>
                 <div className="detail-value">
                   {companyProductLines.length > 0 ? (

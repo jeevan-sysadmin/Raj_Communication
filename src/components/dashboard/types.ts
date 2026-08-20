@@ -46,6 +46,7 @@ export interface Order {
   company_name?: string;
   company_names?: string[];
   company_product_map?: Record<string, number[] | string[]>;
+  company_product_name_map?: Record<string, { company_name?: string; product_names?: string[] | string }>;
   companies_products?: Record<string, number[] | string[]>;
   client_id: number;
   client_name: string;
@@ -53,17 +54,22 @@ export interface Order {
   product_id: number;
   product_name: string;
   product_ids?: number[] | string[];
+  product_quantity_map?: Record<string, number> | string;
   product_status_map?: Record<string, string> | string;
   issue_description_map?: Record<string, string> | string;
+  accessory_type_map?: Record<string, string> | string;
+  result_text_map?: Record<string, string> | string;
   product_status_dates_map?: Record<string, { pending?: string | null; rajtocom?: string | null; comtoraj?: string | null; deliveryed?: string | null }> | string;
   handover_type?: string;
   handover_type_map?: Record<string, string> | string;
   repairing_status_map?: Record<string, string> | string;
   product_names?: string[];
+  product_models?: string[];
   replacement_product_id?: number | null;
   replacement_product_name?: string;
   replacement_product_ids?: number[] | string[];
   replacement_product_names?: string[];
+  replacement_product_models?: string[];
   serial_number?: string;
   replacement_serial_number?: string;
   product_serial_numbers?: string[];
@@ -145,12 +151,29 @@ export interface Product {
 export interface Delivery {
   id: number;
   delivery_code?: string;
+  client_id?: number;
+  company_id?: number | string | null;
+  company_ids?: number[] | string[] | string;
+  companies_products?: Record<string, number[] | string[]> | string;
+  company_product_map?: Record<string, number[] | string[]> | string;
   serial_number?: string;
   delivery_serial_number?: string;
   product_serial_number?: string;
+  order_product_ids?: number[] | string[] | string;
   product_serial_numbers?: string[] | string;
+  serial_numbers?: string[] | string;
+  product_id?: number;
+  product_ids?: number[] | string[] | string;
+  replacement_product_id?: number | null;
+  replacement_product_ids?: number[] | string[] | string;
+  delivered_product_names?: string[] | string;
+  delivered_product_models?: string[] | string;
+  delivered_product_serial_numbers?: string[] | string;
+  delivered_company_names?: string[] | string;
+  delivered_company_name?: string;
   delivery_item_product_ids?: string[] | string;
   delivery_item_product_names?: string[] | string;
+  delivery_item_models?: string[] | string;
   delivery_item_serial_numbers?: string[] | string;
   order_id: number;
   order_code?: string;
@@ -159,7 +182,17 @@ export interface Delivery {
   client_address?: string;
   product_name?: string;
   product_brand?: string;
+  product_model?: string;
+  product_status_map?: Record<string, string> | string;
+  repairing_status_map?: Record<string, string> | string;
+  issue_description_map?: Record<string, string> | string;
+  accessory_type_map?: Record<string, string> | string;
+  result_text_map?: Record<string, string> | string;
+  handover_type?: string;
+  handover_type_map?: Record<string, string> | string;
+  product_status_dates_map?: Record<string, { pending?: string | null; rajtocom?: string | null; comtoraj?: string | null; deliveryed?: string | null }> | string;
   delivery_type: string;
+  delivery_type_map?: Record<string, string> | string;
   address: string;
   contact_person: string;
   contact_phone: string;
@@ -173,6 +206,21 @@ export interface Delivery {
   delivered_date: string;
   delivered_date_formatted?: string;
   created_at: string;
+  updated_at?: string;
+  staff_id?: number | null;
+  service_type?: string;
+  issue_description?: string;
+  diagnosis_notes?: string;
+  repair_notes?: string;
+  warranty_status?: string;
+  estimated_cost?: string | number;
+  final_cost?: string | number;
+  deposit_amount?: string | number;
+  payment_status?: string;
+  estimated_delivery_date?: string;
+  actual_delivery_date?: string;
+  priority?: string;
+  rating?: string | number | null;
 }
 
 export interface LoadingState {
@@ -198,6 +246,7 @@ export interface OrderForm {
   company_ids: string[];
   company_name?: string;
   company_product_map: Record<string, string[]>;
+  company_product_name_map?: Record<string, { company_name?: string; product_names?: string[] | string }>;
   companies_products?: Record<string, string[]>;
   
   // Client related fields
@@ -209,8 +258,11 @@ export interface OrderForm {
   product_name: string;
   product_id: string;
   product_ids: string[];
+  product_quantity_map?: Record<string, number> | string;
   product_status_map?: Record<string, string> | string;
   issue_description_map?: Record<string, string> | string;
+  accessory_type_map?: Record<string, string> | string;
+  result_text_map?: Record<string, string> | string;
   handover_type?: string;
   handover_type_map?: Record<string, string> | string;
   repairing_status_map?: Record<string, string> | string;
@@ -492,6 +544,10 @@ export function orderFormToApiRequest(form: OrderForm): any {
       return acc;
     }, {} as Record<string, number[]>),
     issue_description_map: form.issue_description_map || {},
+    accessory_type_map: form.accessory_type_map || {},
+    result_text_map: form.result_text_map || {},
+    handover_type_map: form.handover_type_map || {},
+    handover_type: form.handover_type || null,
     repairing_status_map: form.repairing_status_map || {},
     companies_products: Object.entries(form.company_product_map).reduce((acc, [key, value]) => {
       acc[key] = value.map(id => parseInt(id));
@@ -511,6 +567,7 @@ export function apiResponseToOrderForm(order: Order): OrderForm {
         acc[key] = (value || []).map(id => id.toString());
         return acc;
       }, {} as Record<string, string[]>) : {},
+    company_product_name_map: order.company_product_name_map || {},
     companies_products: order.companies_products ? 
       Object.entries(order.companies_products).reduce((acc, [key, value]) => {
         acc[key] = (value || []).map(id => id.toString());
@@ -523,6 +580,10 @@ export function apiResponseToOrderForm(order: Order): OrderForm {
     product_id: order.product_id.toString(),
     product_ids: (order.product_ids || [order.product_id]).map(id => id.toString()),
     issue_description_map: order.issue_description_map || {},
+    accessory_type_map: order.accessory_type_map || {},
+    result_text_map: order.result_text_map || {},
+    handover_type: order.handover_type || '',
+    handover_type_map: order.handover_type_map || {},
     repairing_status_map: order.repairing_status_map || {},
     replacement_product_name: order.replacement_product_name || '',
     replacement_product_id: order.replacement_product_id?.toString() || '',

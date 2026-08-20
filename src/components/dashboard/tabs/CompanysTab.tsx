@@ -68,6 +68,13 @@ const normalizeCompany = (row: any): Company => ({
   created_at: String(row?.created_at ?? new Date().toISOString()),
 });
 
+const sortCompanies = (rows: Company[]) =>
+  [...rows].sort((a, b) => {
+    const dateDiff = new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    if (dateDiff !== 0) return dateDiff;
+    return b.id - a.id;
+  });
+
 const applyPresetDateRange = (
   preset: "today" | "yesterday" | "thisWeek" | "thisMonth" | "lastMonth" | "thisYear",
 ) => {
@@ -264,6 +271,19 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
         if (!response.ok || !result?.success) {
           throw new Error(result?.message || "Failed to update company");
         }
+
+        const nextCompany: Company = {
+          ...editCompany,
+          ...payload,
+        };
+        setCompanys((prev) => prev.map((item) => (item.id === editCompany.id ? nextCompany : item)));
+        setSelectedCompany((prev) => (prev?.id === editCompany.id ? nextCompany : prev));
+        closeFormModal();
+        if (onRefresh) {
+          void Promise.resolve(onRefresh());
+        } else {
+          void loadCompaniesFromDb();
+        }
       } else {
         const response = await fetch(COMPANY_API_URL, {
           method: "POST",
@@ -277,13 +297,20 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
         if (!response.ok || !result?.success) {
           throw new Error(result?.message || "Failed to create company");
         }
-      }
 
-      closeFormModal();
-      if (onRefresh) {
-        await onRefresh();
-      } else {
-        await loadCompaniesFromDb();
+        const createdCompany: Company = {
+          id: Number(result?.company_id) || Date.now(),
+          company_code: String(result?.company_code || `CMP${Date.now()}`),
+          created_at: new Date().toISOString(),
+          ...payload,
+        };
+        setCompanys((prev) => sortCompanies([...prev, createdCompany]));
+        closeFormModal();
+        if (onRefresh) {
+          void Promise.resolve(onRefresh());
+        } else {
+          void loadCompaniesFromDb();
+        }
       }
     } catch (error: any) {
       console.error("Company save error:", error);
@@ -312,13 +339,14 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
         throw new Error(result?.message || "Failed to delete company");
       }
 
+      setCompanys((prev) => prev.filter((item) => item.id !== deleteCompanyTarget.id));
       setSelectedCompanyIds((prev) => prev.filter((selectedId) => selectedId !== deleteCompanyTarget.id));
       if (selectedCompany?.id === deleteCompanyTarget.id) setSelectedCompany(null);
       setDeleteCompanyTarget(null);
       if (onRefresh) {
-        await onRefresh();
+        void Promise.resolve(onRefresh());
       } else {
-        await loadCompaniesFromDb();
+        void loadCompaniesFromDb();
       }
     } catch (error: any) {
       console.error("Company delete error:", error);
@@ -436,22 +464,24 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
         { label: "With Email", value: `${withEmail}` },
         { label: "PDF Source", value: `${fromPdf}` },
       ],
-      head: [["Code", "Company", "Product Coverage", "Contact", "Source", "Created"]],
+      head: [["Code", "Company", "Product Coverage", "Address", "Contact", "Source", "Created"]],
       body: bulkCompanys.map((company) => [
         company.company_code,
         company.company_name,
         company.product,
+        company.address || "N/A",
         [company.contact_person, company.phone, company.email].filter(Boolean).join("\n") || "N/A",
         company.source_pdf || "Manual",
         formatDisplayDate(company.created_at),
       ]),
       columnStyles: {
         0: { cellWidth: 24 },
-        1: { cellWidth: 40 },
-        2: { cellWidth: 86 },
-        3: { cellWidth: 40 },
-        4: { cellWidth: 34 },
-        5: { cellWidth: 24 },
+        1: { cellWidth: 34 },
+        2: { cellWidth: 58 },
+        3: { cellWidth: 42 },
+        4: { cellWidth: 32 },
+        5: { cellWidth: 22 },
+        6: { cellWidth: 20 },
       },
     });
   };
@@ -469,6 +499,7 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
             <td>${escapeHtml(company.company_code)}</td>
             <td>${escapeHtml(company.company_name)}</td>
             <td>${escapeHtml(company.product)}</td>
+            <td>${escapeHtml(company.address || "N/A")}</td>
             <td>${escapeHtml(company.contact_person || "N/A")}</td>
             <td>${escapeHtml(company.phone || "N/A")}</td>
             <td>${escapeHtml(company.source_pdf || "Manual")}</td>
@@ -496,7 +527,7 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
           <p>${escapeHtml(selectedCompanys.length > 0 ? `${selectedCompanys.length} selected companies` : `${filteredCompanys.length} filtered companies`)}</p>
           <table>
             <thead>
-              <tr><th>Code</th><th>Company</th><th>Product Coverage</th><th>Contact</th><th>Phone</th><th>Source</th></tr>
+              <tr><th>Code</th><th>Company</th><th>Product Coverage</th><th>Address</th><th>Contact</th><th>Phone</th><th>Source</th></tr>
             </thead>
             <tbody>${rows}</tbody>
           </table>
@@ -583,10 +614,10 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
         ) : filteredCompanys.length > 0 ? (
           <>
             <div className="desktop-table-view">
-              <table className="orders-table">
+              <table className="orders-table service-companies-table">
                 <thead>
                   <tr>
-                    <th>
+                    <th className="service-companies-select-col">
                       <input
                         type="checkbox"
                         className="row-checkbox"
@@ -595,13 +626,12 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
                         aria-label="Select all companies on this page"
                       />
                     </th>
-                    <th>Company Code</th>
+                    <th className="service-companies-code-col">Company Code</th>
                     <th>Company Name</th>
-                    <th>Product Coverage</th>
-                    <th>Contact</th>
-                    <th>Source</th>
-                    <th>Created</th>
-                    <th>Actions</th>
+                    <th className="service-companies-person-col">Person Name</th>
+                    <th className="service-companies-address-col">Address</th>
+                    <th className="service-companies-date-col">Created</th>
+                    <th className="service-companies-action-col">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -618,7 +648,7 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
                         whileHover={{ backgroundColor: "#f8fafc", cursor: "pointer" }}
                         onClick={() => setSelectedCompany(company)}
                       >
-                        <td onClick={(e) => e.stopPropagation()}>
+                        <td className="service-companies-select-col" onClick={(e) => e.stopPropagation()}>
                           <input
                             type="checkbox"
                             className="row-checkbox"
@@ -627,7 +657,7 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
                             aria-label={`Select ${company.company_name}`}
                           />
                         </td>
-                        <td>
+                        <td className="service-companies-code-col">
                           <span className="product-code">{company.company_code}</span>
                         </td>
                         <td>
@@ -635,25 +665,20 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
                             <div className="client-avatar-placeholder">{company.company_name?.charAt(0) || "C"}</div>
                             <div className="client-info">
                               <span className="client-name">{company.company_name}</span>
-                              <span className="client-address">
-                                {company.email || company.phone || "Contact details not added"}
-                              </span>
+                              <span className="client-address">{company.phone || company.email || "Contact details not added"}</span>
                             </div>
                           </div>
                         </td>
-                        <td>
-                          <span className="client-email">{company.product}</span>
+                        <td className="service-companies-person-col">
+                          <span className="client-phone">{company.contact_person || "Not added"}</span>
                         </td>
-                        <td>
-                          <span className="client-phone">{company.contact_person || company.phone || "N/A"}</span>
+                        <td className="service-companies-address-col">
+                          <span className="truncate-text">{company.address || "Not added"}</span>
                         </td>
-                        <td>
-                          <span className="category-badge">{company.source_pdf || "Manual"}</span>
-                        </td>
-                        <td>
+                        <td className="service-companies-date-col">
                           <span className="client-date">{formatDisplayDate(company.created_at)}</span>
                         </td>
-                        <td>
+                        <td className="service-companies-action-col">
                           <div className="action-buttons">
                             <motion.button
                               className="action-btn edit"
@@ -716,21 +741,13 @@ const CompanysTab = ({ companys: initialCompanys = [], loading = false, onRefres
                     </div>
 
                     <div className="mobile-record-grid">
-                      <div className="mobile-record-field full">
-                        <span className="mobile-record-label">Product Coverage</span>
-                        <span>{company.product || "Not added"}</span>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Person Name</span>
+                        <span>{company.contact_person || "Not added"}</span>
                       </div>
                       <div className="mobile-record-field">
-                        <span className="mobile-record-label">Contact</span>
-                        <span>{company.contact_person || company.phone || "N/A"}</span>
-                      </div>
-                      <div className="mobile-record-field">
-                        <span className="mobile-record-label">Email / Phone</span>
+                        <span className="mobile-record-label">Phone</span>
                         <span>{company.email || company.phone || "N/A"}</span>
-                      </div>
-                      <div className="mobile-record-field">
-                        <span className="mobile-record-label">Source</span>
-                        <span className="category-badge">{company.source_pdf || "Manual"}</span>
                       </div>
                       <div className="mobile-record-field">
                         <span className="mobile-record-label">Created</span>

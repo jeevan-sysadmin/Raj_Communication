@@ -29,7 +29,7 @@ const ReceiptActionModal = ({
   onDownload,
   onPrint,
 }: ReceiptActionModalProps) => {
-  const title = kind === "order" ? "Receipt PDF" : "Delivery Receipt PDF";
+  const title = kind === "order" ? "RMA Receipt PDF" : "Delivery Receipt PDF";
 
   return (
     <motion.div
@@ -68,7 +68,7 @@ const ReceiptActionModal = ({
             <div className="receipt-action-sidebar" style={{ maxHeight: "calc(100vh - 220px)", overflowY: "scroll", overflowX: "hidden", scrollbarGutter: "stable" }}>
               <div className={`receipt-action-hero ${kind === "delivery" ? "delivery" : ""}`}>
                 <div>
-                  <span className="receipt-action-kicker">{kind === "order" ? "Service Receipt" : "Delivery Receipt"}</span>
+                  <span className="receipt-action-kicker">{kind === "order" ? "RMA Receipt" : "Delivery Receipt"}</span>
                   <h3>{code}</h3>
                   <p>{subtitle}</p>
                 </div>

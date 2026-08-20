@@ -161,7 +161,7 @@ const RevenueTab = () => {
   });
 
   const buildHeaders = (withJson = false) => {
-    const token = localStorage.getItem("authToken");
+    const token = localStorage.getItem("authToken") || localStorage.getItem("token");
     return {
       Accept: "application/json",
       ...(withJson ? { "Content-Type": "application/json" } : {}),
@@ -216,6 +216,15 @@ const RevenueTab = () => {
   }, []);
 
   const manualIncomeServices = serviceTypeOptions.filter((option) => option !== "all");
+
+  const shouldIncludeIncomeInCurrentView = (incomeDate: string, incomeServiceType: string) => {
+    const parsed = new Date(incomeDate);
+    if (Number.isNaN(parsed.getTime())) return false;
+    if (parsed.getFullYear() !== year) return false;
+    if (month && parsed.getMonth() + 1 !== Number(month)) return false;
+    if (serviceType !== "all" && incomeServiceType !== serviceType) return false;
+    return true;
+  };
 
   const exportCsv = () => {
     if (!data) return;
@@ -453,6 +462,56 @@ const RevenueTab = () => {
         throw new Error(result.message || "Failed to save income entry");
       }
 
+      const createdIncome = result?.data as RecentIncomeEntry | undefined;
+      if (createdIncome && shouldIncludeIncomeInCurrentView(createdIncome.income_date, createdIncome.service_type)) {
+        setData((prev) => {
+          if (!prev) return prev;
+
+          const nextRecentIncome = [createdIncome, ...prev.recent_income].sort((a, b) => {
+            const dateDiff = new Date(b.income_date).getTime() - new Date(a.income_date).getTime();
+            if (dateDiff !== 0) return dateDiff;
+            return b.id - a.id;
+          });
+
+          const nextByService = prev.summary.by_service.some((item) => item.service_type === createdIncome.service_type)
+            ? prev.summary.by_service.map((item) =>
+                item.service_type === createdIncome.service_type
+                  ? {
+                      ...item,
+                      income: Number(item.income || 0) + Number(createdIncome.amount || 0),
+                      net_profit: Number(item.net_profit || 0) + Number(createdIncome.amount || 0),
+                    }
+                  : item,
+              )
+            : [
+                ...prev.summary.by_service,
+                {
+                  service_type: createdIncome.service_type,
+                  income: Number(createdIncome.amount || 0),
+                  expenses: 0,
+                  salaries: 0,
+                  total_costs: 0,
+                  net_profit: Number(createdIncome.amount || 0),
+                  order_count: 0,
+                  customer_count: 0,
+                },
+              ];
+
+          return {
+            ...prev,
+            recent_income: nextRecentIncome,
+            summary: {
+              ...prev.summary,
+              total_income: Number(prev.summary.total_income || 0) + Number(createdIncome.amount || 0),
+              manual_income_total: Number(prev.summary.manual_income_total || 0) + Number(createdIncome.amount || 0),
+              manual_income_count: Number(prev.summary.manual_income_count || 0) + 1,
+              net_profit: Number(prev.summary.net_profit || 0) + Number(createdIncome.amount || 0),
+              by_service: nextByService,
+            },
+          };
+        });
+      }
+
       setIncomeForm({
         service_type: serviceType !== "all" ? serviceType : "general",
         income_source: "manual",
@@ -465,7 +524,7 @@ const RevenueTab = () => {
       });
       setShowIncomeForm(false);
       setNotice("Income saved successfully.");
-      await loadRevenue();
+      void loadRevenue();
     } catch (saveError: any) {
       setError(saveError.message || "Failed to save income entry");
     } finally {

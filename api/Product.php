@@ -252,6 +252,31 @@ class Product {
         }
     }
 
+    private function getStatusEnumValues(): array {
+        try {
+            $query = "SELECT COLUMN_TYPE
+                      FROM INFORMATION_SCHEMA.COLUMNS
+                      WHERE TABLE_SCHEMA = DATABASE()
+                        AND TABLE_NAME = :table_name
+                        AND COLUMN_NAME = 'status'
+                      LIMIT 1";
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(':table_name', $this->table);
+            $stmt->execute();
+            $columnType = (string)($stmt->fetch()['COLUMN_TYPE'] ?? '');
+            if (!preg_match("/^enum\\((.*)\\)$/i", $columnType, $matches)) {
+                return [];
+            }
+
+            preg_match_all("/'((?:[^'\\\\]|\\\\.)*)'/", $matches[1], $valueMatches);
+            return array_map(static function ($raw) {
+                return str_replace("\\'", "'", $raw);
+            }, $valueMatches[1] ?? []);
+        } catch (Throwable $e) {
+            return [];
+        }
+    }
+
     private function productCodeExists($product_code) {
         $query = "SELECT id FROM " . $this->table . " WHERE product_code = :product_code LIMIT 1";
         $stmt = $this->conn->prepare($query);
@@ -315,13 +340,39 @@ class Product {
     
     // Validate status
     private function validateStatus($status) {
-        if (empty($status)) {
-            return 'active';
+        $allowed = $this->getStatusEnumValues();
+        if (count($allowed) === 0) {
+            $allowed = array_values(array_unique(array_merge($this->valid_statuses, ['handover'])));
         }
-        if (in_array($status, $this->valid_statuses)) {
-            return $status;
+
+        $normalized = strtolower(trim((string)$status));
+        if ($normalized === '') {
+            $normalized = 'active';
         }
-        return 'active';
+
+        foreach ($allowed as $allowedStatus) {
+            if (strcasecmp($normalized, $allowedStatus) === 0) {
+                return $allowedStatus;
+            }
+        }
+
+        if (in_array($normalized, ['inactive', 'discontinued', 'out_of_stock'], true)) {
+            foreach (['inactive', 'discontinued', 'handover', 'out_of_stock'] as $candidate) {
+                foreach ($allowed as $allowedStatus) {
+                    if (strcasecmp($candidate, $allowedStatus) === 0) {
+                        return $allowedStatus;
+                    }
+                }
+            }
+        }
+
+        foreach ($allowed as $allowedStatus) {
+            if (strcasecmp('active', $allowedStatus) === 0) {
+                return $allowedStatus;
+            }
+        }
+
+        return $allowed[0];
     }
 
     public function getAll($search = '', $status = '', $category = '', $claim_type = '') {

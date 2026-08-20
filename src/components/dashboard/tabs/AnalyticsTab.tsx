@@ -1,33 +1,25 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { CSSProperties } from "react";
 import {
   Area,
   AreaChart,
-  Bar,
-  BarChart,
   CartesianGrid,
-  Cell,
   Line,
   LineChart,
-  Pie,
-  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
   YAxis,
 } from "recharts";
 import {
-  FiActivity,
   FiAlertTriangle,
   FiBarChart2,
   FiCheckCircle,
   FiDownload,
   FiFileText,
-  FiLayers,
   FiPackage,
   FiPrinter,
   FiRefreshCw,
-  FiTarget,
   FiTrendingUp,
 } from "react-icons/fi";
 import { exportStyledPdfReport } from "../pdfExport";
@@ -88,17 +80,13 @@ const tipStyle = {
   boxShadow: "0 18px 42px rgba(2, 6, 23, 0.28)",
 };
 
-const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPriorityColor }: AnalyticsTabProps) => {
-  const [isMobile, setIsMobile] = useState(() => (typeof window !== "undefined" ? window.innerWidth <= 768 : false));
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const handleResize = () => setIsMobile(window.innerWidth <= 768);
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
-
+const AnalyticsTab = ({
+  analyticsData,
+  loading,
+  onRefresh,
+  getStatusColor,
+  getPriorityColor,
+}: AnalyticsTabProps) => {
   const revenue = useMemo(
     () => (analyticsData?.monthly_revenue || []).map((i) => ({ month: monthLabel(i.month), revenue: num(i.revenue) })),
     [analyticsData],
@@ -146,20 +134,16 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
   const urgent = priorities.find((i) => i.priority === "urgent")?.count || 0;
   const urgentRate = totalOrders ? (urgent / totalOrders) * 100 : 0;
   const avgDailyOrders = trends.length ? trends.reduce((a, b) => a + b.orders, 0) / trends.length : 0;
-  const topStatus = statuses[0];
-  const topCategory = categories[0];
   const bestMonth = revenue.length ? revenue.reduce((a, b) => (b.revenue > a.revenue ? b : a), revenue[0]) : null;
   const revenueDelta =
     revenue.length > 1 && revenue[revenue.length - 2].revenue > 0
       ? ((revenue[revenue.length - 1].revenue - revenue[revenue.length - 2].revenue) / revenue[revenue.length - 2].revenue) * 100
       : null;
-  const healthScore = Math.min(100, Math.round(closedRate * 0.7 + Math.max(0, 100 - urgentRate * 2) * 0.3));
-  const categoryPeak = topCategory?.count || 0;
   const hasData = revenue.length || trends.length || statuses.length || priorities.length || categories.length;
   const updatedAt = new Date().toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
 
   const statCards = [
-    { label: "Tracked Profit", value: totalRevenue ? money(totalRevenue) : "Rs. 0", hint: revenueDelta !== null ? `${revenueDelta >= 0 ? "+" : ""}${revenueDelta.toFixed(1)}% vs previous month` : "Latest profit periods", icon: <FiTrendingUp />, bg: "linear-gradient(135deg,#0f766e,#14b8a6)" },
+    { label: "Tracked Revenue", value: totalRevenue ? money(totalRevenue) : "Rs. 0", hint: revenueDelta !== null ? `${revenueDelta >= 0 ? "+" : ""}${revenueDelta.toFixed(1)}% vs previous month` : "Latest revenue periods", icon: <FiTrendingUp />, bg: "linear-gradient(135deg,#0f766e,#14b8a6)" },
     { label: "Orders In Scope", value: totalOrders.toLocaleString(), hint: `${trends.reduce((a, b) => a + b.orders, 0).toLocaleString()} in trend window`, icon: <FiPackage />, bg: "linear-gradient(135deg,#2563eb,#38bdf8)" },
     { label: "Closure Rate", value: `${closedRate.toFixed(1)}%`, hint: `${(delivered + completed).toLocaleString()} closed orders`, icon: <FiCheckCircle />, bg: "linear-gradient(135deg,#ea580c,#f59e0b)" },
     { label: "Urgent Pressure", value: `${urgentRate.toFixed(1)}%`, hint: `${urgent.toLocaleString()} urgent orders`, icon: <FiAlertTriangle />, bg: "linear-gradient(135deg,#be123c,#fb7185)" },
@@ -169,15 +153,14 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
     if (!analyticsData || !hasData) return;
 
     const lines: Array<Array<string | number>> = [
-      ["Tracked Profit", totalRevenue],
+      ["Tracked Revenue", totalRevenue],
       ["Total Orders", totalOrders],
       ["Closure Rate", `${closedRate.toFixed(1)}%`],
       ["Urgent Pressure", `${urgentRate.toFixed(1)}%`],
       ["Average Daily Orders", avgDailyOrders.toFixed(1)],
-      ["Health Score", healthScore],
       [],
-      ["Monthly Profit"],
-      ["Month", "Profit"],
+      ["Monthly Revenue"],
+      ["Month", "Revenue"],
       ...revenue.map((item) => [item.month, item.revenue]),
       [],
       ["Order Trends"],
@@ -221,10 +204,10 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
   const exportAnalyticsPdf = () => {
     if (!analyticsData || !hasData) return;
 
-    const tableTitle = revenue.length ? "Monthly Profit" : trends.length ? "Order Trends" : "Status Distribution";
+    const tableTitle = revenue.length ? "Monthly Revenue" : trends.length ? "Order Trends" : "Status Distribution";
     const head =
       revenue.length
-        ? ["Month", "Profit"]
+        ? ["Month", "Revenue"]
         : trends.length
           ? ["Date", "Orders"]
           : ["Status", "Orders"];
@@ -241,10 +224,10 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
       subtitle: tableTitle,
       scopeLabel: `${totalOrders.toLocaleString()} orders in scope`,
       metrics: [
-        { label: "Tracked Profit", value: money(totalRevenue) },
+        { label: "Tracked Revenue", value: money(totalRevenue) },
         { label: "Closure Rate", value: `${closedRate.toFixed(1)}%` },
         { label: "Urgent Pressure", value: `${urgentRate.toFixed(1)}%` },
-        { label: "Health Score", value: `${healthScore}` },
+        { label: "Average Daily Orders", value: avgDailyOrders.toFixed(1) },
       ],
       head: [head],
       body,
@@ -312,14 +295,14 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
           <h1>Analytics & Performance</h1>
           <p>Printed on ${escapeHtml(updatedAt)}</p>
           <div class="summary">
-            <div class="card"><span>Tracked Profit</span><strong>${escapeHtml(money(totalRevenue))}</strong></div>
+            <div class="card"><span>Tracked Revenue</span><strong>${escapeHtml(money(totalRevenue))}</strong></div>
             <div class="card"><span>Total Orders</span><strong>${escapeHtml(totalOrders)}</strong></div>
             <div class="card"><span>Closure Rate</span><strong>${escapeHtml(closedRate.toFixed(1))}%</strong></div>
             <div class="card"><span>Urgent Pressure</span><strong>${escapeHtml(urgentRate.toFixed(1))}%</strong></div>
           </div>
-          <h3>Monthly Profit</h3>
+          <h3>Monthly Revenue</h3>
           <table>
-            <thead><tr><th>Month</th><th>Profit</th></tr></thead>
+            <thead><tr><th>Month</th><th>Revenue</th></tr></thead>
             <tbody>${revenueRows || "<tr><td colspan='2'>No data</td></tr>"}</tbody>
           </table>
           <h3>Order Trends</h3>
@@ -350,9 +333,9 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
               <FiBarChart2 />
               Operations Intelligence
             </div>
-            <h3 style={{ fontSize: isMobile ? 22 : 30, lineHeight: 1.08, marginBottom: 10, color: "#0f172a" }}>Analytics & Performance</h3>
-            <p style={{ fontSize: isMobile ? 14 : 15, lineHeight: 1.7, color: "#64748b", margin: 0 }}>
-              Read service momentum, service profit (Final Cost - Deposit Amount), queue pressure, and category demand from one cleaner analytics workspace.
+            <h3 style={{ fontSize: 30, lineHeight: 1.08, marginBottom: 10, color: "#0f172a" }}>Analytics & Performance</h3>
+            <p style={{ fontSize: 15, lineHeight: 1.7, color: "#64748b", margin: 0 }}>
+              Read service momentum, revenue, queue pressure, and category demand from one cleaner analytics workspace.
             </p>
           </div>
           <div className="table-controls" style={{ alignItems: "flex-start", flexWrap: "wrap", gap: 10 }}>
@@ -378,7 +361,7 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
 
         {analyticsData && hasData ? (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginTop: 22, marginBottom: 22 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 14, marginTop: 22, marginBottom: 22 }}>
               {statCards.map((card) => (
                 <div key={card.label} style={smallPanel}>
                   <div style={{ width: 44, height: 44, borderRadius: 14, display: "flex", alignItems: "center", justifyContent: "center", background: card.bg, color: "#fff", marginBottom: 14 }}>{card.icon}</div>
@@ -389,20 +372,20 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
               ))}
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1.8fr) minmax(280px, 0.9fr)", gap: 18, marginBottom: 18 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 18, marginBottom: 18 }}>
               <div style={panel}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", marginBottom: 16 }}>
                   <div>
-                    <h4 style={{ margin: "0 0 6px 0", fontSize: 22, color: "#0f172a" }}>Profit Momentum</h4>
-                    <p style={{ margin: 0, color: "#64748b", lineHeight: 1.7 }}>Follow month-over-month service profit and identify the strongest billing period quickly.</p>
+                    <h4 style={{ margin: "0 0 6px 0", fontSize: 22, color: "#0f172a" }}>Revenue Momentum</h4>
+                    <p style={{ margin: 0, color: "#64748b", lineHeight: 1.7 }}>Follow month-over-month earnings and identify the strongest billing period quickly.</p>
                   </div>
                   <div style={{ padding: "14px 16px", borderRadius: 18, background: "linear-gradient(135deg, rgba(15,118,110,0.08), rgba(20,184,166,0.14))", minWidth: 190 }}>
                     <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em", color: "#0f766e", marginBottom: 6 }}>Best Month</div>
                     <div style={{ fontSize: 22, fontWeight: 800, color: "#0f172a", marginBottom: 4 }}>{bestMonth ? bestMonth.month : "No data"}</div>
-                    <div style={{ fontSize: 13, color: "#0f766e", fontWeight: 700 }}>{bestMonth ? money(bestMonth.revenue) : "Profit unavailable"}</div>
+                    <div style={{ fontSize: 13, color: "#0f766e", fontWeight: 700 }}>{bestMonth ? money(bestMonth.revenue) : "Revenue unavailable"}</div>
                   </div>
                 </div>
-                <div style={{ height: isMobile ? 260 : 320 }}>
+                <div style={{ height: 320 }}>
                   {revenue.length ? (
                     <ResponsiveContainer width="100%" height="100%">
                       <AreaChart data={revenue} margin={{ top: 10, right: 8, left: 0, bottom: 0 }}>
@@ -415,32 +398,16 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
                         <CartesianGrid stroke="rgba(148,163,184,0.18)" vertical={false} />
                         <XAxis dataKey="month" tickLine={false} axisLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
                         <YAxis tickFormatter={(v) => `Rs. ${compact(Number(v))}`} tickLine={false} axisLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-                        <Tooltip contentStyle={tipStyle} labelStyle={{ color: "#e2e8f0", fontWeight: 700 }} itemStyle={{ color: "#f8fafc" }} formatter={(v) => [money(num(v)), "Profit"]} />
+                        <Tooltip contentStyle={tipStyle} labelStyle={{ color: "#e2e8f0", fontWeight: 700 }} itemStyle={{ color: "#f8fafc" }} formatter={(v) => [money(num(v)), "Revenue"]} />
                         <Area type="monotone" dataKey="revenue" stroke="#0f766e" strokeWidth={3} fill="url(#analyticsRevenueFill)" />
                       </AreaChart>
                     </ResponsiveContainer>
-                  ) : <div className="no-chart-data" style={{ height: "100%", borderRadius: 22, border: "1px dashed rgba(148,163,184,0.45)", background: "linear-gradient(180deg, rgba(248,250,252,0.95), rgba(241,245,249,0.9))" }}>No profit trend available yet.</div>}
+                  ) : <div className="no-chart-data" style={{ height: "100%", borderRadius: 22, border: "1px dashed rgba(148,163,184,0.45)", background: "linear-gradient(180deg, rgba(248,250,252,0.95), rgba(241,245,249,0.9))" }}>No revenue trend available yet.</div>}
                 </div>
-              </div>
-
-              <div style={{ ...panel, background: "linear-gradient(145deg, #082f49 0%, #0f766e 100%)", color: "#e0f2fe", boxShadow: "0 24px 48px rgba(8,47,73,0.24)" }}>
-                <div style={{ width: 56, height: 56, borderRadius: 18, background: "rgba(255,255,255,0.14)", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18, fontSize: 22 }}><FiTarget /></div>
-                <div style={{ fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em", opacity: 0.8, marginBottom: 8 }}>Service Health</div>
-                <div style={{ fontSize: 54, lineHeight: 1, fontWeight: 900, marginBottom: 10 }}>{healthScore}</div>
-                <p style={{ margin: "0 0 18px 0", lineHeight: 1.8, color: "rgba(224,242,254,0.86)" }}>{healthScore >= 75 ? "Delivery and completion performance looks healthy with manageable queue pressure." : healthScore >= 50 ? "Operations are steady, but throughput can improve." : "Queue pressure is outweighing closure performance."}</p>
-                <div style={{ display: "grid", gap: 12, marginBottom: 18 }}>
-                  {[{ icon: <FiLayers />, label: "Dominant Status", value: topStatus ? `${topStatus.label} (${topStatus.count})` : "No status data" }, { icon: <FiPackage />, label: "Top Category", value: topCategory ? `${topCategory.label} (${topCategory.count})` : "No category data" }, { icon: <FiAlertTriangle />, label: "Urgent Pressure", value: `${urgentRate.toFixed(1)}%` }, { icon: <FiActivity />, label: "Average Daily Orders", value: avgDailyOrders.toFixed(1) }].map((item) => (
-                    <div key={item.label} style={{ display: "grid", gridTemplateColumns: "40px minmax(0, 1fr)", gap: 12, padding: "12px 14px", borderRadius: 18, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                      <div style={{ width: 40, height: 40, borderRadius: 14, background: "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>{item.icon}</div>
-                      <div><div style={{ fontSize: 12, opacity: 0.78, marginBottom: 4 }}>{item.label}</div><div style={{ fontSize: 14, fontWeight: 700, color: "#f8fafc" }}>{item.value}</div></div>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ height: 10, borderRadius: 999, background: "rgba(255,255,255,0.14)", overflow: "hidden" }}><div style={{ width: `${healthScore}%`, height: "100%", borderRadius: 999, background: "linear-gradient(90deg, #f59e0b, #facc15, #86efac)" }} /></div>
               </div>
             </div>
 
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(320px, 1fr))", gap: 18 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 18 }}>
               <div style={panel}>
                 <h4 style={{ margin: "0 0 6px 0", fontSize: 20, color: "#0f172a" }}>Order Velocity</h4>
                 <p style={{ margin: "0 0 14px 0", color: "#64748b", lineHeight: 1.7 }}>Follow the daily order rhythm and spot intake spikes quickly.</p>
@@ -458,75 +425,13 @@ const AnalyticsTab = ({ analyticsData, loading, onRefresh, getStatusColor, getPr
                   ) : <div className="no-chart-data" style={{ height: "100%", borderRadius: 22, border: "1px dashed rgba(148,163,184,0.45)" }}>No order trend data available.</div>}
                 </div>
               </div>
-
-              <div style={panel}>
-                <h4 style={{ margin: "0 0 6px 0", fontSize: 20, color: "#0f172a" }}>Status Mix</h4>
-                <p style={{ margin: "0 0 14px 0", color: "#64748b", lineHeight: 1.7 }}>See how the current workload is split across service stages.</p>
-                <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, alignItems: "center" }}>
-                  <div style={{ height: 260 }}>
-                    {statuses.length ? (
-                      <ResponsiveContainer width="100%" height="100%">
-                        <PieChart>
-                          <Tooltip contentStyle={tipStyle} labelStyle={{ color: "#e2e8f0", fontWeight: 700 }} itemStyle={{ color: "#f8fafc" }} formatter={(v) => [`${num(v)} orders`, "Orders"]} />
-                          <Pie data={statuses} dataKey="count" innerRadius={58} outerRadius={92} paddingAngle={3}>
-                            {statuses.map((e, i) => <Cell key={`${e.status}-${i}`} fill={e.color} />)}
-                          </Pie>
-                        </PieChart>
-                      </ResponsiveContainer>
-                    ) : <div className="no-chart-data" style={{ height: "100%", borderRadius: 20, border: "1px dashed rgba(148,163,184,0.45)" }}>Status distribution unavailable.</div>}
-                  </div>
-                  <div style={{ display: "grid", gap: 10 }}>
-                    {statuses.map((item) => {
-                      const share = totalOrders ? (item.count / totalOrders) * 100 : 0;
-                      return (
-                        <div key={item.status} style={{ padding: "12px 14px", borderRadius: 18, background: "#fff", border: "1px solid rgba(226,232,240,0.95)" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}><span style={{ width: 10, height: 10, borderRadius: 999, background: item.color }} /><span style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{item.label}</span></div>
-                            <span style={{ fontSize: 13, color: "#475569", fontWeight: 700 }}>{item.count}</span>
-                          </div>
-                          <div style={{ height: 8, borderRadius: 999, background: "rgba(226,232,240,0.9)", overflow: "hidden" }}><div style={{ height: "100%", width: `${share}%`, borderRadius: 999, background: item.color }} /></div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-
-              <div style={panel}>
-                <h4 style={{ margin: "0 0 6px 0", fontSize: 20, color: "#0f172a" }}>Priority & Category Insights</h4>
-                <p style={{ margin: "0 0 14px 0", color: "#64748b", lineHeight: 1.7 }}>Balance priority pressure and see which categories are taking the most service attention.</p>
-                <div style={{ height: 200, marginBottom: 16 }}>
-                  {priorities.length ? (
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={priorities} layout="vertical" margin={{ top: 8, right: 10, left: 8, bottom: 8 }}>
-                        <CartesianGrid stroke="rgba(148,163,184,0.16)" horizontal={false} />
-                        <XAxis type="number" allowDecimals={false} tickLine={false} axisLine={false} tick={{ fill: "#64748b", fontSize: 12 }} />
-                        <YAxis dataKey="label" type="category" width={72} tickLine={false} axisLine={false} tick={{ fill: "#334155", fontSize: 12, fontWeight: 700 }} />
-                        <Tooltip contentStyle={tipStyle} labelStyle={{ color: "#e2e8f0", fontWeight: 700 }} itemStyle={{ color: "#f8fafc" }} formatter={(v) => [`${num(v)} orders`, "Orders"]} />
-                        <Bar dataKey="count" radius={[0, 10, 10, 0]}>{priorities.map((e, i) => <Cell key={`${e.priority}-${i}`} fill={e.color} />)}</Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  ) : <div className="no-chart-data" style={{ height: "100%", borderRadius: 20, border: "1px dashed rgba(148,163,184,0.45)" }}>Priority distribution unavailable.</div>}
-                </div>
-                <div style={{ display: "grid", gap: 10 }}>
-                  {categories.slice(0, 4).map((item) => (
-                    <div key={item.category} style={{ padding: "12px 14px", borderRadius: 18, background: "#fff", border: "1px solid rgba(226,232,240,0.95)" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 8, flexWrap: "wrap" }}>
-                        <div><div style={{ fontSize: 14, fontWeight: 800, color: "#0f172a", marginBottom: 4 }}>{item.label}</div><div style={{ fontSize: 12, color: "#64748b" }}>{item.count} service orders</div></div>
-                        <div style={{ textAlign: "right" }}><div style={{ fontSize: 12, color: "#64748b", marginBottom: 4 }}>Tracked value</div><div style={{ fontSize: 14, fontWeight: 800, color: "#0f766e" }}>{money(item.value)}</div></div>
-                      </div>
-                      <div style={{ height: 9, borderRadius: 999, background: "rgba(226,232,240,0.9)", overflow: "hidden" }}><div style={{ height: "100%", width: `${Math.max(8, categoryPeak ? (item.count / categoryPeak) * 100 : 0)}%`, borderRadius: 999, background: "linear-gradient(90deg, #2563eb, #0ea5e9, #14b8a6)" }} /></div>
-                    </div>
-                  ))}
-                </div>
-              </div>
             </div>
           </>
         ) : (
           <div className="no-data" style={{ marginTop: 24, padding: "54px 24px", borderRadius: 26, border: "1px dashed rgba(148,163,184,0.42)", background: "linear-gradient(180deg, rgba(248,250,252,0.95), rgba(241,245,249,0.9))", textAlign: "center" }}>
             <div style={{ width: 72, height: 72, borderRadius: 24, margin: "0 auto 18px", display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg, rgba(15,118,110,0.12), rgba(37,99,235,0.14))", color: "#0f766e", fontSize: 30 }}><FiBarChart2 /></div>
             <h3 style={{ fontSize: 26, color: "#0f172a", marginBottom: 10 }}>{loading ? "Loading analytics..." : "No analytics data available"}</h3>
-            <p style={{ maxWidth: 620, margin: "0 auto 22px", lineHeight: 1.8, color: "#64748b" }}>{loading ? "Pulling the latest operational insights from the analytics API." : "Profit, status, trend, and category insights will appear here as soon as your live service data is available."}</p>
+            <p style={{ maxWidth: 620, margin: "0 auto 22px", lineHeight: 1.8, color: "#64748b" }}>{loading ? "Pulling the latest operational insights from the analytics API." : "Revenue, status, trend, and category insights will appear here as soon as your live service data is available."}</p>
             {!loading ? <button className="btn btn-secondary" onClick={onRefresh}><FiRefreshCw /> Refresh Analytics</button> : null}
           </div>
         )}

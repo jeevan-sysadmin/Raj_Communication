@@ -61,13 +61,6 @@ function normalizeStatusValue($status) {
     return $value;
 }
 
-function isRajToComClaimType($claimType) {
-    $value = strtolower(trim((string)$claimType));
-    $value = str_replace(['-', ' '], '_', $value);
-
-    return in_array($value, ['sun_to_company', 'raj_to_com', 'rajtocom', 'rajtocompany'], true);
-}
-
 function normalizeProductStatusMap($value) {
     if (is_array($value)) {
         $source = $value;
@@ -209,30 +202,6 @@ try {
     $stmt->execute($params);
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-    $allOrderProductIds = [];
-    foreach ($rows as $row) {
-        $primaryIds = normalizeIdList($row['product_ids'] ?? []);
-        if (empty($primaryIds) && isset($row['product_id']) && (int)$row['product_id'] > 0) {
-            $primaryIds = [(int)$row['product_id']];
-        }
-        $replacementIds = normalizeIdList($row['replacement_product_ids'] ?? []);
-        if (empty($replacementIds) && isset($row['replacement_product_id']) && (int)$row['replacement_product_id'] > 0) {
-            $replacementIds = [(int)$row['replacement_product_id']];
-        }
-        $allOrderProductIds = array_merge($allOrderProductIds, $primaryIds, $replacementIds);
-    }
-    $allOrderProductIds = array_values(array_unique(array_filter(array_map('intval', $allOrderProductIds))));
-
-    $productClaimTypeMap = [];
-    if (!empty($allOrderProductIds)) {
-        $placeholders = implode(',', array_fill(0, count($allOrderProductIds), '?'));
-        $claimTypeStmt = $db->prepare("SELECT id, claim_type FROM products WHERE id IN ($placeholders)");
-        $claimTypeStmt->execute($allOrderProductIds);
-        while ($claimRow = $claimTypeStmt->fetch(PDO::FETCH_ASSOC)) {
-            $productClaimTypeMap[(int)$claimRow['id']] = (string)($claimRow['claim_type'] ?? '');
-        }
-    }
-
     $matchedOrders = [];
     $allCompanyIds = [];
     $allProductIds = [];
@@ -248,19 +217,7 @@ try {
             $replacementIds = [(int)$row['replacement_product_id']];
         }
 
-        $isRajToComByStatusMap = containsRajToComStatus($statusMap);
-        $isRajToComByClaimType = isRajToComClaimType($row['primary_claim_type'] ?? '');
-
-        $allIdsForOrder = array_values(array_unique(array_merge($primaryIds, $replacementIds)));
-        $rajtocomByIds = [];
-        foreach ($allIdsForOrder as $productId) {
-            $claimType = $productClaimTypeMap[(int)$productId] ?? '';
-            if (isRajToComClaimType($claimType)) {
-                $rajtocomByIds[] = (int)$productId;
-            }
-        }
-
-        if (!$isRajToComByStatusMap && !$isRajToComByClaimType && empty($rajtocomByIds)) {
+        if (!containsRajToComStatus($statusMap)) {
             continue;
         }
 
@@ -268,20 +225,17 @@ try {
         $allCompanyIds = array_merge($allCompanyIds, $companyIds);
 
         $rajtocomIds = rajToComProductIds($statusMap);
-        if (!empty($rajtocomIds)) {
-            $allProductIds = array_merge($allProductIds, $rajtocomIds);
-        } elseif (!empty($rajtocomByIds)) {
-            $allProductIds = array_merge($allProductIds, $rajtocomByIds);
-        } else {
-            $allProductIds = array_merge($allProductIds, $primaryIds);
+        if (empty($rajtocomIds)) {
+            continue;
         }
+        $allProductIds = array_merge($allProductIds, $rajtocomIds);
 
         $row['order_id'] = (int)$row['id'];
         $row['product_ids'] = $primaryIds;
         $row['replacement_product_ids'] = $replacementIds;
         $row['company_ids'] = $companyIds;
         $row['product_status_map'] = $statusMap;
-        $row['rajtocom_product_ids'] = !empty($rajtocomIds) ? $rajtocomIds : $rajtocomByIds;
+        $row['rajtocom_product_ids'] = $rajtocomIds;
 
         $matchedOrders[] = $row;
     }

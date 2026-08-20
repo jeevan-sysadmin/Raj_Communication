@@ -49,19 +49,134 @@ const normalizeCompany = (row: any): Company => ({
 const normalizeUniqueIds = (ids: string[]) =>
   Array.from(new Set(ids.map((id) => id.trim()).filter(Boolean)));
 
+const normalizeNames = (value: unknown) => {
+  const rawValues =
+    Array.isArray(value)
+      ? value
+      : typeof value === "string"
+        ? (() => {
+            const trimmed = value.trim();
+            if (!trimmed) return [];
+            try {
+              const parsed = JSON.parse(trimmed);
+              if (Array.isArray(parsed)) return parsed;
+            } catch {
+              // keep fallback below
+            }
+            return trimmed.includes("||") ? trimmed.split("||") : trimmed.split(",");
+          })()
+        : [];
+
+  return Array.from(
+    new Set(
+      rawValues
+        .map((entry) => String(entry ?? "").trim())
+        .filter(Boolean),
+    ),
+  );
+};
+
 const flattenCompanyProductIds = (companyIds: string[], companyProductMap: Record<string, string[]>) =>
   normalizeUniqueIds(
     companyIds.flatMap((companyId) => companyProductMap[companyId] || []),
   );
 
+const orderCompanyIdsByProductSequence = (
+  companyIds: string[],
+  companyProductMap: Record<string, string[]>,
+  productIds: string[],
+) => {
+  const dedupedCompanyIds = normalizeUniqueIds([
+    ...companyIds,
+    ...Object.keys(companyProductMap || {}),
+  ]);
+  if (dedupedCompanyIds.length <= 1) return dedupedCompanyIds;
+
+  const companyIndexMap = new Map(dedupedCompanyIds.map((companyId, index) => [companyId, index]));
+  const firstProductIndexByCompany = new Map<string, number>();
+
+  productIds.forEach((productId, productIndex) => {
+    const companyId = dedupedCompanyIds.find((candidateCompanyId) =>
+      (companyProductMap[candidateCompanyId] || []).includes(productId),
+    );
+    if (!companyId || firstProductIndexByCompany.has(companyId)) return;
+    firstProductIndexByCompany.set(companyId, productIndex);
+  });
+
+  return [...dedupedCompanyIds].sort((left, right) => {
+    const leftIndex = firstProductIndexByCompany.get(left) ?? Number.MAX_SAFE_INTEGER;
+    const rightIndex = firstProductIndexByCompany.get(right) ?? Number.MAX_SAFE_INTEGER;
+    if (leftIndex !== rightIndex) return leftIndex - rightIndex;
+    return (companyIndexMap.get(left) ?? 0) - (companyIndexMap.get(right) ?? 0);
+  });
+};
+
+const buildCompanyProductNameMap = (
+  companyIds: string[],
+  companyProductMap: Record<string, string[]>,
+  companies: Company[],
+  products: Product[],
+) =>
+  Object.fromEntries(
+    companyIds.map((companyId) => {
+      const company = companies.find((item) => item.id.toString() === companyId);
+      const productNames = (companyProductMap[companyId] || [])
+        .map((productId) => products.find((product) => product.id.toString() === productId)?.product_name || `Product #${productId}`);
+      return [
+        companyId,
+        {
+          company_name: company?.company_name || `Company #${companyId}`,
+          product_names: productNames,
+        },
+      ];
+    }),
+  );
+
+const parseCompanyProductNameMap = (
+  value: unknown,
+): Record<string, { company_name?: string; product_names?: string[] | string }> => {
+  if (!value) return {};
+  let parsed = value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return {};
+    try {
+      parsed = JSON.parse(trimmed);
+    } catch {
+      return {};
+    }
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+  return parsed as Record<string, { company_name?: string; product_names?: string[] | string }>;
+};
+
+interface CompanyProductDisplayEntry {
+  productId?: string;
+  label: string;
+  serialNumber: string;
+  code: string;
+  brand: string;
+  model: string;
+  quantity: number;
+  isResolvedFromCatalog: boolean;
+}
+
 type ProductFlowStatus = "pending" | "rajtocom" | "comtoraj" | "deliveryed";
 type RepairingStatus = "ready" | "not_ready" | "replacement";
+type AccessoryType = "without_box" | "with_box";
+type HandoverType = "inhand" | "courier" | "parcelservice";
 
 const PRODUCT_FLOW_STATUS_OPTIONS: Array<{ value: ProductFlowStatus; label: string }> = [
   { value: "pending", label: "Pending" },
   { value: "rajtocom", label: "RajToCom" },
   { value: "comtoraj", label: "ComToRaj" },
   { value: "deliveryed", label: "Deliveryed" },
+];
+
+const DELIVERY_TYPE_OPTIONS: Array<{ value: HandoverType; label: string }> = [
+  { value: "inhand", label: "In Hand" },
+  { value: "courier", label: "Courier" },
+  { value: "parcelservice", label: "Parcel Service" },
 ];
 
 const normalizeProductFlowStatus = (status: unknown): ProductFlowStatus => {
@@ -139,7 +254,10 @@ const normalizeProductStatusDatesMap = (
         parsed = JSON.parse(parsed);
       }
     } catch {
-      return {};
+      const trimmed = value.trim();
+      const legacyMatch = trimmed.match(/^\{\s*"(\d+)"\s*\.\s*(\d+)\s*\}$/);
+      if (!legacyMatch) return {};
+      parsed = { [legacyMatch[1]]: Number.parseInt(legacyMatch[2], 10) };
     }
   }
 
@@ -205,6 +323,92 @@ const normalizeIssueDescriptionMap = (value: unknown): Record<string, string> =>
   return normalized;
 };
 
+const normalizeAccessoryType = (value: unknown): AccessoryType | "" => {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "without_box" || normalized === "withoutbox") return "without_box";
+  if (normalized === "with_box" || normalized === "withbox") return "with_box";
+  return "";
+};
+
+const normalizeAccessoryTypeMap = (value: unknown): Record<string, AccessoryType> => {
+  if (!value) return {};
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+      if (typeof parsed === "string") {
+        parsed = JSON.parse(parsed);
+      }
+    } catch {
+      return {};
+    }
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+  const normalized: Record<string, AccessoryType> = {};
+  Object.entries(parsed as Record<string, unknown>).forEach(([productId, accessory]) => {
+    const key = productId.trim();
+    const normalizedAccessory = normalizeAccessoryType(accessory);
+    if (!key || !normalizedAccessory) return;
+    normalized[key] = normalizedAccessory;
+  });
+  return normalized;
+};
+
+const normalizeResultTextMap = (value: unknown): Record<string, string> => normalizeIssueDescriptionMap(value);
+
+const normalizeProductQuantityMap = (value: unknown): Record<string, number> => {
+  if (!value) return {};
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+      if (typeof parsed === "string") {
+        parsed = JSON.parse(parsed);
+      }
+    } catch {
+      return {};
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  const normalized: Record<string, number> = {};
+  Object.entries(parsed as Record<string, unknown>).forEach(([productId, qty]) => {
+    const key = productId.trim();
+    if (!key) return;
+    normalized[key] = Math.max(1, Number.parseInt(String(qty ?? "1"), 10) || 1);
+  });
+  return normalized;
+};
+
+const normalizeHandoverTypeValue = (value: unknown): HandoverType => {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "courier") return "courier";
+  if (normalized === "parcelservice" || normalized === "parcel_service" || normalized === "delivery") return "parcelservice";
+  return "inhand";
+};
+
+const normalizeHandoverTypeMap = (value: unknown): Record<string, HandoverType> => {
+  if (!value) return {};
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+      if (typeof parsed === "string") {
+        parsed = JSON.parse(parsed);
+      }
+    } catch {
+      return {};
+    }
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+  const normalized: Record<string, HandoverType> = {};
+  Object.entries(parsed as Record<string, unknown>).forEach(([productId, handoverType]) => {
+    const key = productId.trim();
+    if (!key) return;
+    normalized[key] = normalizeHandoverTypeValue(handoverType);
+  });
+  return normalized;
+};
+
 const parseJsonResponseSafely = async <T,>(response: Response): Promise<T | null> => {
   const rawBody = await response.text();
   const trimmedBody = rawBody.trim();
@@ -234,6 +438,11 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
   const [productStatusMap, setProductStatusMap] = useState<Record<string, ProductFlowStatus>>({});
   const [repairingStatusMapState, setRepairingStatusMapState] = useState<Record<string, RepairingStatus>>({});
   const [issueDescriptionMapState, setIssueDescriptionMapState] = useState<Record<string, string>>({});
+  const [accessoryTypeMapState, setAccessoryTypeMapState] = useState<Record<string, AccessoryType>>({});
+  const [resultTextMapState, setResultTextMapState] = useState<Record<string, string>>({});
+  const [handoverTypeMapState, setHandoverTypeMapState] = useState<Record<string, HandoverType>>({});
+  const [productQuantityMapState, setProductQuantityMapState] = useState<Record<string, number>>({});
+  const formRef = useRef<HTMLFormElement | null>(null);
   const [activeCompanyId, setActiveCompanyId] = useState("");
   const [companySelectValue, setCompanySelectValue] = useState("");
   const companySelectRef = useRef<HTMLSelectElement>(null);
@@ -273,6 +482,9 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
       setProductStatusMap({});
       setRepairingStatusMapState({});
       setIssueDescriptionMapState({});
+      setAccessoryTypeMapState({});
+      setResultTextMapState({});
+      setProductQuantityMapState({});
       setActiveCompanyId("");
       setCompanySelectValue("");
       initializedFromOrderRef.current = false;
@@ -311,28 +523,48 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
       normalizedMap[companyId] = normalizeUniqueIds(initialCompanyProductMap[companyId] || []);
     });
     
-    setSelectedCompanyIds(initialCompanyIds);
+    const orderedCompanyIds = orderCompanyIdsByProductSequence(initialCompanyIds, normalizedMap, initialProductIds);
+    setSelectedCompanyIds(orderedCompanyIds);
     setCompanyProductMap(normalizedMap);
-    setActiveCompanyId(initialCompanyIds[0] || "");
+    setActiveCompanyId(orderedCompanyIds[0] || "");
     setCompanySelectValue("");
     
     // Sync products to parent component
-    const allProductIds = flattenCompanyProductIds(initialCompanyIds, normalizedMap);
+    const allProductIds = flattenCompanyProductIds(orderedCompanyIds, normalizedMap);
     const incomingProductStatusMap = normalizeProductStatusMap((orderForm as any).product_status_map);
     const incomingRepairingStatusMap = normalizeRepairingStatusMap((orderForm as any).repairing_status_map);
     const incomingIssueDescriptionMap = normalizeIssueDescriptionMap((orderForm as any).issue_description_map);
+    const incomingAccessoryTypeMap = normalizeAccessoryTypeMap((orderForm as any).accessory_type_map);
+    const incomingResultTextMap = normalizeResultTextMap((orderForm as any).result_text_map);
+    const incomingHandoverTypeMap = normalizeHandoverTypeMap((orderForm as any).handover_type_map);
+    const incomingProductQuantityMap = normalizeProductQuantityMap((orderForm as any).product_quantity_map);
     const normalizedProductStatusMap: Record<string, ProductFlowStatus> = {};
     const normalizedRepairingStatusMap: Record<string, RepairingStatus> = {};
     const normalizedIssueDescriptionMap: Record<string, string> = {};
+    const normalizedAccessoryTypeMap: Record<string, AccessoryType> = {};
+    const normalizedResultTextMap: Record<string, string> = {};
+    const normalizedHandoverTypeMap: Record<string, HandoverType> = {};
+    const normalizedProductQuantityMap: Record<string, number> = {};
     allProductIds.forEach((productId) => {
       normalizedProductStatusMap[productId] = normalizeProductFlowStatus(incomingProductStatusMap[productId]);
       normalizedRepairingStatusMap[productId] = normalizeRepairingStatus(incomingRepairingStatusMap[productId]);
       normalizedIssueDescriptionMap[productId] = String(incomingIssueDescriptionMap[productId] || "").trim();
+      const accessoryValue = normalizeAccessoryType(incomingAccessoryTypeMap[productId]);
+      if (accessoryValue) {
+        normalizedAccessoryTypeMap[productId] = accessoryValue;
+      }
+      normalizedResultTextMap[productId] = String(incomingResultTextMap[productId] || "").trim();
+      normalizedHandoverTypeMap[productId] = normalizeHandoverTypeValue(incomingHandoverTypeMap[productId] || (orderForm as any).handover_type);
+      normalizedProductQuantityMap[productId] = Math.max(1, Number(incomingProductQuantityMap[productId] || 1));
     });
 
     setProductStatusMap(normalizedProductStatusMap);
     setRepairingStatusMapState(normalizedRepairingStatusMap);
     setIssueDescriptionMapState(normalizedIssueDescriptionMap);
+    setAccessoryTypeMapState(normalizedAccessoryTypeMap);
+    setResultTextMapState(normalizedResultTextMap);
+    setHandoverTypeMapState(normalizedHandoverTypeMap);
+    setProductQuantityMapState(normalizedProductQuantityMap);
     onChange({
       target: { name: "product_status_map", value: JSON.stringify(normalizedProductStatusMap) }
     } as ChangeEvent<HTMLInputElement>);
@@ -341,6 +573,18 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
     } as ChangeEvent<HTMLInputElement>);
     onChange({
       target: { name: "issue_description_map", value: JSON.stringify(normalizedIssueDescriptionMap) }
+    } as ChangeEvent<HTMLInputElement>);
+    onChange({
+      target: { name: "accessory_type_map", value: JSON.stringify(normalizedAccessoryTypeMap) }
+    } as ChangeEvent<HTMLInputElement>);
+    onChange({
+      target: { name: "result_text_map", value: JSON.stringify(normalizedResultTextMap) }
+    } as ChangeEvent<HTMLInputElement>);
+    onChange({
+      target: { name: "handover_type_map", value: JSON.stringify(normalizedHandoverTypeMap) }
+    } as ChangeEvent<HTMLInputElement>);
+    onChange({
+      target: { name: "product_quantity_map", value: JSON.stringify(normalizedProductQuantityMap) }
     } as ChangeEvent<HTMLInputElement>);
 
     if (allProductIds.length > 0 && initialProductIds.length === 0) {
@@ -451,6 +695,72 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
         .filter(Boolean) as Company[],
     [companies, selectedCompanyIds],
   );
+  const companyProductNameMap = useMemo(
+    () => parseCompanyProductNameMap(orderForm.company_product_name_map),
+    [orderForm.company_product_name_map],
+  );
+  const selectedCompanyProductGroups = useMemo(
+    () =>
+      selectedCompanies.map((company) => ({
+        company,
+        entries: (() => {
+          const mappedIds = companyProductMap[company.id.toString()] || [];
+          const idEntries: CompanyProductDisplayEntry[] = mappedIds.map((productId) => {
+            const matchedProduct = products.find((product) => product.id.toString() === productId);
+            return {
+              productId,
+              label: matchedProduct?.product_name || `Product #${productId}`,
+              serialNumber: matchedProduct?.serial_number || "",
+              code: matchedProduct?.product_code || "",
+              brand: matchedProduct?.brand || "",
+              model: matchedProduct?.model || "",
+              quantity: productQuantityMapState[productId] ?? 1,
+              isResolvedFromCatalog: Boolean(matchedProduct),
+            };
+          });
+          const existingLabels = new Set(
+            idEntries.map((entry) => entry.label.trim().toLowerCase()).filter(Boolean),
+          );
+          const nameOnlyEntries: CompanyProductDisplayEntry[] = normalizeNames(
+            companyProductNameMap[company.id.toString()]?.product_names || [],
+          )
+            .filter((productName: string) => !existingLabels.has(productName.trim().toLowerCase()))
+            .map((productName: string) => {
+              const matchedProduct = products.find(
+                (product) => product.product_name.trim().toLowerCase() === productName.trim().toLowerCase(),
+              );
+              return {
+                productId: matchedProduct?.id?.toString(),
+                label: productName,
+                serialNumber: matchedProduct?.serial_number || "",
+                code: matchedProduct?.product_code || "",
+                brand: matchedProduct?.brand || "",
+                model: matchedProduct?.model || "",
+                quantity: matchedProduct?.id ? (productQuantityMapState[matchedProduct.id.toString()] ?? 1) : 1,
+                isResolvedFromCatalog: Boolean(matchedProduct),
+              };
+            });
+          return [...idEntries, ...nameOnlyEntries];
+        })(),
+      })),
+    [companyProductMap, companyProductNameMap, productQuantityMapState, products, selectedCompanies],
+  );
+  const selectedProductDisplayEntries = useMemo(
+    () =>
+      selectedCompanyProductGroups.length > 0
+        ? selectedCompanyProductGroups.flatMap(({ entries }) => entries)
+        : selectedProducts.map((product) => ({
+            productId: product.id.toString(),
+            label: product.product_name,
+            serialNumber: product.serial_number || "",
+            code: product.product_code || "",
+            brand: product.brand || "",
+            model: product.model || "",
+            quantity: productQuantityMapState[product.id.toString()] ?? 1,
+            isResolvedFromCatalog: true,
+          })),
+    [productQuantityMapState, selectedCompanyProductGroups, selectedProducts],
+  );
   
   const selectedCompanyNamesPreview = selectedCompanies.map((company) => company.company_name).join(", ");
   const activeCompany = useMemo(
@@ -458,23 +768,31 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
     [activeCompanyId, selectedCompanies],
   );
   
-  const selectedProduct = selectedProducts[0] || null;
   const selectedReplacementProduct = selectedReplacementProducts[0] || null;
-  const productPreview = selectedProduct
-    ? `${selectedProduct.product_name}${selectedProducts.length > 1 ? ` +${selectedProducts.length - 1}` : ""}`
+  const selectedProductDisplayCount = selectedProductDisplayEntries.length;
+  const selectedProductDisplay = selectedProductDisplayEntries[0] || null;
+  const productPreview = selectedProductDisplay
+    ? `${selectedProductDisplay.label}${selectedProductDisplayCount > 1 ? ` +${selectedProductDisplayCount - 1}` : ""}`
     : orderForm.product_name || "Choose a product for service";
   const replacementPreview = selectedReplacementProduct
     ? `${selectedReplacementProduct.product_name}${selectedReplacementProducts.length > 1 ? ` +${selectedReplacementProducts.length - 1}` : ""}`
     : "";
-  const previewPrimaryItems = selectedProducts.map((product) =>
-    product.serial_number ? `${product.product_name} (SN: ${product.serial_number})` : product.product_name,
+  const previewPrimaryItems = selectedProductDisplayEntries.map((product) =>
+    product.serialNumber ? `${product.label} (SN: ${product.serialNumber})` : product.label,
   );
+  const previewCompanyItems = selectedCompanyProductGroups.map(({ company, entries }) => ({
+    companyName: company.company_name,
+    productLines: entries.map((product) =>
+      product.serialNumber ? `${product.label} (SN: ${product.serialNumber})` : product.label,
+    ),
+  }));
   const previewReplacementItems = selectedReplacementProducts.map((product) =>
     product.serial_number ? `${product.product_name} (SN: ${product.serial_number})` : product.product_name,
   );
-  const previewRepairingItems = selectedProducts.map((product) => {
-    const status = (repairingStatusMap[product.id.toString()] || "not_ready").replaceAll("_", " ");
-    return `${product.product_name}: ${status}`;
+  const previewRepairingItems = selectedProductDisplayEntries.map((product) => {
+    if (!product.productId) return `${product.label}: saved in order`;
+    const status = (repairingStatusMap[product.productId] || "not_ready").replaceAll("_", " ");
+    return `${product.label}: ${status}`;
   });
   const estimatedCost = Number.parseFloat(orderForm.estimated_cost || "0") || 0;
   const depositAmount = Number.parseFloat(orderForm.deposit_amount || "0") || 0;
@@ -486,7 +804,12 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
   const getProductFlowStatusColor = (status: ProductFlowStatus) => ({ pending: "#f59e0b", rajtocom: "#3b82f6", comtoraj: "#8b5cf6", deliveryed: "#10b981" }[status] || "#f59e0b");
   
   const syncOrderCompanyAndProducts = (companyIds: string[], map: Record<string, string[]>, statusMapOverride?: Record<string, ProductFlowStatus>) => {
-    const dedupedCompanyIds = normalizeUniqueIds(companyIds);
+    const normalizedCompanyIds = normalizeUniqueIds(companyIds);
+    const dedupedCompanyIds = orderCompanyIdsByProductSequence(
+      normalizedCompanyIds,
+      map,
+      flattenCompanyProductIds(normalizedCompanyIds, map),
+    );
     const primaryCompanyId = dedupedCompanyIds[0] || "";
     
     // Get company names for display
@@ -499,13 +822,16 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
     const sourceProductStatusMap = statusMapOverride || productStatusMap;
     const sourceRepairingStatusMap = repairingStatusMapState;
     const sourceIssueDescriptionMap = issueDescriptionMapState;
+    const sourceProductQuantityMap = productQuantityMapState;
     const nextProductStatusMap: Record<string, ProductFlowStatus> = {};
     const nextRepairingStatusMap: Record<string, RepairingStatus> = {};
     const nextIssueDescriptionMap: Record<string, string> = {};
+    const nextProductQuantityMap: Record<string, number> = {};
     allProductIds.forEach((productId) => {
       nextProductStatusMap[productId] = normalizeProductFlowStatus(sourceProductStatusMap[productId]);
       nextRepairingStatusMap[productId] = normalizeRepairingStatus(sourceRepairingStatusMap[productId]);
       nextIssueDescriptionMap[productId] = String(sourceIssueDescriptionMap[productId] || "").trim();
+      nextProductQuantityMap[productId] = Math.max(1, Number(sourceProductQuantityMap[productId] || 1));
     });
     
     // Update all related fields
@@ -525,6 +851,13 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
     onChange({
       target: { name: "company_product_map", value: JSON.stringify(map) }
     } as ChangeEvent<HTMLInputElement>);
+
+    onChange({
+      target: {
+        name: "company_product_name_map",
+        value: JSON.stringify(buildCompanyProductNameMap(dedupedCompanyIds, map, companies, products)),
+      }
+    } as ChangeEvent<HTMLInputElement>);
     
     // Also store companies_products for backward compatibility
     onChange({
@@ -540,11 +873,15 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
     onChange({
       target: { name: "issue_description_map", value: JSON.stringify(nextIssueDescriptionMap) }
     } as ChangeEvent<HTMLInputElement>);
+    onChange({
+      target: { name: "product_quantity_map", value: JSON.stringify(nextProductQuantityMap) }
+    } as ChangeEvent<HTMLInputElement>);
     
     // Update product list
     setProductStatusMap(nextProductStatusMap);
     setRepairingStatusMapState(nextRepairingStatusMap);
     setIssueDescriptionMapState(nextIssueDescriptionMap);
+    setProductQuantityMapState(nextProductQuantityMap);
     onProductsChange(allProductIds);
   };
   
@@ -664,6 +1001,86 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
       target: { name: "issue_description_map", value: JSON.stringify(nextIssueMap) }
     } as ChangeEvent<HTMLInputElement>);
   };
+
+  const updateAccessoryType = (productId: string, accessoryType: string) => {
+    const normalizedProductId = productId.trim();
+    if (!normalizedProductId) return;
+    const normalizedAccessory = normalizeAccessoryType(accessoryType);
+    const nextAccessoryMap = { ...accessoryTypeMapState };
+    if (normalizedAccessory) {
+      nextAccessoryMap[normalizedProductId] = normalizedAccessory;
+    } else {
+      delete nextAccessoryMap[normalizedProductId];
+    }
+    setAccessoryTypeMapState(nextAccessoryMap);
+    onChange({
+      target: { name: "accessory_type_map", value: JSON.stringify(nextAccessoryMap) }
+    } as ChangeEvent<HTMLInputElement>);
+  };
+
+  const updateResultText = (productId: string, resultText: string) => {
+    const normalizedProductId = productId.trim();
+    if (!normalizedProductId) return;
+    const nextResultMap: Record<string, string> = {
+      ...resultTextMapState,
+      [normalizedProductId]: resultText,
+    };
+    setResultTextMapState(nextResultMap);
+    onChange({
+      target: { name: "result_text_map", value: JSON.stringify(nextResultMap) }
+    } as ChangeEvent<HTMLInputElement>);
+  };
+
+  const updateProductQuantity = (productId: string, quantity: string) => {
+    const normalizedProductId = productId.trim();
+    if (!normalizedProductId) return;
+    const normalizedQuantity = Math.max(1, Number.parseInt(String(quantity || "1"), 10) || 1);
+    const nextQuantityMap: Record<string, number> = {
+      ...productQuantityMapState,
+      [normalizedProductId]: normalizedQuantity,
+    };
+    setProductQuantityMapState(nextQuantityMap);
+    onChange({
+      target: { name: "product_quantity_map", value: JSON.stringify(nextQuantityMap) }
+    } as ChangeEvent<HTMLInputElement>);
+  };
+
+  const updateHandoverType = (productId: string, handoverType: string) => {
+    const normalizedProductId = productId.trim();
+    if (!normalizedProductId) return;
+    const normalizedType = normalizeHandoverTypeValue(handoverType);
+    const nextHandoverMap: Record<string, HandoverType> = {
+      ...handoverTypeMapState,
+      [normalizedProductId]: normalizedType,
+    };
+    setHandoverTypeMapState(nextHandoverMap);
+    onChange({
+      target: { name: "handover_type_map", value: JSON.stringify(nextHandoverMap) }
+    } as ChangeEvent<HTMLInputElement>);
+  };
+
+  const handleFormSubmit = (e: FormEvent<HTMLFormElement>) => {
+    const form = formRef.current || e.currentTarget;
+    const syncHiddenField = (name: string, value: string) => {
+      const field = form.elements.namedItem(name) as HTMLInputElement | RadioNodeList | null;
+      if (field && "value" in field) {
+        field.value = value;
+      }
+      onChange({
+        target: { name, value },
+      } as ChangeEvent<HTMLInputElement>);
+    };
+
+    syncHiddenField("product_status_map", JSON.stringify(productStatusMap));
+    syncHiddenField("repairing_status_map", JSON.stringify(repairingStatusMapState));
+    syncHiddenField("issue_description_map", JSON.stringify(issueDescriptionMapState));
+    syncHiddenField("accessory_type_map", JSON.stringify(accessoryTypeMapState));
+    syncHiddenField("result_text_map", JSON.stringify(resultTextMapState));
+    syncHiddenField("handover_type_map", JSON.stringify(handoverTypeMapState));
+    syncHiddenField("product_quantity_map", JSON.stringify(productQuantityMapState));
+
+    onSubmit(e);
+  };
   
   const addCompany = (companyId: string) => {
     const normalizedCompanyId = companyId.trim();
@@ -728,9 +1145,17 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
     onChange({
       target: { name: "issue_description_map", value: JSON.stringify({}) },
     } as ChangeEvent<HTMLInputElement>);
+    onChange({
+      target: { name: "accessory_type_map", value: JSON.stringify({}) },
+    } as ChangeEvent<HTMLInputElement>);
+    onChange({
+      target: { name: "result_text_map", value: JSON.stringify({}) },
+    } as ChangeEvent<HTMLInputElement>);
     setProductStatusMap({});
     setRepairingStatusMapState({});
     setIssueDescriptionMapState({});
+    setAccessoryTypeMapState({});
+    setResultTextMapState({});
     onProductsChange([]);
   };
   
@@ -783,14 +1208,35 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
             <motion.button className="close-btn-enhanced" onClick={onClose} whileHover={{ rotate: 90, scale: 1.1 }} whileTap={{ scale: 0.9 }}><FiX /></motion.button>
           </div>
 
-          <form autoComplete="off" onSubmit={onSubmit} className="service-form-enhanced order-form-enhanced">
+          <form ref={formRef} autoComplete="off" onSubmit={handleFormSubmit} className="service-form-enhanced order-form-enhanced">
             <div className="order-form-shell">
               <aside className="order-form-aside">
                 <div className="order-preview-card">
                   <span className="order-preview-badge">{editMode ? "Live Order Snapshot" : "New Order Snapshot"}</span>
                   <h3>{selectedClient?.full_name || "Select a client"}</h3>
                   <p>{productPreview}</p>
-                  {previewPrimaryItems.length > 0 && (
+                  {previewCompanyItems.length > 0 ? (
+                    <div className="order-preview-groups">
+                      {previewCompanyItems.map((group, index) => (
+                        <div key={`preview-company-${group.companyName}-${index}`} className="order-preview-group">
+                          <strong>{group.companyName}:</strong>
+                          {group.productLines.length > 0 ? (
+                            <div className="order-preview-group-lines">
+                              {group.productLines.map((line, lineIndex) => (
+                                <span key={`preview-line-${group.companyName}-${lineIndex}`}>
+                                  {lineIndex + 1}. {line}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <div className="order-preview-group-lines">
+                              <span>No products added</span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : previewPrimaryItems.length > 0 && (
                     <p className="order-preview-products" title={previewPrimaryItems.join(", ")}>
                       Products: {previewPrimaryItems.join(", ")}
                     </p>
@@ -897,70 +1343,6 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
                       </select>
                       <FiChevronDown className="dropdown-icon" />
                     </div>
-                    {selectedCompanies.length > 0 && (
-                      <div className="selected-info">
-                        <button type="button" className="selected-products-clear" onClick={openAddCompany}>
-                          <FiPlus /> Add Company
-                        </button>
-                        <button type="button" className="selected-products-clear" onClick={() => openAddProduct()}>
-                          <FiPlus /> Add Product
-                        </button>
-                      </div>
-                    )}
-                    {selectedCompanies.length > 0 && (
-                      <div className="selected-products-box">
-                        <div className="selected-products-header">
-                          <div className="selected-products-title">
-                            <strong>Company + Products</strong>
-                            <span>{selectedCompanies.length} item{selectedCompanies.length > 1 ? "s" : ""} added</span>
-                          </div>
-                          <button type="button" className="selected-products-clear" onClick={clearCompanies}>
-                            Clear all
-                          </button>
-                        </div>
-                        <div className="selected-products-grid">
-                          {selectedCompanies.map((company, index) => (
-                            <div
-                              key={company.id}
-                              className="selected-product-card"
-                              onClick={() => setActiveCompanyId(company.id.toString())}
-                              style={{
-                                borderColor: activeCompanyId === company.id.toString() ? "#3b82f6" : undefined,
-                                cursor: "pointer",
-                              }}
-                            >
-                              <div className="selected-product-index">{index + 1}</div>
-                              <div className="selected-product-content">
-                                <div className="selected-product-name">{company.company_name}</div>
-                                <div className="selected-product-meta">
-                                  {company.company_code && <span>Code: {company.company_code}</span>}
-                                  {company.product && <span>Product: {company.product}</span>}
-                                  {company.phone && <span>{company.phone}</span>}
-                                </div>
-                                <div className="selected-product-meta">
-                                  <span>
-                                    Products: {
-                                      (companyProductMap[company.id.toString()] || [])
-                                        .map((productId) => products.find((product) => product.id.toString() === productId)?.product_name)
-                                        .filter(Boolean)
-                                        .join(", ") || "No products added"
-                                    }
-                                  </span>
-                                </div>
-                                <div className="selected-info">
-                                  <button type="button" className="selected-products-clear" onClick={(event) => { event.stopPropagation(); openAddProduct(company.id.toString()); }}>
-                                    <FiPlus /> Add Product
-                                  </button>
-                                </div>
-                              </div>
-                              <button type="button" className="selected-product-remove" onClick={(event) => { event.stopPropagation(); removeCompany(company.id.toString()); }}>
-                                <FiX />
-                              </button>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
                     <div className="input-hint info"><FiCheck /> Select company first, then click Add Product for that company.</div>
                   </div>
 
@@ -993,67 +1375,234 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
                         </motion.div>}
                       </AnimatePresence>
                     </div>
-                    {selectedProducts.length > 0 ? (
+                    <div className="input-hint info"><FiCheck /> Select at least one product</div>
+                  </div>
+
+                  <div className="form-group-enhanced full-width order-company-products-stage">
+                    <div className="order-inline-toolbar">
+                      <div className="order-inline-toolbar-copy">
+                        <strong>Company and product workspace</strong>
+                        <span>Manage each company, add products, and update service progress from one place.</span>
+                      </div>
+                      <div className="order-inline-toolbar-actions">
+                        <button type="button" className="selected-products-clear" onClick={openAddCompany}>
+                          <FiPlus /> Add Company
+                        </button>
+                        <button type="button" className="selected-products-clear" onClick={() => openAddProduct()}>
+                          <FiPlus /> Add Product
+                        </button>
+                        {selectedCompanies.length > 0 && (
+                          <button type="button" className="selected-products-clear danger-clear" onClick={clearCompanies}>
+                            Clear Companies
+                          </button>
+                        )}
+                        {selectedProductDisplayCount > 0 && (
+                          <button type="button" className="selected-products-clear danger-clear" onClick={clearAllCompanyProducts}>
+                            Clear Products
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {selectedCompanies.length > 0 && (
                       <div className="selected-products-box">
                         <div className="selected-products-header">
                           <div className="selected-products-title">
-                            <strong>Selected Products</strong>
-                            <span>{selectedProducts.length} item{selectedProducts.length > 1 ? "s" : ""} added</span>
+                            <strong>Company + Products</strong>
+                            <span>{selectedCompanies.length} item{selectedCompanies.length > 1 ? "s" : ""} added</span>
                           </div>
-                          <button type="button" className="selected-products-clear" onClick={clearAllCompanyProducts}>
-                            Clear all
-                          </button>
                         </div>
                         <div className="selected-products-grid">
-                          {selectedProducts.map((product, index) => (
-                            <div key={product.id} className="selected-product-card">
+                          {selectedCompanies.map((company, index) => (
+                            <div
+                              key={company.id}
+                              className="selected-product-card"
+                              onClick={() => setActiveCompanyId(company.id.toString())}
+                              style={{
+                                borderColor: activeCompanyId === company.id.toString() ? "#3b82f6" : undefined,
+                                cursor: "pointer",
+                              }}
+                            >
                               <div className="selected-product-index">{index + 1}</div>
                               <div className="selected-product-content">
-                                <div className="selected-product-name">{product.product_name}</div>
+                                <div className="selected-product-name">{company.company_name}</div>
                                 <div className="selected-product-meta">
-                                  {product.product_code && <span>Code: {product.product_code}</span>}
-                                  {product.serial_number && <span>SN: {product.serial_number}</span>}
-                                  <span>Qty: {Number(product.stock_quantity ?? 0)}</span>
-                                  {product.brand && <span>{product.brand}</span>}
-                                  {product.model && <span>{product.model}</span>}
+                                  {company.company_code && <span>Code: {company.company_code}</span>}
+                                  {company.product && <span>Product: {company.product}</span>}
+                                  {company.phone && <span>{company.phone}</span>}
                                 </div>
-                                <div className="enhanced-dropdown" style={{ marginTop: "10px" }}>
-                                  <select
-                                    value={productStatusMap[product.id.toString()] || "pending"}
-                                    onChange={(e) => updateProductStatus(product.id.toString(), e.target.value)}
-                                    className="enhanced-select"
-                                    style={{ borderLeftColor: getProductFlowStatusColor(productStatusMap[product.id.toString()] || "pending") }}
-                                  >
-                                    {PRODUCT_FLOW_STATUS_OPTIONS.map((statusOption) => (
-                                      <option key={statusOption.value} value={statusOption.value}>
-                                        {statusOption.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                  <FiChevronDown className="dropdown-icon" />
+                                <div className="selected-product-meta">
+                                  <span>
+                                    Products: {
+                                      selectedCompanyProductGroups
+                                        .find((group) => group.company.id === company.id)
+                                        ?.entries.map((entry) => entry.label)
+                                        .join(", ") || "No products added"
+                                    }
+                                  </span>
                                 </div>
-                                <div className="enhanced-dropdown" style={{ marginTop: "10px" }}>
-                                  <select
-                                    value={repairingStatusMap[product.id.toString()] || "not_ready"}
-                                    onChange={(e) => updateRepairingStatus(product.id.toString(), e.target.value)}
-                                    className="enhanced-select"
-                                  >
-                                    <option value="ready">Ready</option>
-                                    <option value="not_ready">Not ready</option>
-                                    <option value="replacement">Replacement</option>
-                                  </select>
-                                  <FiChevronDown className="dropdown-icon" />
+                                <div className="selected-info">
+                                  <button type="button" className="selected-products-clear" onClick={(event) => { event.stopPropagation(); openAddProduct(company.id.toString()); }}>
+                                    <FiPlus /> Add Product
+                                  </button>
                                 </div>
-                                <textarea
-                                  value={issueDescriptionMapState[product.id.toString()] || ""}
-                                  onChange={(e) => updateProductIssueDescription(product.id.toString(), e.target.value)}
-                                  placeholder="Issue Description for this product"
-                                  rows={2}
-                                  className="enhanced-textarea"
-                                  style={{ marginTop: "10px" }}
-                                />
                               </div>
-                              <button type="button" className="selected-product-remove" onClick={() => removeProduct(product.id.toString())}>
+                              <button type="button" className="selected-product-remove" onClick={(event) => { event.stopPropagation(); removeCompany(company.id.toString()); }}>
+                                <FiX />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {selectedProductDisplayCount > 0 ? (
+                      <div className="selected-products-box">
+                        <div className="selected-products-header">
+                          <div className="selected-products-title">
+                            <strong>Selected Products by Company</strong>
+                            <span>{selectedProductDisplayCount} item{selectedProductDisplayCount > 1 ? "s" : ""} added</span>
+                          </div>
+                        </div>
+                        <div className="selected-products-grid">
+                          {selectedCompanyProductGroups.map(({ company, entries: companyProducts }, companyIndex) => (
+                            <div key={`company-group-${company.id}`} className="selected-product-card" style={{ gridColumn: "1 / -1" }}>
+                              <div className="selected-product-index">{companyIndex + 1}</div>
+                              <div className="selected-product-content">
+                                <div className="selected-product-name">{company.company_name}</div>
+                                <div className="selected-product-meta">
+                                  <span>{companyProducts.length} product{companyProducts.length !== 1 ? "s" : ""}</span>
+                                  {company.company_code && <span>Code: {company.company_code}</span>}
+                                </div>
+                                {companyProducts.length > 0 ? (
+                                  <div className="selected-products-grid" style={{ marginTop: "12px" }}>
+                                    {companyProducts.map((product) => (
+                                      <div key={`company-${company.id}-product-${product.productId || product.label}`} className="selected-product-card">
+                                        <div className="selected-product-content">
+                                          <div className="selected-product-name">{product.label}</div>
+                                          <div className="selected-product-meta">
+                                            {product.code && <span>Code: {product.code}</span>}
+                                            {product.serialNumber && <span>SN: {product.serialNumber}</span>}
+                                            <span>Qty: {product.quantity}</span>
+                                            {product.brand && <span>{product.brand}</span>}
+                                            {product.model && <span>{product.model}</span>}
+                                          </div>
+                                          {product.productId ? (
+                                            <>
+                                              <div style={{ marginTop: "10px" }}>
+                                                <label style={{ display: "block", fontSize: "12px", fontWeight: 600, marginBottom: "6px", color: "#475569" }}>
+                                                  Qty
+                                                </label>
+                                                <input
+                                                  type="number"
+                                                  min="1"
+                                                  step="1"
+                                                  value={product.quantity}
+                                                  onChange={(e) => updateProductQuantity(product.productId!, e.target.value)}
+                                                  className="enhanced-input"
+                                                />
+                                              </div>
+                                              <div className="enhanced-dropdown" style={{ marginTop: "10px" }}>
+                                                <select
+                                                  value={productStatusMap[product.productId] || "pending"}
+                                                  onChange={(e) => updateProductStatus(product.productId!, e.target.value)}
+                                                  className="enhanced-select"
+                                                  style={{ borderLeftColor: getProductFlowStatusColor(productStatusMap[product.productId] || "pending") }}
+                                                >
+                                                  {PRODUCT_FLOW_STATUS_OPTIONS.map((statusOption) => (
+                                                    <option key={statusOption.value} value={statusOption.value}>
+                                                      {statusOption.label}
+                                                    </option>
+                                                  ))}
+                                                </select>
+                                                <FiChevronDown className="dropdown-icon" />
+                                              </div>
+                                              <div className="enhanced-dropdown" style={{ marginTop: "10px" }}>
+                                                <select
+                                                  value={repairingStatusMap[product.productId] || "not_ready"}
+                                                  onChange={(e) => updateRepairingStatus(product.productId!, e.target.value)}
+                                                  className="enhanced-select"
+                                                >
+                                                  <option value="ready">Ready</option>
+                                                  <option value="not_ready">Not ready</option>
+                                                  <option value="replacement">Replacement</option>
+                                                </select>
+                                                <FiChevronDown className="dropdown-icon" />
+                                              </div>
+                                              <textarea
+                                                value={issueDescriptionMapState[product.productId] || ""}
+                                                onChange={(e) => updateProductIssueDescription(product.productId!, e.target.value)}
+                                                placeholder="Issue Description for this product"
+                                                rows={2}
+                                                className="enhanced-textarea"
+                                                style={{ marginTop: "10px" }}
+                                              />
+                                              {productStatusMap[product.productId] === "rajtocom" && (
+                                                <div className="enhanced-dropdown" style={{ marginTop: "10px" }}>
+                                                  <select
+                                                    value={accessoryTypeMapState[product.productId] || ""}
+                                                    onChange={(e) => updateAccessoryType(product.productId!, e.target.value)}
+                                                    className="enhanced-select"
+                                                  >
+                                                    <option value="">Select Accessory</option>
+                                                    <option value="without_box">Without Box</option>
+                                                    <option value="with_box">With Box</option>
+                                                  </select>
+                                                  <FiChevronDown className="dropdown-icon" />
+                                                </div>
+                                              )}
+                                              {productStatusMap[product.productId] === "deliveryed" && (
+                                                <div className="enhanced-dropdown" style={{ marginTop: "10px" }}>
+                                                  <select
+                                                    value={handoverTypeMapState[product.productId] || "inhand"}
+                                                    onChange={(e) => updateHandoverType(product.productId!, e.target.value)}
+                                                    className="enhanced-select"
+                                                  >
+                                                    {DELIVERY_TYPE_OPTIONS.map((option) => (
+                                                      <option key={option.value} value={option.value}>
+                                                        {option.label}
+                                                      </option>
+                                                    ))}
+                                                  </select>
+                                                  <FiChevronDown className="dropdown-icon" />
+                                                </div>
+                                              )}
+                                              {(productStatusMap[product.productId] === "comtoraj" || productStatusMap[product.productId] === "deliveryed") && (
+                                                <textarea
+                                                  value={resultTextMapState[product.productId] || ""}
+                                                  onChange={(e) => updateResultText(product.productId!, e.target.value)}
+                                                  placeholder="Enter Result"
+                                                  rows={2}
+                                                  className="enhanced-textarea"
+                                                  style={{ marginTop: "10px" }}
+                                                />
+                                              )}
+                                            </>
+                                          ) : (
+                                            <div className="input-hint info" style={{ marginTop: "10px" }}>
+                                              <FiCheck /> This saved product is shown from order history. Add or map the catalog product if you want per-product editing here.
+                                            </div>
+                                          )}
+                                        </div>
+                                        {product.productId && (
+                                          <button
+                                            type="button"
+                                            className="selected-product-remove"
+                                            onClick={() => removeProduct(product.productId!, company.id.toString())}
+                                          >
+                                            <FiX />
+                                          </button>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : (
+                                  <div className="input-hint info" style={{ marginTop: "10px" }}>
+                                    <FiCheck /> No products added for this company yet.
+                                  </div>
+                                )}
+                              </div>
+                              <button type="button" className="selected-product-remove" onClick={() => removeCompany(company.id.toString())}>
                                 <FiX />
                               </button>
                             </div>
@@ -1137,10 +1686,8 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
                                 <div className="selected-product-meta">
                                   {product.product_code && <span>Code: {product.product_code}</span>}
                                   {product.serial_number && <span>SN: {product.serial_number}</span>}
-                                  <span>Qty: {Number(product.stock_quantity ?? 0)}</span>
                                   {product.brand && <span>{product.brand}</span>}
                                   {product.model && <span>{product.model}</span>}
-                                  <span>Spare</span>
                                 </div>
                               </div>
                               <button type="button" className="selected-product-remove" onClick={() => removeReplacementProduct(product.id.toString())}>
@@ -1203,6 +1750,10 @@ const OrderFormModal = ({ show, editMode, isSubmitting = false, orderForm, users
               <input type="hidden" name="product_status_map" value={JSON.stringify(productStatusMap)} />
               <input type="hidden" name="repairing_status_map" value={JSON.stringify(repairingStatusMapState)} />
               <input type="hidden" name="issue_description_map" value={JSON.stringify(issueDescriptionMapState)} />
+              <input type="hidden" name="accessory_type_map" value={JSON.stringify(accessoryTypeMapState)} />
+              <input type="hidden" name="result_text_map" value={JSON.stringify(resultTextMapState)} />
+              <input type="hidden" name="handover_type_map" value={JSON.stringify(handoverTypeMapState)} />
+              <input type="hidden" name="product_quantity_map" value={JSON.stringify(productQuantityMapState)} />
               <div className="order-form-actions-note">Required: client, phone, and product. The remaining fields help with service quality, internal clarity, and billing.</div>
               <div className="order-form-actions-buttons">
               <motion.button type="button" className="btn-secondary-enhanced" onClick={onClose} disabled={isSubmitting} whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }}>Cancel</motion.button>

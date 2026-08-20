@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import type { ChangeEvent, FormEvent } from 'react';
 import { AnimatePresence } from 'framer-motion';
+import { createPortal } from 'react-dom';
 import {
   FiUsers, FiPackage, FiDollarSign, FiTrendingUp, FiBarChart2,
   FiLogOut, FiBell, FiMenu, FiHome,
@@ -109,6 +110,46 @@ const parseImportBoolean = (value: string) => {
   return ['1', 'true', 'yes', 'y'].includes(normalized);
 };
 
+const parseCompanyNameList = (value: unknown): string[] => {
+  if (Array.isArray(value)) return value.map((v) => String(v || '').trim()).filter(Boolean);
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    if (trimmed.includes('||')) return trimmed.split('||').map((v) => v.trim()).filter(Boolean);
+    if (trimmed.includes(',')) return trimmed.split(',').map((v) => v.trim()).filter(Boolean);
+    return [trimmed];
+  }
+  return [];
+};
+
+const parseCompanyProductNameMap = (
+  value: unknown,
+): Record<string, { company_name?: string; product_names?: string[] | string }> => {
+  let raw = value;
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    if (!trimmed) return {};
+    try {
+      raw = JSON.parse(trimmed);
+    } catch {
+      return {};
+    }
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  return raw as Record<string, { company_name?: string; product_names?: string[] | string }>;
+};
+
+const extractCompanyNamesFromOrder = (order: Partial<Order>): string[] => {
+  const directNames = parseCompanyNameList(
+    (order as any).company_names || (order as any).company_names_text || (order as any).company_name,
+  );
+  const mapNames = Object.values(parseCompanyProductNameMap((order as any).company_product_name_map))
+    .map((entry) => String(entry?.company_name || '').trim())
+    .filter(Boolean);
+
+  return Array.from(new Set([...directNames, ...mapNames]));
+};
+
 interface StaffPerformance {
   id: number;
   name: string;
@@ -142,6 +183,11 @@ interface Order {
   company_product_map?: Record<string, string[]>;
   companies_products?: Record<string, string[]>;
   product_status_map?: Record<string, string> | string;
+  product_status_dates_map?: Record<string, { pending?: string; rajtocom?: string; comtoraj?: string; deliveryed?: string }> | string;
+  issue_description_map?: Record<string, string> | string;
+  accessory_type_map?: Record<string, string> | string;
+  result_text_map?: Record<string, string> | string;
+  repairing_status_map?: Record<string, string> | string;
   company_product_name_map?: Record<string, { company_name?: string; product_names?: string[] | string }>;
   client_id: number;
   client_name: string;
@@ -151,11 +197,14 @@ interface Order {
   product_id: number;
   product_name: string;
   product_ids?: number[];
+  product_quantity_map?: Record<string, number> | string;
   product_names?: string[];
+  product_models?: string[];
   replacement_product_id?: number | null;
   replacement_product_name?: string;
   replacement_product_ids?: number[];
   replacement_product_names?: string[];
+  replacement_product_models?: string[];
   issue_description: string;
   warranty_status: 'in_warranty' | 'out_of_warranty' | 'extended_warranty';
   estimated_cost: string;
@@ -238,9 +287,17 @@ interface Delivery {
   delivery_code: string;
   client_name: string;
   client_phone: string;
+  client_address?: string;
   product_name: string;
   product_serial_number?: string;
   product_serial_numbers?: string[] | string;
+  serial_number?: string;
+  serial_numbers?: string[] | string;
+  product_ids?: number[] | string[] | string;
+  delivery_type_map?: Record<string, string> | string;
+  delivery_item_product_ids?: string[] | string;
+  delivery_item_product_names?: string[] | string;
+  delivery_item_serial_numbers?: string[] | string;
   product_brand?: string;
   product_model?: string;
   address: string;
@@ -331,42 +388,51 @@ const Modal: React.FC<{
   if (!isOpen) return null;
 
   const sizeClasses = {
-    sm: 'modal-sm',
-    md: 'modal-md',
-    lg: 'modal-lg',
-    xl: 'modal-xl',
-    full: 'modal-full'
+    sm: 'admin-modal-sm',
+    md: 'admin-modal-md',
+    lg: 'admin-modal-lg',
+    xl: 'admin-modal-xl',
+    full: 'admin-modal-full'
   };
 
-  return (
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, []);
+
+  return createPortal(
     <AnimatePresence>
       {isOpen && (
-        <>
-          <div className="modal-backdrop" onClick={onClose} />
-          <div className="modal-overlay">
-            <div className="modal-container">
-              <div className={`modal-content ${sizeClasses[size]}`}>
-                <div className="modal-header">
-                  <div className="modal-title-wrapper">
-                    <h3 className="modal-title">{title}</h3>
-                    <div className="title-underline"></div>
+        <div className="admin-modal-overlay" onClick={onClose}>
+          <div className="admin-modal-backdrop" />
+          <div className="admin-modal-container">
+            <div className={`admin-modal-content ${sizeClasses[size]}`} onClick={(event) => event.stopPropagation()}>
+                <div className="admin-modal-header">
+                  <div className="admin-modal-title-wrapper">
+                    <h3 className="admin-modal-title">{title}</h3>
+                    <div className="admin-title-underline"></div>
                   </div>
                   <button
                     onClick={onClose}
-                    className="modal-close-button"
+                    className="admin-modal-close-button"
                   >
                     <FiX />
                   </button>
                 </div>
-                <div className="modal-body">
+                <div className="admin-modal-body">
                   {children}
                 </div>
-              </div>
             </div>
           </div>
-        </>
+        </div>
       )}
     </AnimatePresence>
+    ,
+    document.body,
   );
 };
 
@@ -437,6 +503,48 @@ const OrderDetailsModal: React.FC<{
     const date = parseAppDate(dateString);
     if (!date) return dateString;
     return formatDisplayDateTime(dateString);
+  };
+
+  const formatEnumLabel = (value?: string, fallback = 'N/A') => {
+    const raw = String(value || '').trim();
+    if (!raw) return fallback;
+    return raw.replace(/_/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
+  };
+
+  const getBadgeClassValue = (value?: string, fallback = 'unknown') => {
+    const raw = String(value || '').trim().toLowerCase();
+    return raw || fallback;
+  };
+
+  const formatMoneyValue = (value: unknown) => {
+    const numeric = Number.parseFloat(String(value ?? '0'));
+    return Number.isFinite(numeric) ? numeric.toFixed(2) : '0.00';
+  };
+
+  const displayValue = (value: unknown, fallback = 'N/A') => {
+    const normalized = String(value ?? '').trim();
+    return normalized || fallback;
+  };
+
+  const formatFieldLabel = (key: string) =>
+    key
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+
+  const formatRawFieldValue = (value: unknown) => {
+    if (value === null || value === undefined || value === '') return 'N/A';
+    if (typeof value === 'string') return value.trim() || 'N/A';
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+    if (Array.isArray(value)) {
+      if (value.length === 0) return '[]';
+      return JSON.stringify(value, null, 2);
+    }
+    if (typeof value === 'object') {
+      const entries = Object.entries(value);
+      if (entries.length === 0) return '{}';
+      return JSON.stringify(value, null, 2);
+    }
+    return String(value);
   };
 
   const parseJsonArray = (value: string): unknown[] | null => {
@@ -572,7 +680,33 @@ const OrderDetailsModal: React.FC<{
     return ids.map((id) => `${labelPrefix} #${id}`);
   };
 
-  type ProductEntry = { label: string; serialNumber: string; model: string };
+  type ProductEntry = { productId?: number; label: string; serialNumber: string; model: string; quantity: number };
+
+  const normalizeProductQuantityMap = (value: unknown): Record<string, number> => {
+    if (!value) return {};
+    let parsed: unknown = value;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return {};
+      try {
+        parsed = JSON.parse(trimmed);
+      } catch {
+        return {};
+      }
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+
+    const normalized: Record<string, number> = {};
+    Object.entries(parsed as Record<string, unknown>).forEach(([productId, quantity]) => {
+      const id = Number(productId);
+      if (!Number.isInteger(id) || id <= 0) return;
+      const qty = Number.parseInt(String(quantity ?? '').trim(), 10);
+      normalized[id.toString()] = qty > 0 ? qty : 1;
+    });
+    return normalized;
+  };
+
+  const productQuantityMap = normalizeProductQuantityMap(order.product_quantity_map);
 
   const buildOrderProductEntries = (
     ids: number[],
@@ -583,19 +717,43 @@ const OrderDetailsModal: React.FC<{
   ): ProductEntry[] => {
     const entries = ids.map((id, index) => {
       const matched = products.find((product) => product.id === id);
+      const rawLabel = String(names[index] || '').trim();
+      const rawSerial = String(serials[index] || '').trim();
       return {
-        label: names[index] || matched?.product_name || `${prefix} #${id}`,
-        serialNumber: serials[index] || matched?.serial_number || (index === 0 ? fallbackSerial : '') || '',
+        productId: id,
+        // Product IDs stay reliable even when legacy stored name arrays drift out of order.
+        label: matched?.product_name || rawLabel || `${prefix} #${id}`,
+        serialNumber: rawSerial || (index === 0 ? fallbackSerial : '') || matched?.serial_number || '',
         model: String(matched?.model || (matched as any)?.product_model || '').trim(),
+        quantity: productQuantityMap[id.toString()] || 1,
       };
     });
+    const existingLabels = new Set(entries.map((entry) => String(entry.label || '').trim().toLowerCase()).filter(Boolean));
+    const nameOnlyEntries = names
+      .map((name, index) => {
+        const normalizedName = String(name || '').trim();
+        if (!normalizedName || existingLabels.has(normalizedName.toLowerCase())) return null;
+        const matched = products.find((product) => String(product.product_name || '').trim().toLowerCase() === normalizedName.toLowerCase());
+        return {
+          productId: matched?.id,
+          label: normalizedName,
+          serialNumber: serials[index] || matched?.serial_number || (index === 0 ? fallbackSerial : '') || '',
+          model: String(matched?.model || (matched as any)?.product_model || '').trim(),
+          quantity: matched?.id ? productQuantityMap[matched.id.toString()] || 1 : 1,
+        };
+      })
+      .filter(Boolean) as ProductEntry[];
 
-    if (entries.length > 0) return entries;
+    if (entries.length > 0 || nameOnlyEntries.length > 0) {
+      return [...entries, ...nameOnlyEntries];
+    }
 
     return names.map((name, index) => ({
+      productId: ids[index],
       label: name,
       serialNumber: serials[index] || (index === 0 ? fallbackSerial : '') || '',
       model: '',
+      quantity: ids[index] ? productQuantityMap[String(ids[index])] || 1 : 1,
     }));
   };
 
@@ -739,10 +897,55 @@ const OrderDetailsModal: React.FC<{
     });
     return normalized;
   };
-  const getRepairingStatusTone = (status: string) => {
-    if (status === 'ready') return { bg: '#dcfce7', color: '#166534', border: '#86efac', label: 'Ready' };
-    if (status === 'replacement') return { bg: '#fef3c7', color: '#92400e', border: '#fcd34d', label: 'Replacement' };
-    return { bg: '#fee2e2', color: '#991b1b', border: '#fca5a5', label: 'Not Ready' };
+  const normalizeAccessoryTypeMap = (value: unknown): Record<string, string> => {
+    if (!value) return {};
+    let parsed: unknown = value;
+    if (typeof value === 'string') {
+      try {
+        parsed = JSON.parse(value);
+        if (typeof parsed === 'string') parsed = JSON.parse(parsed);
+      } catch {
+        return {};
+      }
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    const normalized: Record<string, string> = {};
+    Object.entries(parsed as Record<string, unknown>).forEach(([productId, accessoryType]) => {
+      const id = Number(productId);
+      if (!Number.isInteger(id) || id <= 0) return;
+      const raw = String(accessoryType || '').trim().toLowerCase();
+      const normalizedType = raw === 'withbox' ? 'with_box' : raw === 'withoutbox' ? 'without_box' : raw;
+      if (normalizedType === 'with_box' || normalizedType === 'without_box') {
+        normalized[id.toString()] = normalizedType;
+      }
+    });
+    return normalized;
+  };
+  const getRepairingStatusTone = (status: string, flowStatus?: string) => {
+    const normalizedStatus = String(status || '').trim().toLowerCase().replaceAll('_', ' ');
+    const normalizedFlowStatus = String(flowStatus || '').trim().toLowerCase().replaceAll('_', '');
+    if (normalizedStatus === 'ready') return { bg: '#dcfce7', color: '#166534', border: '#86efac', label: 'Ready' };
+    if (normalizedStatus === 'replacement') return { bg: '#fef3c7', color: '#92400e', border: '#fcd34d', label: 'Replacement' };
+    if (normalizedStatus === 'not ready') {
+      if (normalizedFlowStatus === 'comtoraj' || normalizedFlowStatus === 'deliveryed' || normalizedFlowStatus === 'delivered') {
+        return { bg: '#fef3c7', color: '#92400e', border: '#fcd34d', label: 'Not Ready' };
+      }
+      return { bg: '#fee2e2', color: '#991b1b', border: '#fca5a5', label: 'Not Ready' };
+    }
+    return { bg: '#e2e8f0', color: '#334155', border: '#cbd5e1', label: formatEnumLabel(normalizedStatus || 'pending') };
+  };
+  const getFlowStatusTone = (status?: string) => {
+    const normalized = String(status || '').trim().toLowerCase();
+    if (normalized === 'rajtocom') {
+      return { bg: '#dbeafe', color: '#1d4ed8', border: '#93c5fd' };
+    }
+    if (normalized === 'comtoraj') {
+      return { bg: '#fef3c7', color: '#92400e', border: '#fcd34d' };
+    }
+    if (normalized === 'deliveryed' || normalized === 'delivered') {
+      return { bg: '#dcfce7', color: '#166534', border: '#86efac' };
+    }
+    return { bg: '#e2e8f0', color: '#334155', border: '#cbd5e1' };
   };
   const normalizeCompanyProductMap = (value: unknown): Record<string, number[]> => {
     let raw: unknown = value;
@@ -793,38 +996,63 @@ const OrderDetailsModal: React.FC<{
         })
       : rawCompanyNames;
   const companyNamesText = companyNames.length > 0 ? companyNames.join(', ') : 'No company selected';
+  const companyIdsText = companyIds.length > 0 ? companyIds.join(', ') : 'N/A';
+  const primaryIdsText = primaryIds.length > 0 ? primaryIds.join(', ') : 'N/A';
+  const replacementIdsText = replacementIds.length > 0 ? replacementIds.join(', ') : 'N/A';
   const isCompanyIdLabel = (value: string) => /^company\s*#\s*\d+$/i.test(String(value || '').trim());
   const fallbackCompanyName =
     companyIds.length <= 1
       ? companyNames.find((name) => !isCompanyIdLabel(name) && String(name || '').trim().length > 0) || ''
       : '';
+  const repairingFlowStatusMap = normalizeProductFlowStatusMap((order as any).product_status_map);
   const repairingStatusMap = normalizeRepairingStatusMap((order as any).repairing_status_map);
   const repairingStatusIds = Object.keys(repairingStatusMap)
     .map((id) => Number(id))
     .filter((id) => Number.isInteger(id) && id > 0);
+  const orderedRepairingStatusIds = Array.from(
+    new Set([
+      ...primaryIds.filter((productId) => repairingStatusIds.includes(productId)),
+      ...repairingStatusIds,
+    ]),
+  );
   const productNameById = new Map<number, string>();
   const productSerialById = new Map<number, string>();
   primaryEntries.forEach((entry, index) => {
-    const pid = primaryIds[index];
+    const pid = entry.productId ?? primaryIds[index];
     if (pid) {
       productNameById.set(pid, entry.label);
       productSerialById.set(pid, entry.serialNumber || '');
     }
   });
-  const repairingEntries = repairingStatusIds.map((productId) => {
-    const status = repairingStatusMap[productId.toString()];
+  const repairingEntries = orderedRepairingStatusIds.map((productId) => {
+    const status = String(repairingStatusMap[productId.toString()] || '').trim().toLowerCase().replaceAll('_', ' ');
+    const flowStatus = repairingFlowStatusMap[productId.toString()] || '';
     const matchedProduct = products.find((product) => product.id === productId);
     const label = productNameById.get(productId) || matchedProduct?.product_name || `Product #${productId}`;
-    return { productId, status, label, tone: getRepairingStatusTone(status) };
+    return { productId, status, label, tone: getRepairingStatusTone(status, flowStatus) };
   });
   const repairingReadyCount = repairingEntries.filter((entry) => entry.status === 'ready').length;
   const repairingReplacementCount = repairingEntries.filter((entry) => entry.status === 'replacement').length;
-  const repairingNotReadyCount = repairingEntries.filter((entry) => entry.status === 'not ready').length;
+  const repairingFlowNotReadyCount = repairingEntries.filter(
+    (entry) => entry.status === 'not ready' && entry.tone.label === 'Not Ready' && entry.tone.bg === '#fef3c7',
+  ).length;
+  const repairingPendingNotReadyCount = repairingEntries.filter(
+    (entry) => entry.status === 'not ready' && entry.tone.label === 'Not Ready' && entry.tone.bg !== '#fef3c7',
+  ).length;
   const issueDescriptionMap = normalizeIssueDescriptionMap((order as any).issue_description_map);
+  const accessoryTypeMap = normalizeAccessoryTypeMap((order as any).accessory_type_map);
+  const resultTextMap = normalizeIssueDescriptionMap((order as any).result_text_map);
   const issueProductIds = Array.from(
     new Set([
       ...Object.keys(issueDescriptionMap).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0),
       ...primaryIds,
+    ]),
+  );
+  const metadataProductIds = Array.from(
+    new Set([
+      ...primaryIds,
+      ...Object.keys(accessoryTypeMap).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0),
+      ...Object.keys(resultTextMap).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0),
     ]),
   );
   const perProductIssueEntries = issueProductIds
@@ -837,6 +1065,32 @@ const OrderDetailsModal: React.FC<{
       return { productId, label, serial, issueText };
     })
     .filter((entry): entry is { productId: number; label: string; serial: string; issueText: string } => Boolean(entry));
+  const formatAccessoryTypeLabel = (value: string) => {
+    const normalized = String(value || '').trim().toLowerCase();
+    if (normalized === 'with_box') return 'With Box';
+    if (normalized === 'without_box') return 'Without Box';
+    return 'Not added';
+  };
+  const perProductAccessoryEntries = metadataProductIds.map((productId) => {
+    const matchedProduct = products.find((product) => product.id === productId);
+    const label = productNameById.get(productId) || matchedProduct?.product_name || `Product #${productId}`;
+    const serial = productSerialById.get(productId) || matchedProduct?.serial_number || '';
+    const accessoryType = String(accessoryTypeMap[productId.toString()] || '').trim();
+    return {
+      productId,
+      label,
+      serial,
+      accessoryType,
+      accessoryLabel: formatAccessoryTypeLabel(accessoryType),
+    };
+  });
+  const perProductResultEntries = metadataProductIds.map((productId) => {
+    const matchedProduct = products.find((product) => product.id === productId);
+    const label = productNameById.get(productId) || matchedProduct?.product_name || `Product #${productId}`;
+    const serial = productSerialById.get(productId) || matchedProduct?.serial_number || '';
+    const resultText = String(resultTextMap[productId.toString()] || '').trim();
+    return { productId, label, serial, resultText };
+  });
   const productFlowStatusMap = normalizeProductFlowStatusMap((order as any).product_status_map);
   const productFlowDatesMap = normalizeProductFlowDatesMap((order as any).product_status_dates_map);
   const productFlowIds = Array.from(
@@ -847,86 +1101,75 @@ const OrderDetailsModal: React.FC<{
     ]),
   );
   const apiCompanyProductNameMap = order.company_product_name_map;
+  const resolveCompanyLabel = (companyId: number, index: number) => {
+    const mappedEntry =
+      apiCompanyProductNameMap && typeof apiCompanyProductNameMap === 'object'
+        ? apiCompanyProductNameMap[companyId.toString()]
+        : undefined;
+    const rawCompanyLabel =
+      String(mappedEntry?.company_name || '').trim() ||
+      companyNames[index] ||
+      companyNames[0] ||
+      `Company #${companyId}`;
+    return isCompanyIdLabel(rawCompanyLabel) && fallbackCompanyName
+      ? fallbackCompanyName
+      : rawCompanyLabel;
+  };
+  const companyOrderFromEntries: number[] = [];
+  const productEntriesByCompanyId = new Map<number, ProductEntry[]>();
+  primaryEntries.forEach((entry, index) => {
+    const productId = entry.productId ?? primaryIds[index];
+    if (!productId) return;
+    const companyId =
+      companyIds.find((candidateCompanyId) => (companyProductMap[candidateCompanyId.toString()] || []).includes(productId)) ||
+      companyIds[0];
+    if (!companyId) return;
+    if (!productEntriesByCompanyId.has(companyId)) {
+      productEntriesByCompanyId.set(companyId, []);
+      companyOrderFromEntries.push(companyId);
+    }
+    productEntriesByCompanyId.get(companyId)!.push(entry);
+  });
+  const fallbackCompanyOrder = companyIds.filter((companyId) => !companyOrderFromEntries.includes(companyId));
+  const orderedCompanyIds = [...companyOrderFromEntries, ...fallbackCompanyOrder];
   const companyProductLines =
-    apiCompanyProductNameMap && typeof apiCompanyProductNameMap === 'object'
-      ? Object.values(apiCompanyProductNameMap)
-          .map((entry) => {
-            const rawCompanyLabel = String(entry?.company_name || '').trim();
-            const companyLabel =
-              isCompanyIdLabel(rawCompanyLabel) && fallbackCompanyName
-                ? fallbackCompanyName
-                : rawCompanyLabel;
-            const parsedNames = normalizeNameList(entry?.product_names || []);
-            return {
-              companyLabel: companyLabel || 'Company',
-              productNames: parsedNames,
-            };
-          })
-          .filter((line) => line.companyLabel)
-      : companyIds.length > 0
-        ? companyIds.map((companyId, index) => {
-            const rawCompanyLabel = companyNames[index] || `Company #${companyId}`;
-            const companyLabel =
-              isCompanyIdLabel(rawCompanyLabel) && fallbackCompanyName
-                ? fallbackCompanyName
-                : rawCompanyLabel;
-            const mappedIds = companyProductMap[companyId.toString()] || [];
-            const productNames =
-              mappedIds.length > 0
-                ? mappedIds
-                    .map((productId) => products.find((product) => product.id === productId)?.product_name || `Product #${productId}`)
-                : index === 0 && primaryEntries.length > 0
-                  ? primaryEntries.map((entry) => entry.label)
-                  : [];
-            return {
-              companyLabel,
-              productNames,
-            };
-          })
-        : companyNames.length > 0
-          ? companyNames.map((name, index) => ({
-              companyLabel: name,
-              productNames: index === 0 && primaryEntries.length > 0 ? primaryEntries.map((entry) => entry.label) : [],
-            }))
-          : [];
-
-  const getSerialForProductLabel = (productLabel: string): string => {
-    const normalizedLabel = String(productLabel || '').trim().toLowerCase();
-    if (!normalizedLabel) return 'N/A';
-
-    const fromPrimaryEntry = primaryEntries.find(
-      (entry) => String(entry.label || '').trim().toLowerCase() === normalizedLabel,
-    )?.serialNumber;
-    if (fromPrimaryEntry && String(fromPrimaryEntry).trim()) return String(fromPrimaryEntry).trim();
-
-    const fromProducts = products.find(
-      (product) => String(product.product_name || '').trim().toLowerCase() === normalizedLabel,
-    )?.serial_number;
-    if (fromProducts && String(fromProducts).trim()) return String(fromProducts).trim();
-
-    return 'N/A';
-  };
-
-  const getModelForProductLabel = (productLabel: string): string => {
-    const normalizedLabel = String(productLabel || '').trim().toLowerCase();
-    if (!normalizedLabel) return 'N/A';
-
-    const fromPrimaryEntry = primaryEntries.find(
-      (entry) => String(entry.label || '').trim().toLowerCase() === normalizedLabel,
-    )?.model;
-    if (fromPrimaryEntry && String(fromPrimaryEntry).trim()) return String(fromPrimaryEntry).trim();
-
-    const fromProducts = products.find(
-      (product) => String(product.product_name || '').trim().toLowerCase() === normalizedLabel,
-    );
-    const model = String(fromProducts?.model || (fromProducts as any)?.product_model || '').trim();
-    if (model) return model;
-
-    return 'N/A';
-  };
+    orderedCompanyIds.length > 0
+      ? orderedCompanyIds.map((companyId, index) => {
+          const mappedEntry =
+            apiCompanyProductNameMap && typeof apiCompanyProductNameMap === 'object'
+              ? apiCompanyProductNameMap[companyId.toString()]
+              : undefined;
+          const productEntries = productEntriesByCompanyId.get(companyId) || [];
+          const mappedNameEntries = normalizeNameList(mappedEntry?.product_names || [])
+            .filter((productName) => !productEntries.some((entry) => entry.label.trim().toLowerCase() === productName.trim().toLowerCase()))
+            .map((productName) => {
+              const matchedProduct = products.find((product) => String(product.product_name || '').trim().toLowerCase() === productName.trim().toLowerCase());
+              return {
+                productId: matchedProduct?.id,
+                label: productName,
+                serialNumber: matchedProduct?.serial_number || '',
+                model: String(matchedProduct?.model || '').trim(),
+                quantity: matchedProduct?.id ? productQuantityMap[matchedProduct.id.toString()] || 1 : 1,
+              };
+            });
+          const fallbackEntries =
+            productEntries.length > 0 || mappedNameEntries.length > 0
+              ? [...productEntries, ...mappedNameEntries]
+              : [];
+          return {
+            companyLabel: resolveCompanyLabel(companyId, index),
+            productEntries: fallbackEntries,
+          };
+        })
+      : companyNames.length > 0
+        ? companyNames.map((name, index) => ({
+            companyLabel: name,
+            productEntries: index === 0 && primaryEntries.length > 0 ? primaryEntries : [],
+          }))
+        : [];
 
   const renderCompanyProductBlocks = (
-    lines: Array<{ companyLabel: string; productNames: string[] }>,
+    lines: Array<{ companyLabel: string; productEntries: ProductEntry[] }>,
   ) => {
     if (lines.length === 0) {
       return <span>No products</span>;
@@ -937,27 +1180,33 @@ const OrderDetailsModal: React.FC<{
         {lines.map((line, index) => (
           <div key={`${line.companyLabel}-${index}`} className="product-company-group-admin">
             <div className="product-company-heading-admin">{line.companyLabel}</div>
-            {line.productNames.length > 0 ? (
+            {line.productEntries.length > 0 ? (
               <div className="product-card-grid-admin">
-                {line.productNames.map((productName, productIndex) => (
+                {line.productEntries.map((entry, productIndex) => (
                   <div
-                    key={`${line.companyLabel}-${productName}-${productIndex}`}
+                    key={`${line.companyLabel}-${entry.productId || entry.label}-${productIndex}`}
                     className="product-entry-card-admin"
                   >
                     <div className="product-entry-index-admin">
                       Product {productIndex + 1}
                     </div>
-                    <div className="product-entry-name-admin">{productName}</div>
+                    <div className="product-entry-name-admin">{entry.label}</div>
+                    <div className="product-entry-meta-admin">
+                      <span className="product-entry-meta-label-admin">Qty</span>
+                      <span className="product-entry-meta-value-admin">
+                        {entry.quantity || 1}
+                      </span>
+                    </div>
                     <div className="product-entry-meta-admin">
                       <span className="product-entry-meta-label-admin">Model</span>
                       <span className="product-entry-meta-value-admin">
-                        {getModelForProductLabel(productName)}
+                        {entry.model || 'N/A'}
                       </span>
                     </div>
                     <div className="product-entry-meta-admin">
                       <span className="product-entry-meta-label-admin">Serial No</span>
                       <span className="product-entry-meta-value-admin">
-                        {getSerialForProductLabel(productName)}
+                        {entry.serialNumber || 'N/A'}
                       </span>
                     </div>
                   </div>
@@ -993,6 +1242,10 @@ const OrderDetailsModal: React.FC<{
             <div className="product-entry-index-admin">Product {index + 1}</div>
             <div className="product-entry-name-admin">{entry.label || 'Unnamed product'}</div>
             <div className="product-entry-meta-admin">
+              <span className="product-entry-meta-label-admin">Qty</span>
+              <span className="product-entry-meta-value-admin">{entry.quantity || 1}</span>
+            </div>
+            <div className="product-entry-meta-admin">
               <span className="product-entry-meta-label-admin">Model</span>
               <span className="product-entry-meta-value-admin">{entry.model || 'N/A'}</span>
             </div>
@@ -1006,6 +1259,10 @@ const OrderDetailsModal: React.FC<{
     );
   };
 
+  const allOrderEntries = Object.entries(order).sort(([leftKey], [rightKey]) =>
+    leftKey.localeCompare(rightKey),
+  );
+
   return (
     <Modal
       isOpen={isOpen}
@@ -1014,6 +1271,21 @@ const OrderDetailsModal: React.FC<{
       size="xl"
     >
       <div className="order-details-modal">
+        <div className="order-details-actions order-details-actions-top">
+          <button className="btn btn-primary" onClick={onGenerateReceipt}>
+            <FiDownload /> Download Receipt PDF
+          </button>
+          <button className="btn btn-secondary" onClick={onEdit}>
+            <FiEdit /> Edit Order
+          </button>
+          <button className="btn btn-danger" onClick={onDelete}>
+            <FiTrash2 /> Delete Order
+          </button>
+          <button className="btn btn-outline" onClick={onClose}>
+            Close
+          </button>
+        </div>
+
         {/* Order Header */}
         <div className="order-header">
           <div className="order-code-section">
@@ -1029,14 +1301,14 @@ const OrderDetailsModal: React.FC<{
           <div className="order-status-section">
             <div className="status-display">
               {getStatusIcon(order.status)}
-              <span className={`status-badge ${order.status}`}>
-                {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+              <span className={`status-badge ${getBadgeClassValue(order.status)}`}>
+                {formatEnumLabel(order.status)}
               </span>
             </div>
             <div className="priority-display">
               {getPriorityIcon(order.priority)}
-              <span className={`priority-badge ${order.priority}`}>
-                {order.priority.charAt(0).toUpperCase() + order.priority.slice(1)}
+              <span className={`priority-badge ${getBadgeClassValue(order.priority)}`}>
+                {formatEnumLabel(order.priority)}
               </span>
             </div>
           </div>
@@ -1055,13 +1327,13 @@ const OrderDetailsModal: React.FC<{
           </div>
           <div className="order-overview-card-admin">
             <span className="overview-label-admin">Financials</span>
-            <strong>Rs. {parseFloat(order.final_cost || order.estimated_cost || '0').toFixed(2)}</strong>
-            <p>{order.payment_status.replace('_', ' ')}</p>
+            <strong>Rs. {formatMoneyValue(order.final_cost || order.estimated_cost || '0')}</strong>
+            <p>{formatEnumLabel(order.payment_status)}</p>
           </div>
           <div className="order-overview-card-admin">
             <span className="overview-label-admin">Workflow</span>
-            <strong>{order.status.charAt(0).toUpperCase() + order.status.slice(1)}</strong>
-            <p>{order.priority.charAt(0).toUpperCase() + order.priority.slice(1)} priority</p>
+            <strong>{formatEnumLabel(order.status)}</strong>
+            <p>{formatEnumLabel(order.priority)} priority</p>
           </div>
         </div>
 
@@ -1078,30 +1350,30 @@ const OrderDetailsModal: React.FC<{
             <div className="detail-card-content">
               <div className="detail-row">
                 <span className="detail-label">Name:</span>
-                <span className="detail-value">{order.client_name}</span>
+                <span className="detail-value">{displayValue(order.client_name)}</span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Client ID:</span>
+                <span className="detail-value">#{order.client_id || 'N/A'}</span>
               </div>
               <div className="detail-row">
                 <span className="detail-label">Phone:</span>
                 <span className="detail-value">
-                  <FiPhone className="inline-icon" /> {order.client_phone}
+                  <FiPhone className="inline-icon" /> {displayValue(order.client_phone)}
                 </span>
               </div>
-              {order.client_email && (
-                <div className="detail-row">
-                  <span className="detail-label">Email:</span>
-                  <span className="detail-value">
-                    <FiMail className="inline-icon" /> {order.client_email}
-                  </span>
-                </div>
-              )}
-              {order.client_address && (
-                <div className="detail-row">
-                  <span className="detail-label">Address:</span>
-                  <span className="detail-value">
-                    <FiMapPin className="inline-icon" /> {order.client_address}
-                  </span>
-                </div>
-              )}
+              <div className="detail-row">
+                <span className="detail-label">Email:</span>
+                <span className="detail-value">
+                  <FiMail className="inline-icon" /> {displayValue(order.client_email)}
+                </span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Address:</span>
+                <span className="detail-value">
+                  <FiMapPin className="inline-icon" /> {displayValue(order.client_address)}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1120,6 +1392,10 @@ const OrderDetailsModal: React.FC<{
                 <span className="detail-value" title={companyNamesText}>{companyNamesText}</span>
               </div>
               <div className="detail-row">
+                <span className="detail-label">Company IDs:</span>
+                <span className="detail-value">{companyIdsText}</span>
+              </div>
+              <div className="detail-row">
                 <span className="detail-label">Main Products:</span>
                 <div className="detail-value product-detail-stack-admin">
                   {companyProductLines.length > 0 ? (
@@ -1129,6 +1405,10 @@ const OrderDetailsModal: React.FC<{
                   )}
                 </div>
               </div>
+              <div className="detail-row">
+                <span className="detail-label">Main Product IDs:</span>
+                <span className="detail-value">{primaryIdsText}</span>
+              </div>
               {replacementEntries.length > 0 && (
                 <div className="detail-row">
                   <span className="detail-label">Replacement Products:</span>
@@ -1137,27 +1417,47 @@ const OrderDetailsModal: React.FC<{
                   </div>
                 </div>
               )}
-              {order.serial_number && (
-                <div className="detail-row">
-                  <span className="detail-label">Serial Number:</span>
-                  <span className="detail-value">{order.serial_number}</span>
-                </div>
-              )}
+              <div className="detail-row">
+                <span className="detail-label">Replacement Product IDs:</span>
+                <span className="detail-value">{replacementIdsText}</span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Primary Product:</span>
+                <span className="detail-value">{displayValue(order.product_name)}</span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Brand:</span>
+                <span className="detail-value">{displayValue(order.product_brand || order.brand)}</span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Model:</span>
+                <span className="detail-value">{displayValue(order.product_model || order.model)}</span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Serial Number:</span>
+                <span className="detail-value">{displayValue(order.serial_number)}</span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Replacement Product:</span>
+                <span className="detail-value">{displayValue(order.replacement_product_name)}</span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Replacement Serial Number:</span>
+                <span className="detail-value">{displayValue(order.replacement_serial_number)}</span>
+              </div>
               <div className="detail-row">
                 <span className="detail-label">Warranty:</span>
                 <span className="detail-value">
                   {getWarrantyIcon(order.warranty_status)}
-                  <span className={`warranty-status ${order.warranty_status}`}>
-                    {order.warranty_status.replace('_', ' ')}
+                  <span className={`warranty-status ${getBadgeClassValue(order.warranty_status)}`}>
+                    {formatEnumLabel(order.warranty_status)}
                   </span>
                 </span>
               </div>
-              {order.purchase_date && (
-                <div className="detail-row">
-                  <span className="detail-label">Purchase Date:</span>
-                  <span className="detail-value">{formatDate(order.purchase_date)}</span>
-                </div>
-              )}
+              <div className="detail-row">
+                <span className="detail-label">Purchase Date:</span>
+                <span className="detail-value">{order.purchase_date ? formatDate(order.purchase_date) : 'N/A'}</span>
+              </div>
             </div>
           </div>
 
@@ -1173,7 +1473,17 @@ const OrderDetailsModal: React.FC<{
             <div className="detail-card-content">
               <div className="repairing-status-summary-admin">
                 <span className="repair-chip ready">Ready {repairingReadyCount}</span>
-                <span className="repair-chip not-ready">Not Ready {repairingNotReadyCount}</span>
+                {repairingPendingNotReadyCount > 0 && (
+                  <span className="repair-chip not-ready">Not Ready {repairingPendingNotReadyCount}</span>
+                )}
+                {repairingFlowNotReadyCount > 0 && (
+                  <span
+                    className="repair-chip"
+                    style={{ background: '#fef3c7', color: '#92400e', borderColor: '#fcd34d' }}
+                  >
+                    Flow Not Ready {repairingFlowNotReadyCount}
+                  </span>
+                )}
                 <span className="repair-chip replacement">Replacement {repairingReplacementCount}</span>
               </div>
               {repairingEntries.length > 0 ? (
@@ -1215,13 +1525,23 @@ const OrderDetailsModal: React.FC<{
                   {productFlowIds.map((productId, index) => {
                     const label = productNameById.get(productId) || `Product #${productId}`;
                     const current = productFlowStatusMap[String(productId)] || 'pending';
+                    const flowTone = getFlowStatusTone(current);
                     const dates = productFlowDatesMap[String(productId)] || {};
                     const pendingTime = (order as any).created_at || dates.pending || '';
                     return (
                       <div key={`flow-admin-${productId}`} className="flow-status-card-admin">
                         <div className="flow-status-head-admin">
                           <strong>{index + 1}. {label}</strong>
-                          <span className={`flow-status-pill-admin flow-${current}`}>{current}</span>
+                          <span
+                            className={`flow-status-pill-admin flow-${current}`}
+                            style={{
+                              backgroundColor: flowTone.bg,
+                              color: flowTone.color,
+                              borderColor: flowTone.border,
+                            }}
+                          >
+                            {current}
+                          </span>
                         </div>
                         <div className="flow-status-dates-admin">
                           {renderFlowDateTileAdmin('Pending', pendingTime)}
@@ -1250,6 +1570,12 @@ const OrderDetailsModal: React.FC<{
             </div>
             <div className="detail-card-content">
               <div className="detail-row full-width">
+                <span className="detail-label">General Issue Description:</span>
+                <div className="detail-value">
+                  {displayValue(order.issue_description)}
+                </div>
+              </div>
+              <div className="detail-row full-width">
                 <span className="detail-label">Issue Description (By Product):</span>
                 <div className="detail-value issue-description">
                   {perProductIssueEntries.length > 0 ? (
@@ -1274,42 +1600,82 @@ const OrderDetailsModal: React.FC<{
                   )}
                 </div>
               </div>
-              {order.diagnosis_notes && (
-                <div className="detail-row full-width">
-                  <span className="detail-label">Diagnosis Notes:</span>
-                  <div className="detail-value">
-                    {order.diagnosis_notes}
-                  </div>
+              <div className="detail-row full-width">
+                <span className="detail-label">Accessory Type (By Product):</span>
+                <div className="detail-value issue-description">
+                  {perProductAccessoryEntries.length > 0 ? (
+                    <div className="issue-list-box-admin">
+                      <div className="issue-list-box-title">Product List</div>
+                      <div className="flow-status-list-admin issue-cards-admin">
+                        {perProductAccessoryEntries.map((entry, index) => (
+                          <div key={`service-accessory-${entry.productId}`} className="flow-status-card-admin issue-card-admin">
+                            <div className="flow-status-head-admin">
+                              <strong>{index + 1}. {entry.label}</strong>
+                              <span className="issue-product-meta">
+                                ID: {entry.productId}{entry.serial ? ` | SN: ${entry.serial}` : ''}
+                              </span>
+                            </div>
+                            <div className="issue-text-admin">{entry.accessoryLabel}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <span>No products added</span>
+                  )}
                 </div>
-              )}
-              {order.repair_notes && (
-                <div className="detail-row full-width">
-                  <span className="detail-label">Repair Notes:</span>
-                  <div className="detail-value">
-                    {order.repair_notes}
-                  </div>
+              </div>
+              <div className="detail-row full-width">
+                <span className="detail-label">Result Text (By Product):</span>
+                <div className="detail-value issue-description">
+                  {perProductResultEntries.length > 0 ? (
+                    <div className="issue-list-box-admin">
+                      <div className="issue-list-box-title">Product List</div>
+                      <div className="flow-status-list-admin issue-cards-admin">
+                        {perProductResultEntries.map((entry, index) => (
+                          <div key={`service-result-${entry.productId}`} className="flow-status-card-admin issue-card-admin">
+                            <div className="flow-status-head-admin">
+                              <strong>{index + 1}. {entry.label}</strong>
+                              <span className="issue-product-meta">
+                                ID: {entry.productId}{entry.serial ? ` | SN: ${entry.serial}` : ''}
+                              </span>
+                            </div>
+                            <div className="issue-text-admin">{entry.resultText || 'Not added'}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <span>No products added</span>
+                  )}
                 </div>
-              )}
-              {order.technician_notes && (
-                <div className="detail-row full-width">
-                  <span className="detail-label">Technician Notes:</span>
-                  <div className="detail-value">
-                    {order.technician_notes}
-                  </div>
+              </div>
+              <div className="detail-row full-width">
+                <span className="detail-label">Diagnosis Notes:</span>
+                <div className="detail-value">
+                  {displayValue(order.diagnosis_notes)}
                 </div>
-              )}
-              {order.accessories && (
-                <div className="detail-row">
-                  <span className="detail-label">Accessories:</span>
-                  <span className="detail-value">{order.accessories}</span>
+              </div>
+              <div className="detail-row full-width">
+                <span className="detail-label">Repair Notes:</span>
+                <div className="detail-value">
+                  {displayValue(order.repair_notes)}
                 </div>
-              )}
-              {order.service_type && (
-                <div className="detail-row">
-                  <span className="detail-label">Service Type:</span>
-                  <span className="detail-value">{order.service_type}</span>
+              </div>
+              <div className="detail-row full-width">
+                <span className="detail-label">Technician Notes:</span>
+                <div className="detail-value">
+                  {displayValue(order.technician_notes)}
                 </div>
-              )}
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Accessories:</span>
+                <span className="detail-value">{displayValue(order.accessories)}</span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Service Type:</span>
+                <span className="detail-value">{displayValue(order.service_type)}</span>
+              </div>
             </div>
           </div>
 
@@ -1326,27 +1692,27 @@ const OrderDetailsModal: React.FC<{
               <div className="detail-row">
                 <span className="detail-label">Estimated Cost:</span>
                 <span className="detail-value">
-                  Rs. {parseFloat(order.estimated_cost || '0').toFixed(2)}
+                  Rs. {formatMoneyValue(order.estimated_cost || '0')}
                 </span>
               </div>
               <div className="detail-row">
                 <span className="detail-label">Final Cost:</span>
                 <span className="detail-value final-cost">
-                  Rs. {parseFloat(order.final_cost || order.estimated_cost || '0').toFixed(2)}
+                  Rs. {formatMoneyValue(order.final_cost || order.estimated_cost || '0')}
                 </span>
               </div>
               <div className="detail-row">
-                <span className="detail-label">Company Service Cost:</span>
+                <span className="detail-label">Company Service Cost / Advance:</span>
                 <span className="detail-value deposit-amount">
-                  Rs. {parseFloat(order.deposit_amount || '0').toFixed(2)}
+                  Rs. {formatMoneyValue(order.deposit_amount || '0')}
                 </span>
               </div>
               <div className="detail-row">
                 <span className="detail-label">Payment Status:</span>
                 <span className="detail-value">
                   {getPaymentIcon(order.payment_status)}
-                  <span className={`payment-status ${order.payment_status}`}>
-                    {order.payment_status.replace('_', ' ')}
+                  <span className={`payment-status ${getBadgeClassValue(order.payment_status)}`}>
+                    {formatEnumLabel(order.payment_status)}
                   </span>
                 </span>
               </div>
@@ -1354,8 +1720,10 @@ const OrderDetailsModal: React.FC<{
                 <div className="detail-row">
                   <span className="detail-label">Balance Due:</span>
                   <span className="detail-value balance-due">
-                    Rs. {(parseFloat(order.final_cost || order.estimated_cost || '0') - 
-                        parseFloat(order.deposit_amount || '0')).toFixed(2)}
+                    Rs. {(
+                      Number.parseFloat(String(order.final_cost || order.estimated_cost || '0')) -
+                      Number.parseFloat(String(order.deposit_amount || '0'))
+                    ).toFixed(2)}
                   </span>
                 </div>
               )}
@@ -1377,25 +1745,25 @@ const OrderDetailsModal: React.FC<{
                 <span className="detail-value">{formatDateTime(order.created_at)}</span>
               </div>
               <div className="detail-row">
+                <span className="detail-label">Order ID:</span>
+                <span className="detail-value">#{order.id}</span>
+              </div>
+              <div className="detail-row">
                 <span className="detail-label">Last Updated:</span>
                 <span className="detail-value">{formatDateTime(order.updated_at)}</span>
               </div>
-              {order.estimated_delivery_date && (
-                <div className="detail-row">
-                  <span className="detail-label">Estimated Delivery:</span>
-                  <span className="detail-value estimated-delivery">
-                    {formatDate(order.estimated_delivery_date)}
-                  </span>
-                </div>
-              )}
-              {order.next_service_date && (
-                <div className="detail-row">
-                  <span className="detail-label">Next Service Date:</span>
-                  <span className="detail-value next-service">
-                    {formatDate(order.next_service_date)}
-                  </span>
-                </div>
-              )}
+              <div className="detail-row">
+                <span className="detail-label">Estimated Delivery:</span>
+                <span className="detail-value estimated-delivery">
+                  {order.estimated_delivery_date ? formatDate(order.estimated_delivery_date) : 'N/A'}
+                </span>
+              </div>
+              <div className="detail-row">
+                <span className="detail-label">Next Service Date:</span>
+                <span className="detail-value next-service">
+                  {order.next_service_date ? formatDate(order.next_service_date) : 'N/A'}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1412,50 +1780,75 @@ const OrderDetailsModal: React.FC<{
               <div className="detail-row">
                 <span className="detail-label">Assigned Staff:</span>
                 <span className="detail-value">
-                  {order.staff_name || 'Not Assigned'}
+                  {displayValue(order.staff_name, 'Not Assigned')}
                 </span>
               </div>
-              {order.staff_id && (
-                <div className="detail-row">
-                  <span className="detail-label">Staff ID:</span>
-                  <span className="detail-value">#{order.staff_id}</span>
-                </div>
-              )}
+              <div className="detail-row">
+                <span className="detail-label">Staff ID:</span>
+                <span className="detail-value">{order.staff_id ? `#${order.staff_id}` : 'N/A'}</span>
+              </div>
             </div>
           </div>
 
           {/* Additional Notes */}
-          {order.notes && (
-            <div className="detail-card additional-notes">
-              <div className="detail-card-header">
-                <FiMessageSquare className="detail-card-icon" />
-                <h4>Additional Notes</h4>
-              </div>
-              <div className="detail-card-content">
-                <div className="notes-content">
-                  {order.notes}
-                </div>
+          <div className="detail-card additional-notes">
+            <div className="detail-card-header">
+              <FiMessageSquare className="detail-card-icon" />
+              <h4>Additional Notes</h4>
+            </div>
+            <div className="detail-card-content">
+              <div className="notes-content">
+                {displayValue(order.notes)}
               </div>
             </div>
-          )}
+          </div>
 
           {/* Customer Feedback */}
-          {order.customer_feedback && (
-            <div className="detail-card customer-feedback">
-              <div className="detail-card-header">
-                <FiStar className="detail-card-icon" />
-                <h4>Customer Feedback</h4>
-              </div>
-              <div className="detail-card-content">
-                <div className="feedback-content">
-                  {order.customer_feedback}
-                </div>
+          <div className="detail-card customer-feedback">
+            <div className="detail-card-header">
+              <FiStar className="detail-card-icon" />
+              <h4>Customer Feedback</h4>
+            </div>
+            <div className="detail-card-content">
+              <div className="feedback-content">
+                {displayValue(order.customer_feedback)}
               </div>
             </div>
-          )}
+          </div>
+
+          <div className="detail-card all-order-data-card">
+            <div className="detail-card-header">
+              <FiInfo className="detail-card-icon" />
+              <div>
+                <h4>All Order Data</h4>
+                <p className="detail-card-subtitle">Complete raw order payload shown field by field.</p>
+              </div>
+            </div>
+            <div className="detail-card-content all-order-data-content">
+              {allOrderEntries.map(([key, value]) => {
+                const formattedValue = formatRawFieldValue(value);
+                const isStructuredValue =
+                  Array.isArray(value) || (value !== null && typeof value === 'object');
+
+                return (
+                  <div className="detail-row full-width" key={`raw-order-field-${key}`}>
+                    <span className="detail-label">{formatFieldLabel(key)}:</span>
+                    <div className="detail-value">
+                      {isStructuredValue ? (
+                        <pre className="raw-order-pre">
+                          {formattedValue}
+                        </pre>
+                      ) : (
+                        formattedValue
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
-        {/* Action Buttons */}
         <div className="order-details-actions">
           <button className="btn btn-primary" onClick={onGenerateReceipt}>
             <FiDownload /> Download Receipt PDF
@@ -1470,10 +1863,13 @@ const OrderDetailsModal: React.FC<{
             Close
           </button>
         </div>
+
       </div>
     </Modal>
   );
 };
+
+void OrderDetailsModal;
 
 // Password Reset Modal Component
 const ResetPasswordModal: React.FC<{
@@ -1777,6 +2173,65 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [staffPerformance, setStaffPerformance] = useState<StaffPerformance[]>([]);
   const [selectedStaffOrders, setSelectedStaffOrders] = useState<Order[]>([]);
   const notificationDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  const sortByNewestId = useCallback(<T extends { id: number }>(items: T[]) => {
+    return [...items].sort((a, b) => b.id - a.id);
+  }, []);
+
+  const replaceItemById = useCallback(<T extends { id: number }>(items: T[], nextItem: T) => {
+    return items.map((item) => (item.id === nextItem.id ? nextItem : item));
+  }, []);
+
+  const upsertItemById = useCallback(<T extends { id: number }>(items: T[], nextItem: T) => {
+    const exists = items.some((item) => item.id === nextItem.id);
+    return exists ? replaceItemById(items, nextItem) : sortByNewestId([...items, nextItem]);
+  }, [replaceItemById, sortByNewestId]);
+
+  const removeItemById = useCallback(<T extends { id: number }>(items: T[], id: number) => {
+    return items.filter((item) => item.id !== id);
+  }, []);
+
+  const syncDashboardStatsWithState = useCallback((overrides: {
+    users?: User[];
+    orders?: Order[];
+    clients?: Client[];
+    products?: Product[];
+    deliveries?: Delivery[];
+  }) => {
+    setDashboardStats((prev) => {
+      if (!prev) return prev;
+
+      const nextUsers = overrides.users ?? users;
+      const nextOrders = overrides.orders ?? orders;
+      const nextClients = overrides.clients ?? clients;
+      const nextProducts = overrides.products ?? products;
+      const nextDeliveries = overrides.deliveries ?? deliveries;
+      const todayKey = new Date().toISOString().slice(0, 10);
+      const paidOrders = nextOrders.filter((order) => String(order.payment_status || '').toLowerCase() === 'paid');
+
+      return {
+        ...prev,
+        total_users: nextUsers.length,
+        total_clients: nextClients.length,
+        total_orders: nextOrders.length,
+        total_products: nextProducts.length,
+        active_staff: nextUsers.filter((user) => user.is_active && String(user.role || '').toLowerCase() !== 'admin').length,
+        pending_orders: nextOrders.filter((order) => String(order.status || '').toLowerCase() === 'pending').length,
+        completed_orders: nextOrders.filter((order) => String(order.status || '').toLowerCase() === 'completed').length,
+        delivered_orders: nextDeliveries.filter((delivery) => isAdminDeliveryCompleted(delivery)).length,
+        total_revenue: paidOrders.reduce((sum, order) => sum + (Number(order.final_cost || order.estimated_cost || 0) || 0), 0),
+        today_orders: nextOrders.filter((order) => String(order.created_at || '').slice(0, 10) === todayKey).length,
+        today_revenue: paidOrders
+          .filter((order) => String(order.updated_at || order.created_at || '').slice(0, 10) === todayKey)
+          .reduce((sum, order) => sum + (Number(order.final_cost || order.estimated_cost || 0) || 0), 0),
+        active_products: nextProducts.filter((product) => String(product.status || '').toLowerCase() === 'active').length,
+        low_stock_products: nextProducts.filter((product) => product.stock_quantity <= (product.min_stock_level ?? 5)).length,
+        avg_order_value: nextOrders.length > 0
+          ? nextOrders.reduce((sum, order) => sum + (Number(order.final_cost || order.estimated_cost || 0) || 0), 0) / nextOrders.length
+          : 0,
+      };
+    });
+  }, [users, orders, clients, products, deliveries]);
   
   // Selection States
   const [selectedUsers, setSelectedUsers] = useState<number[]>([]);
@@ -1797,7 +2252,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     orders: {
       status: '',
       priority: '',
-      payment_status: ''
+      payment_status: '',
+      company_name: '',
+      product_flow_status: ''
     },
     clients: {
       city: ''
@@ -1843,19 +2300,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const [selectedUserForReset, setSelectedUserForReset] = useState<{id: number; name: string} | null>(null);
   const [showUserDetailsModal, setShowUserDetailsModal] = useState(false);
   const [selectedUserDetails, setSelectedUserDetails] = useState<User | null>(null);
+  const [showOrderDetailsModal, setShowOrderDetailsModal] = useState(false);
+  const [selectedOrderDetails, setSelectedOrderDetails] = useState<Order | null>(null);
   const [showReceiptModal, setShowReceiptModal] = useState(false);
   const [selectedOrderForReceipt, setSelectedOrderForReceipt] = useState<Order | null>(null);
   const [receiptTarget, setReceiptTarget] = useState<ReceiptTarget | null>(null);
   const [showStaffDetailsModal, setShowStaffDetailsModal] = useState(false);
   const [selectedStaff, setSelectedStaff] = useState<any>(null);
-  const [showOrderDetailsModal, setShowOrderDetailsModal] = useState(false);
-  const [selectedOrderDetails, setSelectedOrderDetails] = useState<Order | null>(null);
   const [deleteOrderTarget, setDeleteOrderTarget] = useState<DashboardOrder | Order | null>(null);
   const [deleteOrderPending, setDeleteOrderPending] = useState(false);
   const [deleteClientTarget, setDeleteClientTarget] = useState<Client | null>(null);
   const [deleteClientPending, setDeleteClientPending] = useState(false);
   const [deleteProductTarget, setDeleteProductTarget] = useState<Product | null>(null);
   const [deleteProductPending, setDeleteProductPending] = useState(false);
+  const [deleteDeliveryTarget, setDeleteDeliveryTarget] = useState<Delivery | null>(null);
+  const [deleteDeliveryPending, setDeleteDeliveryPending] = useState(false);
   const [createSubmitState, setCreateSubmitState] = useState({
     user: false,
     order: false,
@@ -1952,7 +2411,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     product_id: '',
     replacement_product_id: '',
     product_ids: [] as string[],
+    product_quantity_map: {} as Record<string, number>,
     product_status_map: {} as Record<string, string>,
+    accessory_type_map: {} as Record<string, string>,
+    result_text_map: {} as Record<string, string>,
+    handover_type: 'inhand',
+    handover_type_map: {} as Record<string, string>,
     repairing_status_map: {} as Record<string, string>,
     replacement_product_ids: [] as string[],
     product_name: '',
@@ -1995,7 +2459,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     price: '0',
     stock_quantity: '1',
     min_stock_level: '5',
-    purchase_date: new Date().toISOString().split('T')[0],
+    purchase_date: '',
     warranty_period: '1 year',
     specifications: '',
     status: 'active' as 'active' | 'inactive' | 'discontinued'
@@ -2006,7 +2470,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   // Check authentication and role
   useEffect(() => {
     const checkAuth = () => {
-      const token = localStorage.getItem('authToken');
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token');
       const userData = localStorage.getItem('userData');
       const isLoggedIn = localStorage.getItem('isLoggedIn');
       
@@ -2054,7 +2518,48 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   
   // API functions
   const getAuthToken = () => {
-    return localStorage.getItem('authToken');
+    return localStorage.getItem('authToken') || localStorage.getItem('token');
+  };
+
+  const storeAuthToken = (token: string) => {
+    localStorage.setItem('authToken', token);
+    localStorage.setItem('token', token);
+    localStorage.setItem('authTokenUpdatedAt', new Date().toISOString());
+  };
+
+  const refreshPromiseRef = useRef<Promise<boolean> | null>(null);
+
+  const attemptTokenRefresh = async (): Promise<boolean> => {
+    if (refreshPromiseRef.current) {
+      return refreshPromiseRef.current;
+    }
+
+    refreshPromiseRef.current = (async () => {
+      try {
+        const token = getAuthToken();
+        if (!token) return false;
+
+        const response = await fetch(buildApiUrl('auth/refresh.php'), {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (!response.ok) return false;
+
+        const data = await response.json().catch(() => null);
+        if (data?.success && data?.token) {
+          storeAuthToken(data.token);
+          return true;
+        }
+
+        return false;
+      } catch {
+        return false;
+      } finally {
+        refreshPromiseRef.current = null;
+      }
+    })();
+
+    return refreshPromiseRef.current;
   };
 
   const summarizeServerBody = (rawBody: string) => {
@@ -2077,6 +2582,29 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       return null;
     }
   };
+
+  useEffect(() => {
+    const refreshSession = () => {
+      if (!getAuthToken()) return;
+      void attemptTokenRefresh();
+    };
+
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        refreshSession();
+      }
+    };
+
+    const intervalId = window.setInterval(refreshSession, 6 * 60 * 60 * 1000);
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+    };
+  }, []);
   
   const apiRequest = async (
     endpoint: string,
@@ -2092,14 +2620,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       throw new Error('No authentication token');
     }
     
-    const headers: HeadersInit = {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json'
-    };
-    
     const config: RequestInit = {
       method,
-      headers,
+      cache: 'no-store',
     };
     
     if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
@@ -2110,7 +2633,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     console.log(`API Request: ${method} ${requestUrl}`, data);
     
     try {
-      const response = await fetch(requestUrl, config);
+      const buildHeaders = (authToken: string): HeadersInit => ({
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json'
+      });
+
+      let response = await fetch(requestUrl, {
+        ...config,
+        headers: buildHeaders(token),
+      });
+
+      if (response.status === 401) {
+        const refreshed = await attemptTokenRefresh();
+        if (!refreshed) {
+          throw new Error('Session expired');
+        }
+
+        const refreshedToken = getAuthToken();
+        if (!refreshedToken) {
+          throw new Error('Session expired');
+        }
+
+        response = await fetch(requestUrl, {
+          ...config,
+          headers: buildHeaders(refreshedToken),
+        });
+      }
+
       const responseText = await response.text();
       const trimmedText = responseText.trim();
       const parsedResult = trimmedText ? parseJsonText(trimmedText) : null;
@@ -2293,189 +2842,481 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       return [];
     }
   };
+
+  const fetchFullOrderRecord = async (orderId: number | string, fallback?: any) => {
+    const numericOrderId = Number(orderId);
+    if (!Number.isInteger(numericOrderId) || numericOrderId <= 0) {
+      return fallback ?? null;
+    }
+
+    try {
+      const data = await apiRequest(`Order.php?id=${numericOrderId}`, 'GET', null, { silent: true });
+      if (data?.success && data?.order) {
+        return normalizeOrderRecord(data.order, undefined, {
+          useFallback: false,
+          resolveWithCatalog: false,
+        });
+      }
+    } catch (error) {
+      console.error('Failed to fetch full order record:', error);
+    }
+
+    return fallback ?? null;
+  };
+
+  const toNumberArray = (value: unknown): number[] => {
+    if (Array.isArray(value)) {
+      return value
+        .map((entry) => parseInt(String(entry), 10))
+        .filter((entry) => Number.isFinite(entry) && entry > 0);
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return [];
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed
+            .map((entry) => parseInt(String(entry), 10))
+            .filter((entry) => Number.isFinite(entry) && entry > 0);
+        }
+      } catch {
+        // keep fallback below
+      }
+      return trimmed
+        .split(',')
+        .map((entry) => parseInt(entry.trim(), 10))
+        .filter((entry) => Number.isFinite(entry) && entry > 0);
+    }
+    return [];
+  };
+
+  const toStringArray = (value: unknown): string[] => {
+    if (Array.isArray(value)) {
+      return value
+        .map((entry) => String(entry || '').trim())
+        .filter(Boolean);
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return [];
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed
+            .map((entry) => String(entry || '').trim())
+            .filter(Boolean);
+        }
+      } catch {
+        // keep fallback below
+      }
+      return trimmed
+        .split(trimmed.includes('||') ? '||' : ',')
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+    }
+    return [];
+  };
+
+  const toPositionedStringArray = (value: unknown): string[] => {
+    if (Array.isArray(value)) {
+      return value.map((entry) => String(entry ?? '').trim());
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return [];
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed.map((entry) => String(entry ?? '').trim());
+        }
+      } catch {
+        // keep fallback below
+      }
+      return trimmed
+        .split(trimmed.includes('||') ? '||' : ',')
+        .map((entry) => entry.trim());
+    }
+    return [];
+  };
+
+  const normalizeOrderRecord = (
+    rawOrder: any,
+    fallback?: Partial<Order>,
+    options?: { useFallback?: boolean; resolveWithCatalog?: boolean },
+  ): Order => {
+    const useFallback = options?.useFallback !== false;
+    const resolveWithCatalog = options?.resolveWithCatalog !== false;
+    const fallbackOrder = useFallback ? (fallback || {}) : {};
+    const pickLongerArray = <T,>(preferred: T[], secondary: T[]) =>
+      preferred.length >= secondary.length ? preferred : secondary;
+    const pickPreferredText = (preferred: unknown, secondary: unknown, fallbackValue = '') => {
+      const preferredText = String(preferred ?? '').trim();
+      if (preferredText && preferredText.toLowerCase() !== 'null' && preferredText.toLowerCase() !== 'undefined') {
+        return preferredText;
+      }
+      const secondaryText = String(secondary ?? '').trim();
+      if (secondaryText && secondaryText.toLowerCase() !== 'null' && secondaryText.toLowerCase() !== 'undefined') {
+        return secondaryText;
+      }
+      return fallbackValue;
+    };
+    const pickValidEnum = (
+      preferred: unknown,
+      secondary: unknown,
+      allowed: string[],
+      fallbackValue: string,
+    ) => {
+      const preferredText = String(preferred ?? '').trim().toLowerCase();
+      if (allowed.includes(preferredText)) return preferredText;
+      const secondaryText = String(secondary ?? '').trim().toLowerCase();
+      if (allowed.includes(secondaryText)) return secondaryText;
+      return fallbackValue;
+    };
+    const mergeCompanyProductNameMaps = (
+      primary: Record<string, { company_name?: string; product_names?: string[] | string }>,
+      secondary: Record<string, { company_name?: string; product_names?: string[] | string }>,
+    ) => {
+      const allKeys = Array.from(new Set([...Object.keys(secondary), ...Object.keys(primary)]));
+      return Object.fromEntries(
+        allKeys.map((key) => {
+          const primaryEntry = primary[key];
+          const secondaryEntry = secondary[key];
+          const mergedNames = Array.from(
+            new Set([
+              ...toStringArray(primaryEntry?.product_names),
+              ...toStringArray(secondaryEntry?.product_names),
+            ]),
+          );
+          return [
+            key,
+            {
+              company_name: pickPreferredText(primaryEntry?.company_name, secondaryEntry?.company_name),
+              product_names: mergedNames,
+            },
+          ];
+        }),
+      );
+    };
+
+    const parsedProductIds = toNumberArray(rawOrder.product_ids);
+    const fallbackProductIds = toNumberArray((fallbackOrder as any).product_ids);
+    const parsedReplacementProductIds = toNumberArray(rawOrder.replacement_product_ids);
+    const fallbackReplacementProductIds = toNumberArray((fallbackOrder as any).replacement_product_ids);
+    const parsedProductNames = toStringArray(rawOrder.product_names);
+    const fallbackProductNames = toStringArray((fallbackOrder as any).product_names);
+    const parsedReplacementProductNames = toStringArray(rawOrder.replacement_product_names);
+    const fallbackReplacementProductNames = toStringArray((fallbackOrder as any).replacement_product_names);
+    const parsedProductSerials = toPositionedStringArray(rawOrder.product_serial_numbers);
+    const fallbackProductSerials = toPositionedStringArray((fallbackOrder as any).product_serial_numbers);
+    const parsedReplacementSerials = toPositionedStringArray(rawOrder.replacement_product_serial_numbers);
+    const fallbackReplacementSerials = toPositionedStringArray((fallbackOrder as any).replacement_product_serial_numbers);
+    const parsedCompanyIds = toNumberArray(rawOrder.company_ids);
+    const fallbackCompanyIds = toNumberArray((fallbackOrder as any).company_ids);
+    const parsedCompanyNames = toStringArray(rawOrder.company_names);
+    const fallbackCompanyNames = toStringArray((fallbackOrder as any).company_names);
+    const parsedCompanyProductNameMap = useFallback
+      ? mergeCompanyProductNameMaps(
+          parseCompanyProductNameMap(rawOrder.company_product_name_map),
+          parseCompanyProductNameMap((fallbackOrder as any).company_product_name_map),
+        )
+      : parseCompanyProductNameMap(rawOrder.company_product_name_map);
+    const companyIdsFromNameMap = Object.keys(parsedCompanyProductNameMap)
+      .map((id) => parseInt(String(id), 10))
+      .filter((id) => Number.isFinite(id) && id > 0);
+    const companyNamesFromNameMap = Object.values(parsedCompanyProductNameMap)
+      .map((entry) => String(entry?.company_name || '').trim())
+      .filter(Boolean);
+    const primaryProductId = parseInt(String(rawOrder.product_id || (fallbackOrder as any).product_id || ''), 10);
+    const primaryReplacementProductId = parseInt(
+      String(rawOrder.replacement_product_id || (fallbackOrder as any).replacement_product_id || ''),
+      10,
+    );
+    const primaryCompanyId = parseInt(String(rawOrder.company_id || (fallbackOrder as any).company_id || ''), 10);
+    const rawCompanyProductMap = normalizeCompanyProductMap(
+      rawOrder.company_product_map ||
+      rawOrder.companies_products ||
+      (fallbackOrder as any).company_product_map ||
+      (fallbackOrder as any).companies_products,
+    );
+    const companyMapProductIds = Array.from(
+      new Set(
+        Object.values(rawCompanyProductMap).flatMap((ids) =>
+          (ids || [])
+            .map((id) => parseInt(String(id), 10))
+            .filter((id) => Number.isFinite(id) && id > 0),
+        ),
+      ),
+    );
+    const rawProductStatusMap = normalizeProductStatusMap(
+      rawOrder.product_status_map ?? (fallbackOrder as any).product_status_map,
+    );
+    const rawRepairingStatusMap = normalizeRepairingStatusMap(
+      rawOrder.repairing_status_map ?? (fallbackOrder as any).repairing_status_map,
+    );
+    const rawProductQuantityMap = normalizeProductQuantityMap(
+      rawOrder.product_quantity_map ?? (fallbackOrder as any).product_quantity_map,
+    );
+    const quantityMapProductIds = Array.from(
+      new Set(
+        Object.keys(rawProductQuantityMap)
+          .map((id) => parseInt(String(id), 10))
+          .filter((id) => Number.isFinite(id) && id > 0),
+      ),
+    );
+    const statusMapProductIds = Array.from(
+      new Set([
+        ...Object.keys(rawProductStatusMap).map((id) => parseInt(String(id), 10)),
+        ...Object.keys(rawRepairingStatusMap).map((id) => parseInt(String(id), 10)),
+      ].filter((id) => Number.isFinite(id) && id > 0)),
+    );
+    const normalizedProductIds = Array.from(
+      new Set([
+        ...pickLongerArray(parsedProductIds, fallbackProductIds),
+        ...companyMapProductIds,
+        ...quantityMapProductIds,
+        ...statusMapProductIds,
+        ...(Number.isFinite(primaryProductId) && primaryProductId > 0 ? [primaryProductId] : []),
+      ]),
+    );
+    const normalizedReplacementProductIds = Array.from(
+      new Set([
+        ...pickLongerArray(parsedReplacementProductIds, fallbackReplacementProductIds),
+        ...(Number.isFinite(primaryReplacementProductId) && primaryReplacementProductId > 0 ? [primaryReplacementProductId] : []),
+      ]),
+    );
+    const normalizedProductNames = pickLongerArray(parsedProductNames, fallbackProductNames).length > 0
+      ? pickLongerArray(parsedProductNames, fallbackProductNames)
+      : pickPreferredText(rawOrder.product_name, fallbackOrder.product_name)
+        ? [pickPreferredText(rawOrder.product_name, fallbackOrder.product_name)]
+        : [];
+    const normalizedReplacementProductNames = pickLongerArray(parsedReplacementProductNames, fallbackReplacementProductNames).length > 0
+      ? pickLongerArray(parsedReplacementProductNames, fallbackReplacementProductNames)
+      : pickPreferredText(rawOrder.replacement_product_name, fallbackOrder.replacement_product_name)
+        ? [pickPreferredText(rawOrder.replacement_product_name, fallbackOrder.replacement_product_name)]
+        : [];
+    const resolveMissingProductIdsFromNames = (
+      names: string[],
+      currentIds: number[],
+      serials: string[],
+    ) => {
+      if (!resolveWithCatalog) return currentIds;
+      if (names.length === 0 || products.length === 0) return currentIds;
+      const usedIds = new Set(currentIds.filter((id) => Number.isInteger(id) && id > 0));
+      const resolvedIds = [...currentIds];
+
+      names.forEach((name, index) => {
+        if (resolvedIds[index]) return;
+
+        const normalizedName = String(name || '').trim().toLowerCase();
+        if (!normalizedName) return;
+        const normalizedSerial = String(serials[index] || '').trim().toLowerCase();
+
+        const matchedProduct = products.find((product) => {
+          if (usedIds.has(product.id)) return false;
+          const productName = String(product.product_name || '').trim().toLowerCase();
+          if (productName !== normalizedName) return false;
+          if (!normalizedSerial) return true;
+          return String(product.serial_number || '').trim().toLowerCase() === normalizedSerial;
+        }) || products.find((product) => {
+          if (usedIds.has(product.id)) return false;
+          return String(product.product_name || '').trim().toLowerCase() === normalizedName;
+        });
+
+        if (matchedProduct?.id) {
+          resolvedIds[index] = matchedProduct.id;
+          usedIds.add(matchedProduct.id);
+        }
+      });
+
+      return resolvedIds.filter((id) => Number.isInteger(id) && id > 0);
+    };
+    const normalizedCompanyIds = Array.from(
+      new Set([
+        ...pickLongerArray(parsedCompanyIds, fallbackCompanyIds),
+        ...companyIdsFromNameMap,
+        ...(Number.isFinite(primaryCompanyId) && primaryCompanyId > 0 ? [primaryCompanyId] : []),
+      ]),
+    );
+    const normalizedCompanyNames = Array.from(
+      new Set([
+        ...(
+          pickLongerArray(parsedCompanyNames, fallbackCompanyNames).length > 0
+            ? pickLongerArray(parsedCompanyNames, fallbackCompanyNames)
+            : toStringArray(pickPreferredText(rawOrder.company_name, fallbackOrder.company_name))
+        ),
+        ...companyNamesFromNameMap,
+      ]),
+    );
+    const resolvedProductIds = resolveMissingProductIdsFromNames(
+      normalizedProductNames,
+      normalizedProductIds,
+      parsedProductSerials.length > 0 ? parsedProductSerials : fallbackProductSerials,
+    );
+    const resolvedReplacementProductIds = resolveMissingProductIdsFromNames(
+      normalizedReplacementProductNames,
+      normalizedReplacementProductIds,
+      parsedReplacementSerials.length > 0 ? parsedReplacementSerials : fallbackReplacementSerials,
+    );
+    const normalizedCompanyProductMap: Record<string, string[]> = Object.fromEntries(
+      normalizedCompanyIds.map((companyId) => [companyId.toString(), rawCompanyProductMap[companyId.toString()] || []]),
+    );
+    if (
+      normalizedCompanyIds.length > 0 &&
+      !Object.values(normalizedCompanyProductMap).some((ids) => ids.length > 0) &&
+      resolvedProductIds.length > 0
+    ) {
+      normalizedCompanyProductMap[normalizedCompanyIds[0].toString()] = resolvedProductIds.map((id) => id.toString());
+    }
+    const mappedProductIds = new Set(
+      Object.values(normalizedCompanyProductMap).flatMap((ids) => ids.map((id) => String(id))),
+    );
+    const missingResolvedIds = resolvedProductIds
+      .map((id) => id.toString())
+      .filter((id) => !mappedProductIds.has(id));
+    if (normalizedCompanyIds.length > 0 && missingResolvedIds.length > 0) {
+      const primaryCompanyKey = normalizedCompanyIds[0].toString();
+      normalizedCompanyProductMap[primaryCompanyKey] = Array.from(
+        new Set([...(normalizedCompanyProductMap[primaryCompanyKey] || []), ...missingResolvedIds]),
+      );
+    }
+    const incomingProductStatusMap = rawProductStatusMap;
+    const normalizedProductStatusMap: Record<string, string> = Object.fromEntries(
+      resolvedProductIds.map((id) => {
+        const key = id.toString();
+        return [key, normalizeProductFlowStatus(incomingProductStatusMap[key])];
+      }),
+    );
+    const incomingRepairingStatusMap = rawRepairingStatusMap;
+    const incomingAccessoryTypeMap = normalizeAccessoryTypeMap(
+      rawOrder.accessory_type_map ?? (fallbackOrder as any).accessory_type_map,
+    );
+    const normalizedRepairingStatusMap: Record<string, string> = Object.fromEntries(
+      resolvedProductIds.map((id) => {
+        const key = id.toString();
+        return [key, normalizeRepairingStatus(incomingRepairingStatusMap[key])];
+      }),
+    );
+
+    return {
+      ...fallbackOrder,
+      ...rawOrder,
+      id: parseInt(String(rawOrder.id ?? fallbackOrder.id), 10),
+      order_code: rawOrder.order_code || fallbackOrder.order_code || `ORD${rawOrder.id ?? fallbackOrder.id}`,
+      company_id: normalizedCompanyIds[0] || (primaryCompanyId > 0 ? primaryCompanyId : null),
+      company_ids: normalizedCompanyIds,
+      company_name: normalizedCompanyNames.length > 0
+        ? normalizedCompanyNames.join(' || ')
+        : pickPreferredText(rawOrder.company_name, fallbackOrder.company_name),
+      company_names: normalizedCompanyNames,
+      company_names_text: normalizedCompanyNames.join(' || '),
+      company_product_map: normalizedCompanyProductMap,
+      companies_products: normalizedCompanyProductMap,
+      company_product_name_map: parsedCompanyProductNameMap,
+      client_id: parseInt(String(rawOrder.client_id ?? fallbackOrder.client_id ?? 0), 10) || 0,
+      client_name: pickPreferredText(rawOrder.client_name, fallbackOrder.client_name, 'Unknown'),
+      client_phone: pickPreferredText(rawOrder.client_phone, fallbackOrder.client_phone),
+      client_email: pickPreferredText(rawOrder.client_email, fallbackOrder.client_email),
+      client_address: pickPreferredText(rawOrder.client_address, fallbackOrder.client_address),
+      product_id: resolvedProductIds[0] || (Number.isFinite(primaryProductId) ? primaryProductId : 0),
+      product_name: normalizedProductNames[0] || pickPreferredText(rawOrder.product_name, fallbackOrder.product_name, 'Unknown'),
+      product_ids: resolvedProductIds,
+      product_quantity_map: Object.fromEntries(
+        resolvedProductIds.map((id) => [id.toString(), rawProductQuantityMap[id.toString()] || 1]),
+      ),
+      product_status_map: normalizedProductStatusMap,
+      product_status_dates_map: normalizeProductFlowDatesMap(
+        rawOrder.product_status_dates_map ?? (fallbackOrder as any).product_status_dates_map,
+      ),
+      issue_description_map: normalizeIssueDescriptionMap(
+        rawOrder.issue_description_map ?? (fallbackOrder as any).issue_description_map,
+      ),
+      accessory_type_map: incomingAccessoryTypeMap,
+      result_text_map: normalizeIssueDescriptionMap(
+        rawOrder.result_text_map ?? (fallbackOrder as any).result_text_map,
+      ),
+      handover_type: pickPreferredText(
+        rawOrder.handover_type,
+        (fallbackOrder as any).handover_type,
+      ),
+      handover_type_map: normalizeHandoverTypeMap(
+        rawOrder.handover_type_map ?? (fallbackOrder as any).handover_type_map,
+      ),
+      repairing_status_map: normalizedRepairingStatusMap,
+      product_names: normalizedProductNames,
+      product_models: toPositionedStringArray(rawOrder.product_models ?? (fallbackOrder as any).product_models),
+      product_serial_numbers: toPositionedStringArray(
+        rawOrder.product_serial_numbers ?? (fallbackOrder as any).product_serial_numbers,
+      ),
+      replacement_product_id:
+        resolvedReplacementProductIds[0] ||
+        (Number.isFinite(primaryReplacementProductId) ? primaryReplacementProductId : null),
+      replacement_product_name:
+        normalizedReplacementProductNames[0] ||
+        pickPreferredText(rawOrder.replacement_product_name, fallbackOrder.replacement_product_name),
+      replacement_product_ids: resolvedReplacementProductIds,
+      replacement_product_names: normalizedReplacementProductNames,
+      replacement_product_models: toPositionedStringArray(rawOrder.replacement_product_models ?? (fallbackOrder as any).replacement_product_models),
+      replacement_product_serial_numbers: toPositionedStringArray(
+        rawOrder.replacement_product_serial_numbers ?? (fallbackOrder as any).replacement_product_serial_numbers,
+      ),
+      issue_description: pickPreferredText(rawOrder.issue_description, fallbackOrder.issue_description),
+      warranty_status: pickValidEnum(
+        rawOrder.warranty_status,
+        fallbackOrder.warranty_status,
+        ['in_warranty', 'out_of_warranty', 'extended_warranty'],
+        'out_of_warranty',
+      ) as Order['warranty_status'],
+      estimated_cost: String(rawOrder.estimated_cost ?? fallbackOrder.estimated_cost ?? '0'),
+      final_cost: String(rawOrder.final_cost ?? rawOrder.estimated_cost ?? fallbackOrder.final_cost ?? fallbackOrder.estimated_cost ?? '0'),
+      deposit_amount: String(rawOrder.deposit_amount ?? fallbackOrder.deposit_amount ?? '0'),
+      payment_status: pickValidEnum(
+        rawOrder.payment_status,
+        fallbackOrder.payment_status,
+        ['pending', 'partially_paid', 'paid', 'refunded'],
+        'pending',
+      ) as Order['payment_status'],
+      estimated_delivery_date: pickPreferredText(rawOrder.estimated_delivery_date, fallbackOrder.estimated_delivery_date),
+      status: pickValidEnum(
+        rawOrder.status,
+        fallbackOrder.status,
+        ['pending', 'scheduled', 'process', 'ready', 'completed', 'delivered', 'cancelled'],
+        'pending',
+      ) as Order['status'],
+      priority: pickValidEnum(
+        rawOrder.priority,
+        fallbackOrder.priority,
+        ['low', 'medium', 'high', 'urgent'],
+        'medium',
+      ) as Order['priority'],
+      notes: pickPreferredText(rawOrder.notes, fallbackOrder.notes),
+      created_at: pickPreferredText(rawOrder.created_at, fallbackOrder.created_at),
+      updated_at: pickPreferredText(rawOrder.updated_at, fallbackOrder.updated_at || rawOrder.created_at || fallbackOrder.created_at),
+      staff_id: rawOrder.staff_id ? parseInt(rawOrder.staff_id, 10) : fallbackOrder.staff_id,
+      staff_name: pickPreferredText(rawOrder.staff_name, fallbackOrder.staff_name),
+      brand: pickPreferredText(rawOrder.brand, fallbackOrder.brand),
+      model: pickPreferredText(rawOrder.model, fallbackOrder.model),
+      product_brand: pickPreferredText(rawOrder.product_brand || rawOrder.brand, fallbackOrder.product_brand || fallbackOrder.brand),
+      product_model: pickPreferredText(rawOrder.product_model || rawOrder.model, fallbackOrder.product_model || fallbackOrder.model),
+      serial_number: pickPreferredText(rawOrder.serial_number, fallbackOrder.serial_number),
+      replacement_serial_number: pickPreferredText(rawOrder.replacement_serial_number, fallbackOrder.replacement_serial_number),
+      purchase_date: pickPreferredText(rawOrder.purchase_date, fallbackOrder.purchase_date),
+      service_type: pickPreferredText(rawOrder.service_type, fallbackOrder.service_type),
+      accessories: pickPreferredText(rawOrder.accessories, fallbackOrder.accessories),
+      diagnosis_notes: pickPreferredText(rawOrder.diagnosis_notes, fallbackOrder.diagnosis_notes),
+      repair_notes: pickPreferredText(rawOrder.repair_notes, fallbackOrder.repair_notes),
+      technician_notes: pickPreferredText(rawOrder.technician_notes, fallbackOrder.technician_notes),
+      customer_feedback: pickPreferredText(rawOrder.customer_feedback, fallbackOrder.customer_feedback),
+      next_service_date: pickPreferredText(rawOrder.next_service_date, fallbackOrder.next_service_date),
+    };
+  };
   
   const loadOrders = async () => {
     try {
-      const data = await apiRequest('admin_api.php?action=get_orders');
+      const data = await apiRequest(`admin_api.php?action=get_orders&_=${Date.now()}`);
       
       if (data.success && data.orders) {
-        const toNumberArray = (value: unknown): number[] => {
-          if (Array.isArray(value)) {
-            return value
-              .map((entry) => parseInt(String(entry), 10))
-              .filter((entry) => Number.isFinite(entry) && entry > 0);
-          }
-          if (typeof value === 'string') {
-            const trimmed = value.trim();
-            if (!trimmed) return [];
-            try {
-              const parsed = JSON.parse(trimmed);
-              if (Array.isArray(parsed)) {
-                return parsed
-                  .map((entry) => parseInt(String(entry), 10))
-                  .filter((entry) => Number.isFinite(entry) && entry > 0);
-              }
-            } catch {
-              // keep fallback below
-            }
-            return trimmed
-              .split(',')
-              .map((entry) => parseInt(entry.trim(), 10))
-              .filter((entry) => Number.isFinite(entry) && entry > 0);
-          }
-          return [];
-        };
-
-        const toStringArray = (value: unknown): string[] => {
-          if (Array.isArray(value)) {
-            return value
-              .map((entry) => String(entry || '').trim())
-              .filter(Boolean);
-          }
-          if (typeof value === 'string') {
-            const trimmed = value.trim();
-            if (!trimmed) return [];
-            try {
-              const parsed = JSON.parse(trimmed);
-              if (Array.isArray(parsed)) {
-                return parsed
-                  .map((entry) => String(entry || '').trim())
-                  .filter(Boolean);
-              }
-            } catch {
-              // keep fallback below
-            }
-            return trimmed
-              .split(trimmed.includes('||') ? '||' : ',')
-              .map((entry) => entry.trim())
-              .filter(Boolean);
-          }
-          return [];
-        };
-
-        const mappedOrders: Order[] = data.orders.map((order: any) => {
-          const parsedProductIds = toNumberArray(order.product_ids);
-          const parsedReplacementProductIds = toNumberArray(order.replacement_product_ids);
-          const parsedProductNames = toStringArray(order.product_names);
-          const parsedReplacementProductNames = toStringArray(order.replacement_product_names);
-          const parsedCompanyIds = toNumberArray(order.company_ids);
-          const parsedCompanyNames = toStringArray(order.company_names);
-          const primaryProductId = parseInt(String(order.product_id || ''), 10);
-          const primaryReplacementProductId = parseInt(String(order.replacement_product_id || ''), 10);
-          const primaryCompanyId = parseInt(String(order.company_id || ''), 10);
-          const normalizedProductIds =
-            parsedProductIds.length > 0
-              ? parsedProductIds
-              : Number.isFinite(primaryProductId) && primaryProductId > 0
-                ? [primaryProductId]
-                : [];
-          const normalizedReplacementProductIds =
-            parsedReplacementProductIds.length > 0
-              ? parsedReplacementProductIds
-              : Number.isFinite(primaryReplacementProductId) && primaryReplacementProductId > 0
-                ? [primaryReplacementProductId]
-                : [];
-          const normalizedProductNames =
-            parsedProductNames.length > 0
-              ? parsedProductNames
-              : order.product_name
-                ? [order.product_name]
-                : [];
-          const normalizedReplacementProductNames =
-            parsedReplacementProductNames.length > 0
-              ? parsedReplacementProductNames
-              : order.replacement_product_name
-                ? [order.replacement_product_name]
-                : [];
-          const normalizedCompanyIds =
-            parsedCompanyIds.length > 0
-              ? parsedCompanyIds
-              : Number.isFinite(primaryCompanyId) && primaryCompanyId > 0
-                ? [primaryCompanyId]
-                : [];
-          const normalizedCompanyNames =
-            parsedCompanyNames.length > 0
-              ? parsedCompanyNames
-              : toStringArray(order.company_name);
-          const rawCompanyProductMap = normalizeCompanyProductMap(order.company_product_map || order.companies_products);
-          const normalizedCompanyProductMap: Record<string, string[]> = Object.fromEntries(
-            normalizedCompanyIds.map((companyId) => [companyId.toString(), rawCompanyProductMap[companyId.toString()] || []]),
-          );
-          if (normalizedCompanyIds.length > 0 && !Object.values(normalizedCompanyProductMap).some((ids) => ids.length > 0) && normalizedProductIds.length > 0) {
-            normalizedCompanyProductMap[normalizedCompanyIds[0].toString()] = normalizedProductIds.map((id) => id.toString());
-          }
-          const incomingProductStatusMap = normalizeProductStatusMap(order.product_status_map);
-          const normalizedProductStatusMap: Record<string, string> = Object.fromEntries(
-            normalizedProductIds.map((id) => {
-              const key = id.toString();
-              return [key, normalizeProductFlowStatus(incomingProductStatusMap[key])];
-            }),
-          );
-          const incomingRepairingStatusMap = normalizeRepairingStatusMap((order as any).repairing_status_map);
-          const normalizedRepairingStatusMap: Record<string, string> = Object.fromEntries(
-            normalizedProductIds.map((id) => {
-              const key = id.toString();
-              return [key, normalizeRepairingStatus(incomingRepairingStatusMap[key])];
-            }),
-          );
-
-          return {
-          ...order,
-          id: parseInt(String(order.id), 10),
-          order_code: order.order_code || `ORD${order.id}`,
-          company_id: normalizedCompanyIds[0] || (order.company_id ? parseInt(order.company_id) : null),
-          company_ids: normalizedCompanyIds,
-          company_name: (normalizedCompanyNames.length > 0 ? normalizedCompanyNames.join(' || ') : (order.company_name || '')),
-          company_names: normalizedCompanyNames,
-          company_names_text: normalizedCompanyNames.join(' || '),
-          company_product_map: normalizedCompanyProductMap,
-          companies_products: normalizedCompanyProductMap,
-          client_id: parseInt(order.client_id) || 0,
-          client_name: order.client_name || 'Unknown',
-          client_phone: order.client_phone || '',
-          client_email: order.client_email,
-          client_address: order.client_address,
-          product_id: normalizedProductIds[0] || (Number.isFinite(primaryProductId) ? primaryProductId : 0),
-          product_name: normalizedProductNames[0] || order.product_name || 'Unknown',
-          product_ids: normalizedProductIds,
-          product_status_map: normalizedProductStatusMap,
-          repairing_status_map: normalizedRepairingStatusMap,
-          product_names: normalizedProductNames,
-          replacement_product_id:
-            normalizedReplacementProductIds[0] ||
-            (Number.isFinite(primaryReplacementProductId) ? primaryReplacementProductId : null),
-          replacement_product_name: normalizedReplacementProductNames[0] || order.replacement_product_name || '',
-          replacement_product_ids: normalizedReplacementProductIds,
-          replacement_product_names: normalizedReplacementProductNames,
-          issue_description: order.issue_description || '',
-          warranty_status: order.warranty_status || 'out_of_warranty',
-          estimated_cost: order.estimated_cost || '0',
-          final_cost: order.final_cost || order.estimated_cost || '0',
-          deposit_amount: order.deposit_amount || '0',
-          payment_status: order.payment_status || 'pending',
-          estimated_delivery_date: order.estimated_delivery_date || '',
-          status: order.status || 'pending',
-          priority: order.priority || 'medium',
-          notes: order.notes || '',
-          created_at: order.created_at,
-          updated_at: order.updated_at || order.created_at,
-          staff_id: order.staff_id ? parseInt(order.staff_id) : undefined,
-          staff_name: order.staff_name,
-          brand: order.brand,
-          model: order.model,
-          product_brand: order.product_brand || order.brand,
-          product_model: order.product_model || order.model,
-          serial_number: order.serial_number,
-          purchase_date: order.purchase_date,
-          service_type: order.service_type,
-          accessories: order.accessories,
-          diagnosis_notes: order.diagnosis_notes,
-          repair_notes: order.repair_notes,
-          technician_notes: order.technician_notes,
-          customer_feedback: order.customer_feedback,
-          next_service_date: order.next_service_date
-          };
-        });
+        const mappedOrders: Order[] = data.orders.map((order: any) => normalizeOrderRecord(order));
         
         setOrders(mappedOrders);
         setSelectedOrders([]);
@@ -2615,9 +3456,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           delivery_code: delivery.delivery_code || `DEL${delivery.id}`,
           client_name: delivery.client_name || '',
           client_phone: delivery.client_phone || '',
+          client_address: delivery.client_address || '',
           product_name: delivery.product_name || '',
           product_serial_number: delivery.product_serial_number || delivery.serial_number || '',
-          product_serial_numbers: delivery.product_serial_numbers || '',
+          product_serial_numbers: delivery.product_serial_numbers || delivery.serial_numbers || '',
+          serial_number: delivery.serial_number || '',
+          serial_numbers: delivery.serial_numbers || '',
+          product_ids: delivery.product_ids || '',
+          delivered_product_names: delivery.delivered_product_names || '',
+          delivered_product_models: delivery.delivered_product_models || '',
+          delivered_product_serial_numbers: delivery.delivered_product_serial_numbers || '',
+          delivered_company_names: delivery.delivered_company_names || '',
+          delivered_company_name: delivery.delivered_company_name || '',
+          delivery_type_map: delivery.delivery_type_map || '',
+          delivery_item_product_ids: delivery.delivery_item_product_ids || '',
+          delivery_item_product_names: delivery.delivery_item_product_names || '',
+          delivery_item_models: delivery.delivery_item_models || '',
+          delivery_item_serial_numbers: delivery.delivery_item_serial_numbers || '',
           product_brand: delivery.product_brand || '',
           product_model: delivery.product_model || '',
           address: delivery.address || '',
@@ -2935,7 +3790,36 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
 
-  const handleNotificationClick = (notification: Notification) => {
+  const queueSilentRefresh = useCallback((keys: Array<'dashboard' | 'users' | 'orders' | 'clients' | 'products' | 'deliveries' | 'staff' | 'notifications' | 'analytics' | 'suntocompany' | 'companytosun'>) => {
+    const loaders: Record<string, () => Promise<any>> = {
+      dashboard: loadDashboardData,
+      users: loadUsers,
+      orders: loadOrders,
+      clients: loadClients,
+      products: loadProducts,
+      deliveries: loadDeliveries,
+      staff: loadStaffPerformance,
+      notifications: loadNotifications,
+      analytics: loadAnalytics,
+      suntocompany: loadSunToCompanyClaims,
+      companytosun: loadCompanyToSunClaims,
+    };
+
+    void Promise.allSettled(
+      Array.from(new Set(keys))
+        .map((key) => loaders[key])
+        .filter(Boolean)
+        .map((loader) => loader()),
+    );
+  }, [loadAnalytics, loadClients, loadCompanyToSunClaims, loadDashboardData, loadDeliveries, loadNotifications, loadOrders, loadProducts, loadStaffPerformance, loadSunToCompanyClaims, loadUsers]);
+
+  const autoRefreshAfterSave = useCallback((keys: Array<'dashboard' | 'users' | 'orders' | 'clients' | 'products' | 'deliveries' | 'staff' | 'notifications' | 'analytics' | 'suntocompany' | 'companytosun'>) => {
+    window.setTimeout(() => {
+      queueSilentRefresh(keys);
+    }, 0);
+  }, [queueSilentRefresh]);
+
+  const handleNotificationClick = async (notification: Notification) => {
     const isReminder = notification.title.toLowerCase().includes('reminder');
     const isPendingOrder = Boolean(notification.order_id);
 
@@ -2960,8 +3844,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       }));
 
       if (matchedOrder) {
-        setSelectedOrderDetails(matchedOrder);
-        setShowOrderDetailsModal(true);
+        await handleOrderRowClick(matchedOrder);
       } else if (notification.order_code) {
         setSearchTerm(notification.order_code);
       }
@@ -3133,10 +4016,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const openEditOrderForm = async (order: any) => {
     try {
       await ensureOrderFormDependencies();
-      handleEdit('order', order);
+      await handleEdit('order', order);
     } catch (error) {
       console.error('Error preparing edit order form:', error);
-      handleEdit('order', order);
+      await handleEdit('order', order);
     }
   };
 
@@ -3221,9 +4104,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       const data = await apiRequest('admin_api.php?action=create_user', 'POST', userData);
 
       if (data.success) {
+        const createdUser: User = {
+          id: Number(data.user_id) || Date.now(),
+          name: userData.name,
+          email: userData.email,
+          phone: userData.phone,
+          role: userData.role,
+          is_active: Boolean(userData.is_active),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          department: newUser.department || 'general',
+          profile_image:
+            newUser.profile_image_url ||
+            (typeof newUser.profile_image === 'string' ? newUser.profile_image : '') ||
+            '',
+        };
+        const nextUsers = upsertItemById(users, createdUser);
+        setUsers(nextUsers);
+        syncDashboardStatsWithState({ users: nextUsers });
+        autoRefreshAfterSave(['users', 'dashboard', 'staff']);
         setSuccessMessage('User created successfully');
-        await loadUsers();
-        await loadDashboardData();
         setShowCreateUser(false);
         setShowCreateStaff(false);
         resetUserForm('user');
@@ -3275,12 +4175,43 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           normalizeRepairingStatus(incomingRepairingStatusMap[productId]),
         ]),
       );
+      const incomingProductQuantityMap = normalizeProductQuantityMap((newOrder as any).product_quantity_map);
+      const productQuantityMap = Object.fromEntries(
+        (newOrder.product_ids || []).map((productId) => [
+          productId,
+          Math.max(1, Number(incomingProductQuantityMap[productId] || 1)),
+        ]),
+      );
       const incomingIssueDescriptionMap = normalizeIssueDescriptionMap((newOrder as any).issue_description_map);
       const issueDescriptionMap = Object.fromEntries(
         (newOrder.product_ids || []).map((productId) => [
           productId,
           String(incomingIssueDescriptionMap[productId] || '').trim(),
         ]),
+      );
+      const incomingAccessoryTypeMap = normalizeAccessoryTypeMap((newOrder as any).accessory_type_map);
+      const accessoryTypeMap = Object.fromEntries(
+        (newOrder.product_ids || [])
+          .filter((productId) => ['without_box', 'with_box'].includes(String(incomingAccessoryTypeMap[productId] || '')))
+          .map((productId) => [productId, incomingAccessoryTypeMap[productId]]),
+      );
+      const incomingResultTextMap = normalizeIssueDescriptionMap((newOrder as any).result_text_map);
+      const resultTextMap = Object.fromEntries(
+        (newOrder.product_ids || []).map((productId) => [
+          productId,
+          String(incomingResultTextMap[productId] || '').trim(),
+        ]),
+      );
+      const incomingHandoverTypeMap = normalizeHandoverTypeMap((newOrder as any).handover_type_map);
+      const handoverTypeMap = Object.fromEntries(
+        (newOrder.product_ids || []).map((productId) => {
+          const rawType = String(incomingHandoverTypeMap[productId] || '').trim().toLowerCase();
+          const normalizedType =
+            rawType === 'parcel_service' || rawType === 'delivery' ? 'parcelservice' :
+            rawType === 'in_hand' || rawType === 'pickup' ? 'inhand' :
+            (['inhand', 'courier', 'parcelservice'].includes(rawType) ? rawType : 'inhand');
+          return [productId, normalizedType];
+        }),
       );
       
       const orderData = {
@@ -3295,9 +4226,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         product_id: newOrder.product_id || '',
         replacement_product_id: newOrder.replacement_product_id || '',
         product_ids: newOrder.product_ids || [],
+        product_quantity_map: productQuantityMap,
         product_status_map: productStatusMap,
         product_status_dates_map: productStatusDatesMap,
         issue_description_map: issueDescriptionMap,
+        accessory_type_map: accessoryTypeMap,
+        result_text_map: resultTextMap,
+        handover_type_map: handoverTypeMap,
+        handover_type: Object.values(handoverTypeMap)[0] || 'inhand',
         repairing_status_map: repairingStatusMap,
         replacement_product_ids: newOrder.replacement_product_ids || [],
         product_name: newOrder.product_name,
@@ -3319,9 +4255,51 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       const data = await apiRequest('admin_api.php?action=create_order', 'POST', orderData);
       
       if (data.success) {
+        const optimisticOrder = normalizeOrderRecord({
+          id: Number(data.order_id) || Date.now(),
+          order_code: String(data.order_code || `ORD${Date.now()}`),
+          company_id: orderData.company_id || null,
+          company_ids: orderData.company_ids || [],
+          company_name: orderData.company_name || '',
+          company_product_map: orderData.company_product_map || {},
+          companies_products: orderData.companies_products || {},
+          client_id: Number(orderData.client_id) || 0,
+          client_name: orderData.client_name,
+          client_phone: orderData.client_phone,
+          product_id: Number(orderData.product_id) || 0,
+          replacement_product_id: orderData.replacement_product_id ? Number(orderData.replacement_product_id) : null,
+          product_ids: orderData.product_ids || [],
+          product_quantity_map: orderData.product_quantity_map,
+          replacement_product_ids: orderData.replacement_product_ids || [],
+          product_name: orderData.product_name,
+          product_status_map: orderData.product_status_map,
+          product_status_dates_map: orderData.product_status_dates_map,
+          issue_description_map: orderData.issue_description_map,
+          accessory_type_map: orderData.accessory_type_map,
+          result_text_map: orderData.result_text_map,
+          handover_type_map: orderData.handover_type_map,
+          handover_type: orderData.handover_type,
+          repairing_status_map: orderData.repairing_status_map,
+          service_type: orderData.service_type,
+          issue_description: orderData.issue_description,
+          warranty_status: orderData.warranty_status,
+          estimated_cost: String(orderData.estimated_cost ?? ''),
+          final_cost: String(orderData.final_cost ?? orderData.estimated_cost ?? ''),
+          deposit_amount: String(orderData.deposit_amount ?? 0),
+          payment_status: orderData.payment_status,
+          estimated_delivery_date: orderData.estimated_delivery_date,
+          priority: orderData.priority,
+          notes: orderData.notes,
+          status: 'pending',
+          staff_id: orderData.staff_id ? Number(orderData.staff_id) : undefined,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+        const nextOrders = upsertItemById(orders, optimisticOrder);
+        setOrders(nextOrders);
+        syncDashboardStatsWithState({ orders: nextOrders });
+        autoRefreshAfterSave(['orders', 'dashboard', 'notifications', 'deliveries', 'analytics', 'suntocompany', 'companytosun']);
         setSuccessMessage('Order created successfully');
-        await loadOrders();
-        await loadDashboardData();
         setShowCreateOrder(false);
         setNewOrder(getDefaultNewOrder());
         setTimeout(() => setSuccessMessage(null), 3000);
@@ -3361,9 +4339,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       const data = await apiRequest('admin_api.php?action=create_client', 'POST', clientData);
       
       if (data.success) {
+        const createdClient: Client = {
+          id: Number(data.client_id) || Date.now(),
+          client_code: String(data.client_code || `CLT${Date.now()}`),
+          full_name: clientData.full_name,
+          email: clientData.email,
+          phone: clientData.phone,
+          address: clientData.address,
+          city: clientData.city,
+          state: clientData.state,
+          zip_code: clientData.zip_code,
+          notes: clientData.notes,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          total_orders: 0,
+          total_spent: 0,
+          customer_since: new Date().toISOString(),
+        };
+        const nextClients = upsertItemById(clients, createdClient);
+        setClients(nextClients);
+        syncDashboardStatsWithState({ clients: nextClients });
+        autoRefreshAfterSave(['clients', 'dashboard']);
         setSuccessMessage('Client created successfully');
-        await loadClients();
-        await loadDashboardData();
         setShowCreateClient(false);
         setNewClient({
           full_name: '',
@@ -3449,9 +4446,41 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
       const createdCount = typeof data.created_count === 'number' ? data.created_count : productRows.length;
       const failedCount = typeof data.failed_count === 'number' ? data.failed_count : 0;
-
-      await loadProducts();
-      await loadDashboardData();
+      const createdProductsMeta = Array.isArray(data.created_products) ? data.created_products : [];
+      const optimisticProducts: Product[] =
+        createdProductsMeta.length > 0
+          ? createdProductsMeta.map((entry: any) => {
+              const sourceRow = productRows[Number(entry?.index) || 0] || productRows[0];
+              const createdAt = new Date().toISOString();
+              return {
+                id: Number(entry?.product_id) || Date.now() + Math.floor(Math.random() * 1000),
+                product_code: String(entry?.product_code || `PRD${Date.now()}`),
+                product_name: String(sourceRow?.product_name || ''),
+                serial_number: String(sourceRow?.serial_number || ''),
+                is_spare_product: sourceRow?.is_spare_product ?? 0,
+                brand: String(sourceRow?.brand || ''),
+                model: String(sourceRow?.model || ''),
+                category: String(sourceRow?.category || 'OTHERS'),
+                claim_type: String(sourceRow?.claim_type || 'none'),
+                specifications: String(sourceRow?.specifications || ''),
+                purchase_date: String(sourceRow?.purchase_date || ''),
+                warranty_period: String(sourceRow?.warranty_period || ''),
+                warranty_status: 'active',
+                price: String(sourceRow?.price || 0),
+                stock_quantity: Number(sourceRow?.stock_quantity || typedQuantity) || typedQuantity,
+                min_stock_level: 5,
+                status: (sourceRow?.status || 'active') as Product['status'],
+                created_at: createdAt,
+                updated_at: createdAt,
+              };
+            })
+          : [];
+      if (optimisticProducts.length > 0) {
+        const nextProducts = sortByNewestId([...products, ...optimisticProducts]);
+        setProducts(nextProducts);
+        syncDashboardStatsWithState({ products: nextProducts });
+      }
+      autoRefreshAfterSave(['products', 'dashboard']);
 
       if (options?.keepOpen) {
         setSuccessMessage(
@@ -3857,12 +4886,57 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       return;
     }
 
+    const parseIdList = (value: unknown): string[] => {
+      if (Array.isArray(value)) return value.map((entry) => String(entry ?? '').trim()).filter(Boolean);
+      if (typeof value !== 'string') return [];
+      const trimmed = value.trim();
+      if (!trimmed) return [];
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return parsed.map((entry) => String(entry ?? '').trim()).filter(Boolean);
+      } catch {
+        return trimmed.replace(/^\[/, '').replace(/\]$/, '').split(',').map((entry) => entry.trim()).filter(Boolean);
+      }
+      return [];
+    };
+
+    const parseNameList = (value: unknown): string[] => {
+      if (Array.isArray(value)) return value.map((entry) => String(entry ?? '').trim()).filter(Boolean);
+      if (typeof value !== 'string') return [];
+      const trimmed = value.trim();
+      if (!trimmed) return [];
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) return parsed.map((entry) => String(entry ?? '').trim()).filter(Boolean);
+      } catch {
+        return trimmed.split('||').flatMap((entry) => entry.split(',')).map((entry) => entry.trim()).filter(Boolean);
+      }
+      return [];
+    };
+
+    const orderProductIds = parseIdList(updatedOrder.product_ids ?? previousOrder?.product_ids);
+    const orderProductNames = parseNameList(updatedOrder.product_names ?? previousOrder?.product_names);
+    const orderProductSerials = parseNameList(updatedOrder.product_serial_numbers ?? previousOrder?.product_serial_numbers);
+    const orderProductModels = parseNameList(updatedOrder.product_models ?? previousOrder?.product_models);
+    const productMetaById = new Map<string, { name: string; serial: string; model: string }>();
+    orderProductIds.forEach((productId, index) => {
+      const key = String(productId).trim();
+      if (!key) return;
+      productMetaById.set(key, {
+        name: orderProductNames[index] || '',
+        serial: orderProductSerials[index] || '',
+        model: orderProductModels[index] || '',
+      });
+    });
+
     const productLine = (productId: string, index: number) => {
       const numericId = Number(productId);
+      const orderMeta = productMetaById.get(String(productId));
       const product = products.find((item) => item.id === numericId);
-      const name = String(product?.product_name || `Product #${productId}`);
-      const serial = String(product?.serial_number || '').trim() || 'N/A';
-      return `${index + 1}. ${name} (Serial Number: ${serial})`;
+      const name = String(orderMeta?.name || product?.product_name || `Product #${productId}`);
+      const serial = String(orderMeta?.serial || product?.serial_number || '').trim() || 'N/A';
+      const model = String(orderMeta?.model || product?.model || (product as any)?.product_model || '').trim() || 'N/A';
+      return `${index + 1}. ${name} (Serial Number: ${serial}, Model Number: ${model})`;
     };
 
     if (changedToComToRaj.length > 0) {
@@ -3876,14 +4950,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       const amount = formatAmount(updatedOrder.final_cost || updatedOrder.estimated_cost || previousOrder?.final_cost || previousOrder?.estimated_cost || 0);
       const today = new Date().toLocaleDateString('en-GB');
       const deliveredLines = changedToDeliveryed.map(productLine).join('\n');
-      const paymentStatusRaw = String(updatedOrder.payment_status || previousOrder?.payment_status || 'pending');
-      const paymentStatusText = paymentStatusRaw.replaceAll('_', ' ').toUpperCase();
+      const paymentStatusRaw = String(updatedOrder.payment_status || previousOrder?.payment_status || 'pending').trim().toLowerCase();
+      const paymentStatusText = paymentStatusRaw === 'pending' ? 'N/A' : paymentStatusRaw.replaceAll('_', ' ').toUpperCase();
       const message = [
         'From RAJ COMMUNICATION',
-        'Subject: Sale Modify Confirmation',
+        'Subject:',
         `Dear ${clientName}`,
         'We are pleased to inform you that',
-        'your Sale Modify with reference',
+        'your PRODUCT with reference',
         `No. ${orderCode} Dated ${today} Amount ${amount} has`,
         'been successfully processed.',
         `Payment Status: ${paymentStatusText}`,
@@ -3900,10 +4974,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         status: 'delivered',
         product_status_map: updatedStatusMap,
       };
-      await downloadReceiptPdf(
-        createDeliveryReceiptMarkup(deliveryLike as any),
-        `delivery_receipt_${orderCode}.pdf`,
-      );
+      try {
+        await downloadReceiptPdf(
+          createDeliveryReceiptMarkup(deliveryLike as any),
+          `delivery_receipt_${orderCode}.pdf`,
+        );
+      } catch {
+        setError('Order updated and WhatsApp will open, but the delivery receipt PDF could not be generated.');
+      }
 
       openWhatsappMessage(clientPhone, message);
       setSuccessMessage('Delivery Receipt PDF downloaded and WhatsApp message opened.');
@@ -3918,9 +4996,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         const data = await apiRequest(`admin_api.php?action=delete_user&id=${id}`, 'DELETE');
         
         if (data.success) {
+          const nextUsers = removeItemById(users, id);
+          setUsers(nextUsers);
+          setSelectedUsers((prev) => prev.filter((userId) => userId !== id));
+          syncDashboardStatsWithState({ users: nextUsers });
+          autoRefreshAfterSave(['users', 'dashboard', 'staff']);
           setSuccessMessage('User deleted successfully');
-          await loadUsers();
-          await loadDashboardData();
           setTimeout(() => setSuccessMessage(null), 3000);
         } else {
           setError(data.message || 'Failed to delete user');
@@ -3942,9 +5023,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       const data = await apiRequest(`admin_api.php?action=delete_order&id=${deleteOrderTarget.id}`, 'DELETE');
       
       if (data.success) {
+        const nextOrders = removeItemById(orders, deleteOrderTarget.id);
+        setOrders(nextOrders);
+        setSelectedOrders((prev) => prev.filter((orderId) => orderId !== deleteOrderTarget.id));
+        syncDashboardStatsWithState({ orders: nextOrders });
+        autoRefreshAfterSave(['orders', 'dashboard', 'notifications', 'deliveries', 'analytics', 'suntocompany', 'companytosun']);
         setSuccessMessage('Order deleted successfully');
-        await loadOrders();
-        await loadDashboardData();
         setDeleteOrderTarget(null);
         setTimeout(() => setSuccessMessage(null), 3000);
       } else {
@@ -3970,10 +5054,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       const data = await apiRequest(`admin_api.php?action=delete_client&id=${deleteClientTarget.id}`, 'DELETE');
       
       if (data.success) {
+        const nextClients = removeItemById(clients, deleteClientTarget.id);
+        setClients(nextClients);
+        setSelectedClients((prev) => prev.filter((clientId) => clientId !== deleteClientTarget.id));
+        syncDashboardStatsWithState({ clients: nextClients });
+        autoRefreshAfterSave(['clients', 'dashboard']);
         setSuccessMessage('Client deleted successfully');
         setDeleteClientTarget(null);
-        await loadClients();
-        await loadDashboardData();
         setTimeout(() => setSuccessMessage(null), 3000);
       } else {
         setError(data.message || 'Failed to delete client');
@@ -3997,10 +5084,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       const data = await apiRequest(`admin_api.php?action=delete_product&id=${deleteProductTarget.id}`, 'DELETE');
       
       if (data.success) {
+        const nextProducts = removeItemById(products, deleteProductTarget.id);
+        setProducts(nextProducts);
+        setSelectedProducts((prev) => prev.filter((productId) => productId !== deleteProductTarget.id));
+        syncDashboardStatsWithState({ products: nextProducts });
+        autoRefreshAfterSave(['products', 'dashboard']);
         setSuccessMessage('Product deleted successfully');
         setDeleteProductTarget(null);
-        await loadProducts();
-        await loadDashboardData();
         setTimeout(() => setSuccessMessage(null), 3000);
       } else {
         setError(data.message || 'Failed to delete product');
@@ -4012,27 +5102,42 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
   };
   
-  const handleDeleteDelivery = async (id: number) => {
-    if (window.confirm('Are you sure you want to delete this delivery?')) {
-      try {
-        const data = await apiRequest(`admin_api.php?action=delete_delivery&id=${id}`, 'DELETE');
-        
-        if (data.success) {
-          setSuccessMessage('Delivery deleted successfully');
-          await loadDeliveries();
-          await loadDashboardData();
-          setTimeout(() => setSuccessMessage(null), 3000);
-        } else {
-          setError(data.message || 'Failed to delete delivery');
-        }
-      } catch (error: any) {
-        setError(error.message);
+  const handleDeleteDelivery = (id: number) => {
+    const target = deliveries.find((delivery) => delivery.id === id) || null;
+    if (!target) {
+      setError('Delivery not found');
+      return;
+    }
+    setDeleteDeliveryTarget(target);
+  };
+
+  const confirmDeleteDelivery = async () => {
+    if (!deleteDeliveryTarget) return;
+    setDeleteDeliveryPending(true);
+    try {
+      const data = await apiRequest(`admin_api.php?action=delete_delivery&id=${deleteDeliveryTarget.id}`, 'DELETE');
+      
+      if (data.success) {
+        const nextDeliveries = removeItemById(deliveries, deleteDeliveryTarget.id);
+        setDeliveries(nextDeliveries);
+        setSelectedDeliveries((prev) => prev.filter((deliveryId) => deliveryId !== deleteDeliveryTarget.id));
+        syncDashboardStatsWithState({ deliveries: nextDeliveries });
+        autoRefreshAfterSave(['deliveries', 'dashboard']);
+        setSuccessMessage('Delivery deleted successfully');
+        setDeleteDeliveryTarget(null);
+        setTimeout(() => setSuccessMessage(null), 3000);
+      } else {
+        setError(data.message || 'Failed to delete delivery');
       }
+    } catch (error: any) {
+      setError(error.message);
+    } finally {
+      setDeleteDeliveryPending(false);
     }
   };
   
   // Handle edit operations
-  const handleEdit = (type: 'user' | 'order' | 'client' | 'product' | 'delivery', data: any) => {
+  const handleEdit = async (type: 'user' | 'order' | 'client' | 'product' | 'delivery', data: any) => {
     if (type === 'user') {
       setEditType('user');
       setEditData(data);
@@ -4043,55 +5148,73 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     }
 
     if (type === 'order') {
+      const fullOrder = await fetchFullOrderRecord(data?.id, data);
+      const source = fullOrder || data;
       setEditType('order');
-      const productIds = normalizeStringIdList((data as any).product_ids);
-      if (productIds.length === 0 && data.product_id) {
-        productIds.push(String(data.product_id));
+      const productIds = normalizeStringIdList((source as any).product_ids);
+      if (productIds.length === 0 && source.product_id) {
+        productIds.push(String(source.product_id));
       }
-      const replacementProductIds = normalizeStringIdList((data as any).replacement_product_ids);
-      if (replacementProductIds.length === 0 && data.replacement_product_id) {
-        replacementProductIds.push(String(data.replacement_product_id));
+      const replacementProductIds = normalizeStringIdList((source as any).replacement_product_ids);
+      if (replacementProductIds.length === 0 && source.replacement_product_id) {
+        replacementProductIds.push(String(source.replacement_product_id));
       }
-      const companyIds: string[] = normalizeStringIdList((data as any).company_ids);
-      if (companyIds.length === 0 && data.company_id) {
-        companyIds.push(String(data.company_id));
+      const companyIds: string[] = normalizeStringIdList((source as any).company_ids);
+      if (companyIds.length === 0 && source.company_id) {
+        companyIds.push(String(source.company_id));
       }
-      const rawCompanyProductMap = normalizeCompanyProductMap((data as any).company_product_map || (data as any).companies_products);
+      const rawCompanyProductMap = normalizeCompanyProductMap((source as any).company_product_map || (source as any).companies_products);
       const companyProductMap: Record<string, string[]> = Object.fromEntries(
         companyIds.map((companyId) => [companyId, rawCompanyProductMap[companyId] || []]),
       );
       if (companyIds.length > 0 && !Object.values(companyProductMap).some((ids) => ids.length > 0) && productIds.length > 0) {
         companyProductMap[companyIds[0]] = productIds;
       }
-      const incomingProductStatusMap = normalizeProductStatusMap((data as any).product_status_map);
+      const orderedCompanyIds = [...companyIds].sort((left, right) => {
+        const leftIndex = productIds.findIndex((productId) => (companyProductMap[left] || []).includes(productId));
+        const rightIndex = productIds.findIndex((productId) => (companyProductMap[right] || []).includes(productId));
+        const safeLeftIndex = leftIndex >= 0 ? leftIndex : Number.MAX_SAFE_INTEGER;
+        const safeRightIndex = rightIndex >= 0 ? rightIndex : Number.MAX_SAFE_INTEGER;
+        if (safeLeftIndex !== safeRightIndex) return safeLeftIndex - safeRightIndex;
+        return companyIds.indexOf(left) - companyIds.indexOf(right);
+      });
+      const incomingProductStatusMap = normalizeProductStatusMap((source as any).product_status_map);
       const productStatusMap: Record<string, string> = Object.fromEntries(
         productIds.map((productId) => [
           productId,
           normalizeProductFlowStatus(incomingProductStatusMap[productId]),
         ]),
       );
-      const incomingRepairingStatusMap = normalizeRepairingStatusMap((data as any).repairing_status_map);
+      const incomingRepairingStatusMap = normalizeRepairingStatusMap((source as any).repairing_status_map);
       const repairingStatusMap: Record<string, string> = Object.fromEntries(
         productIds.map((productId) => [
           productId,
           normalizeRepairingStatus(incomingRepairingStatusMap[productId]),
         ]),
       );
+      const incomingProductQuantityMap = normalizeProductQuantityMap((source as any).product_quantity_map);
+      const productQuantityMap: Record<string, number> = Object.fromEntries(
+        productIds.map((productId) => [
+          productId,
+          Math.max(1, Number(incomingProductQuantityMap[productId] || 1)),
+        ]),
+      );
       setEditData({
-        ...data,
-        company_id: data.company_id ? String(data.company_id) : '',
-        company_ids: companyIds,
-        company_name: data.company_name || '',
+        ...source,
+        company_id: source.company_id ? String(source.company_id) : '',
+        company_ids: orderedCompanyIds,
+        company_name: source.company_name || '',
         company_product_map: companyProductMap,
-        client_id: data.client_id ? String(data.client_id) : '',
+        client_id: source.client_id ? String(source.client_id) : '',
         product_id: productIds[0] || '',
         replacement_product_id: replacementProductIds[0] || '',
         product_ids: productIds,
+        product_quantity_map: productQuantityMap,
         product_status_map: productStatusMap,
         repairing_status_map: repairingStatusMap,
         replacement_product_ids: replacementProductIds,
-        replacement_product_name: data.replacement_product_name || '',
-        staff_id: data.staff_id ? String(data.staff_id) : '',
+        replacement_product_name: source.replacement_product_name || '',
+        staff_id: source.staff_id ? String(source.staff_id) : '',
       });
       setShowEditModal(true);
       return;
@@ -4126,11 +5249,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     setShowEditModal(true);
   };
   
-  const handleSaveEdit = async () => {
+  const handleSaveEdit = async (overrideEditData?: any) => {
     try {
       let endpoint = 'admin_api.php';
       let method = 'POST';
       let requestData: any = {};
+      const sourceEditData = overrideEditData ?? editData;
       
       switch (editType) {
         case 'user':
@@ -4140,17 +5264,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             name: editData.name,
             email: editData.email,
             role: editData.role,
-            phone: editData.phone || '',
-            is_active: editData.is_active ? 1 : 0
+            phone: sourceEditData.phone || '',
+            is_active: sourceEditData.is_active ? 1 : 0
           };
           break;
           
         case 'order':
           endpoint += '?action=update_order';
-          const editProductStatusMapInput = normalizeProductStatusMap((editData as any)?.product_status_map);
-          const editProductStatusDatesMapInput = normalizeProductFlowDatesMap((editData as any)?.product_status_dates_map);
-          const editProductIds = Array.isArray((editData as any)?.product_ids)
-            ? (editData as any).product_ids.map((id: unknown) => String(id))
+          const editProductStatusMapInput = normalizeProductStatusMap((sourceEditData as any)?.product_status_map);
+          const editProductStatusDatesMapInput = normalizeProductFlowDatesMap((sourceEditData as any)?.product_status_dates_map);
+          const editProductIds = Array.isArray((sourceEditData as any)?.product_ids)
+            ? (sourceEditData as any).product_ids.map((id: unknown) => String(id))
             : [];
           const editProductStatusMap = Object.fromEntries(
             editProductIds.map((productId: string) => [
@@ -4158,12 +5282,30 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               normalizeProductFlowStatus(editProductStatusMapInput[productId]),
             ]),
           );
-          const editRepairingStatusMapInput = normalizeRepairingStatusMap((editData as any)?.repairing_status_map);
+          const editRepairingStatusMapInput = normalizeRepairingStatusMap((sourceEditData as any)?.repairing_status_map);
           const editRepairingStatusMap = Object.fromEntries(
             editProductIds.map((productId: string) => [
               productId,
               normalizeRepairingStatus(editRepairingStatusMapInput[productId]),
             ]),
+          );
+          const editProductQuantityMapInput = normalizeProductQuantityMap((sourceEditData as any)?.product_quantity_map);
+          const editProductQuantityMap = Object.fromEntries(
+            editProductIds.map((productId: string) => [
+              productId,
+              Math.max(1, Number(editProductQuantityMapInput[productId] || 1)),
+            ]),
+          );
+          const editHandoverTypeMapInput = normalizeHandoverTypeMap((sourceEditData as any)?.handover_type_map);
+          const editHandoverTypeMap = Object.fromEntries(
+            editProductIds.map((productId: string) => {
+              const rawType = String(editHandoverTypeMapInput[productId] || '').trim().toLowerCase();
+              const normalizedType =
+                rawType === 'parcel_service' || rawType === 'delivery' ? 'parcelservice' :
+                rawType === 'in_hand' || rawType === 'pickup' ? 'inhand' :
+                (['inhand', 'courier', 'parcelservice'].includes(rawType) ? rawType : 'inhand');
+              return [productId, normalizedType];
+            }),
           );
           const editProductStatusDatesMap = Object.fromEntries(
             editProductIds.map((productId: string) => [
@@ -4177,80 +5319,85 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             ]),
           );
           requestData = {
-            id: editData.id,
-            company_id: editData.company_id || '',
-            company_ids: editData.company_ids || [],
-            company_name: editData.company_name || '',
-            company_product_map: editData.company_product_map || {},
-            companies_products: editData.company_product_map || {},
-            client_id: editData.client_id || '',
-            client_name: editData.client_name,
-            client_phone: editData.client_phone,
-            product_id: editData.product_id || '',
-            replacement_product_id: editData.replacement_product_id || '',
-            product_ids: editData.product_ids || [],
+            id: sourceEditData.id,
+            company_id: sourceEditData.company_id || '',
+            company_ids: sourceEditData.company_ids || [],
+            company_name: sourceEditData.company_name || '',
+            company_product_map: sourceEditData.company_product_map || {},
+            companies_products: sourceEditData.company_product_map || {},
+            client_id: sourceEditData.client_id || '',
+            client_name: sourceEditData.client_name,
+            client_phone: sourceEditData.client_phone,
+            product_id: sourceEditData.product_id || '',
+            replacement_product_id: sourceEditData.replacement_product_id || '',
+            product_ids: sourceEditData.product_ids || [],
+            product_quantity_map: editProductQuantityMap,
             product_status_map: editProductStatusMap,
             product_status_dates_map: editProductStatusDatesMap,
-            issue_description_map: normalizeIssueDescriptionMap((editData as any)?.issue_description_map),
+            issue_description_map: normalizeIssueDescriptionMap((sourceEditData as any)?.issue_description_map),
+            accessory_type_map: normalizeAccessoryTypeMap((sourceEditData as any)?.accessory_type_map),
+            result_text_map: normalizeIssueDescriptionMap((sourceEditData as any)?.result_text_map),
+            handover_type_map: editHandoverTypeMap,
+            handover_type: Object.values(editHandoverTypeMap)[0] || 'inhand',
             repairing_status_map: editRepairingStatusMap,
-            replacement_product_ids: editData.replacement_product_ids || [],
-            product_name: editData.product_name,
-            service_type: editData.service_type || 'general',
-            issue_description: editData.issue_description,
-            warranty_status: editData.warranty_status,
-            estimated_cost: editData.estimated_cost,
-            final_cost: editData.final_cost,
-            deposit_amount: editData.deposit_amount || '0',
-            payment_status: editData.payment_status,
-            estimated_delivery_date: editData.estimated_delivery_date,
-            priority: editData.priority,
-            notes: editData.notes,
-            staff_id: editData.staff_id
+            replacement_product_ids: sourceEditData.replacement_product_ids || [],
+            product_name: sourceEditData.product_name,
+            service_type: sourceEditData.service_type || 'general',
+            issue_description: sourceEditData.issue_description,
+            warranty_status: sourceEditData.warranty_status,
+            estimated_cost: sourceEditData.estimated_cost,
+            final_cost: sourceEditData.final_cost,
+            deposit_amount: sourceEditData.deposit_amount || '0',
+            payment_status: sourceEditData.payment_status,
+            estimated_delivery_date: sourceEditData.estimated_delivery_date,
+            priority: sourceEditData.priority,
+            notes: sourceEditData.notes,
+            staff_id: sourceEditData.staff_id
           };
           break;
           
         case 'client':
           endpoint += '?action=update_client';
           requestData = {
-            id: editData.id,
-            full_name: editData.full_name,
-            email: editData.email,
-            phone: editData.phone,
-            address: editData.address,
-            city: editData.city,
-            state: editData.state,
-            zip_code: editData.zip_code,
-            notes: editData.notes
+            id: sourceEditData.id,
+            full_name: sourceEditData.full_name,
+            email: sourceEditData.email,
+            phone: sourceEditData.phone,
+            address: sourceEditData.address,
+            city: sourceEditData.city,
+            state: sourceEditData.state,
+            zip_code: sourceEditData.zip_code,
+            notes: sourceEditData.notes
           };
           break;
           
         case 'product':
           endpoint += '?action=update_product';
           requestData = {
-            id: editData.id,
-            product_name: editData.product_name,
-            serial_number: editData.serial_number || '',
-            stock_quantity: Math.max(0, parseInt(String(editData.stock_quantity ?? '1'), 10) || 0),
-            is_spare_product: editData.is_spare_product ? 1 : 0,
-            brand: editData.brand,
-            model: editData.model,
-            category: editData.category,
-            claim_type: editData.claim_type || 'none',
-            purchase_date: editData.purchase_date || '',
-            warranty_period: editData.warranty_period || '',
-            specifications: editData.specifications,
-            price: parseFloat(editData.price || '0') || 0,
-            status: editData.status
+            id: sourceEditData.id,
+            product_name: sourceEditData.product_name,
+            serial_number: sourceEditData.serial_number || '',
+            stock_quantity: Math.max(0, parseInt(String(sourceEditData.stock_quantity ?? '1'), 10) || 0),
+            is_spare_product: sourceEditData.is_spare_product ? 1 : 0,
+            brand: sourceEditData.brand,
+            model: sourceEditData.model,
+            category: sourceEditData.category,
+            claim_type: sourceEditData.claim_type || 'none',
+            purchase_date: sourceEditData.purchase_date || '',
+            warranty_period: sourceEditData.warranty_period || '',
+            specifications: sourceEditData.specifications,
+            price: parseFloat(sourceEditData.price || '0') || 0,
+            status: sourceEditData.status
           };
           break;
           
         case 'delivery':
           endpoint += '?action=update_delivery';
           requestData = {
-            id: editData.id,
-            status: editData.status,
-            delivery_person: editData.delivery_person,
-            notes: editData.notes
+            id: sourceEditData.id,
+            status: sourceEditData.status,
+            delivery_person: sourceEditData.delivery_person,
+            notes: sourceEditData.notes
           };
           break;
       }
@@ -4260,6 +5407,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       const response = await apiRequest(endpoint, method, requestData);
       
       if (response.success) {
+        const nowIso = new Date().toISOString();
         if (editType === 'order') {
           const previousOrder = orders.find((order) => Number((order as any).id) === Number(editData.id));
           const updatedStatusMap = normalizeProductStatusMap((requestData as any).product_status_map);
@@ -4274,29 +5422,84 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           });
         }
 
+        if (editType === 'user') {
+          const nextUser: User = {
+            ...(users.find((user) => user.id === Number(editData.id)) || editData),
+            ...editData,
+            ...requestData,
+            id: Number(editData.id),
+            is_active: Boolean(requestData.is_active),
+            updated_at: nowIso,
+          };
+          const nextUsers = upsertItemById(users, nextUser);
+          setUsers(nextUsers);
+          syncDashboardStatsWithState({ users: nextUsers });
+          autoRefreshAfterSave(['users', 'dashboard', 'staff']);
+        }
+
+        if (editType === 'order') {
+          const sourceOrder = orders.find((order) => order.id === Number(editData.id)) || (editData as Order);
+          const nextOrder = normalizeOrderRecord({
+            ...sourceOrder,
+            ...requestData,
+            id: Number(editData.id),
+            updated_at: nowIso,
+          }, sourceOrder);
+          const nextOrders = upsertItemById(orders, nextOrder);
+          setOrders(nextOrders);
+          syncDashboardStatsWithState({ orders: nextOrders });
+          autoRefreshAfterSave(['orders', 'dashboard', 'notifications', 'deliveries', 'analytics', 'suntocompany', 'companytosun']);
+        }
+
+        if (editType === 'client') {
+          const nextClient: Client = {
+            ...(clients.find((client) => client.id === Number(editData.id)) || editData),
+            ...editData,
+            ...requestData,
+            id: Number(editData.id),
+            updated_at: nowIso,
+          };
+          const nextClients = upsertItemById(clients, nextClient);
+          setClients(nextClients);
+          syncDashboardStatsWithState({ clients: nextClients });
+          autoRefreshAfterSave(['clients', 'dashboard']);
+        }
+
+        if (editType === 'product') {
+          const nextProduct: Product = {
+            ...(products.find((product) => product.id === Number(editData.id)) || editData),
+            ...editData,
+            ...requestData,
+            id: Number(editData.id),
+            is_spare_product: Boolean(requestData.is_spare_product),
+            price: String(requestData.price ?? 0),
+            updated_at: nowIso,
+          };
+          const nextProducts = upsertItemById(products, nextProduct);
+          setProducts(nextProducts);
+          syncDashboardStatsWithState({ products: nextProducts });
+          autoRefreshAfterSave(['products', 'dashboard']);
+        }
+
+        if (editType === 'delivery') {
+          const nextDelivery: Delivery = {
+            ...(deliveries.find((delivery) => delivery.id === Number(editData.id)) || editData),
+            ...editData,
+            ...requestData,
+            id: Number(editData.id),
+            delivered_date:
+              String(requestData.status || '').toLowerCase() === 'delivered'
+                ? ((deliveries.find((delivery) => delivery.id === Number(editData.id)) || editData)?.delivered_date || nowIso)
+                : (deliveries.find((delivery) => delivery.id === Number(editData.id)) || editData)?.delivered_date,
+          };
+          const nextDeliveries = upsertItemById(deliveries, nextDelivery);
+          setDeliveries(nextDeliveries);
+          syncDashboardStatsWithState({ deliveries: nextDeliveries });
+          autoRefreshAfterSave(['deliveries', 'dashboard']);
+        }
+
         setSuccessMessage(`${editType.charAt(0).toUpperCase() + editType.slice(1)} updated successfully`);
         setShowEditModal(false);
-        
-        // Reload data based on active tab
-        switch (activeTab) {
-          case 'users':
-            await loadUsers();
-            break;
-          case 'orders':
-            await loadOrders();
-            break;
-          case 'clients':
-            await loadClients();
-            break;
-          case 'products':
-            await loadProducts();
-            break;
-          case 'deliveries':
-            await loadDeliveries();
-            break;
-        }
-        
-        await loadDashboardData();
         setTimeout(() => setSuccessMessage(null), 3000);
       } else {
         setError(response.message || 'Failed to update');
@@ -4355,31 +5558,27 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   };
   
   // Handle order row click
-  const handleOrderRowClick = (order: Order) => {
-    setSelectedOrderDetails(order);
+  const handleOrderRowClick = async (order: Order) => {
+    const fullOrder = await fetchFullOrderRecord(order.id, order);
+    setSelectedOrderDetails(fullOrder || order);
     setShowOrderDetailsModal(true);
   };
-  
-  // Handle order details actions
-  const handleOrderDetailsEdit = () => {
-    if (selectedOrderDetails) {
-      handleEdit('order', selectedOrderDetails);
-      setShowOrderDetailsModal(false);
-    }
+
+  const handleOrderDetailsEdit = async () => {
+    if (!selectedOrderDetails) return;
+    setShowOrderDetailsModal(false);
+    await openEditOrderForm(selectedOrderDetails);
   };
-  
+
   const handleOrderDetailsReceipt = () => {
-    if (selectedOrderDetails) {
-      openReceiptOptionsForOrder(selectedOrderDetails);
-      setShowOrderDetailsModal(false);
-    }
+    if (!selectedOrderDetails) return;
+    setReceiptTarget({ kind: 'order', order: selectedOrderDetails });
   };
-  
+
   const handleOrderDetailsDelete = () => {
-    if (selectedOrderDetails) {
-      handleDeleteOrder(selectedOrderDetails);
-      setShowOrderDetailsModal(false);
-    }
+    if (!selectedOrderDetails) return;
+    setShowOrderDetailsModal(false);
+    setDeleteOrderTarget(selectedOrderDetails);
   };
   
   // Handle sort
@@ -4403,9 +5602,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   };
 
   const toISODate = (dateString: string) => {
-    const date = new Date(dateString);
-    if (Number.isNaN(date.getTime())) return '';
-    return date.toISOString().split('T')[0];
+    const date = parseAppDate(dateString);
+    if (!date) return '';
+
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   };
 
   const handleDateRangeChange = (start: string, end: string) => {
@@ -4457,7 +5660,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const clearAllFilters = () => {
     setFilters({
       users: { role: '', status: '' },
-      orders: { status: '', priority: '', payment_status: '' },
+      orders: { status: '', priority: '', payment_status: '', company_name: '', product_flow_status: '' },
       clients: { city: '' },
       products: { category: '', status: '' },
       replacementorders: { status: '', priority: '' },
@@ -4544,11 +5747,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   const matchesDateRange = (dateString: string) => {
     const normalized = toISODate(dateString);
-    return (
-      !dateRange.startDate ||
-      !dateRange.endDate ||
-      (normalized >= dateRange.startDate && normalized <= dateRange.endDate)
-    );
+    if (!normalized) return false;
+    if (dateRange.startDate && normalized < dateRange.startDate) return false;
+    if (dateRange.endDate && normalized > dateRange.endDate) return false;
+    return true;
   };
 
   const getOrderProductSearchBlob = (order: Order) => {
@@ -4586,6 +5788,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       .join(' ');
   };
 
+  const normalizeSerialSearchValue = (value: unknown) =>
+    String(value || '')
+      .replace(/[^a-zA-Z0-9]/g, '')
+      .toLowerCase();
+
+  const orderMatchesNormalizedSerialSearch = (order: Order, search: string) => {
+    const normalizedSearch = normalizeSerialSearchValue(search);
+    if (!normalizedSearch) return false;
+
+    return [
+      ...(Array.isArray(order.product_serial_numbers) ? order.product_serial_numbers : []),
+      ...(Array.isArray(order.replacement_product_serial_numbers) ? order.replacement_product_serial_numbers : []),
+      order.serial_number || '',
+      order.replacement_serial_number || '',
+    ]
+      .map((value) => normalizeSerialSearchValue(value))
+      .filter(Boolean)
+      .some((value) => value.includes(normalizedSearch));
+  };
+
   const handleSearchChange = useCallback((value: string) => {
     setSearchTerm(value);
   }, []);
@@ -4600,6 +5822,43 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const isSunToCompanyTabActive = activeTab === 'suntocompany';
   const isCompanyToSunTabActive = activeTab === 'companytosun';
   const isDeliveriesTabActive = activeTab === 'deliveries';
+  const companyNamesById = useMemo(
+    () =>
+      new Map(
+        companys
+          .map((company) => [Number(company.id) || 0, String(company.company_name || '').trim()] as const)
+          .filter(([id, name]) => id > 0 && Boolean(name)),
+      ),
+    [companys],
+  );
+  const getResolvedCompanyNamesForOrder = useCallback((order: Partial<Order>) => {
+    const directNames = extractCompanyNamesFromOrder(order);
+    const orderCompanyIds = Array.from(
+      new Set(
+        [
+          ...((Array.isArray((order as any).company_ids) ? (order as any).company_ids : []) as Array<number | string>),
+          (order as any).company_id,
+        ]
+          .map((value) => Number(value))
+          .filter((value) => Number.isInteger(value) && value > 0),
+      ),
+    );
+    const companyNamesFromIds = orderCompanyIds
+      .map((companyId) => String(companyNamesById.get(companyId) || '').trim())
+      .filter(Boolean);
+
+    return Array.from(new Set([...directNames, ...companyNamesFromIds]));
+  }, [companyNamesById]);
+  const orderCompanyFilterOptions = useMemo(() => (
+    Array.from(
+      new Set(
+        [
+          ...companys.map((company) => String(company.company_name || '').trim()),
+          ...orders.flatMap((order) => getResolvedCompanyNamesForOrder(order)),
+        ].filter(Boolean),
+      ),
+    ).sort((left, right) => left.localeCompare(right))
+  ), [companys, orders, getResolvedCompanyNamesForOrder]);
 
   const filteredOrdersForDashboard = useMemo(() => orders.filter((order) => {
     if (!isOrdersTabActive) return false;
@@ -4620,14 +5879,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         order.notes || '',
       ].some((value) => String(value || '').toLowerCase().includes(search)) ||
       getOrderProductSearchBlob(order).includes(search) ||
-      getOrderSerialSearchBlob(order).includes(search);
+      getOrderSerialSearchBlob(order).includes(search) ||
+      orderMatchesNormalizedSerialSearch(order, search);
 
     const matchesStatus = !filters.orders.status || order.status === filters.orders.status;
     const matchesPriority = !filters.orders.priority || order.priority === filters.orders.priority;
     const matchesPayment = !filters.orders.payment_status || order.payment_status === filters.orders.payment_status;
+    const normalizedCompanyFilter = String(filters.orders.company_name || '').trim().toLowerCase();
+    const companyNameList = getResolvedCompanyNamesForOrder(order);
+    const matchesCompany =
+      !normalizedCompanyFilter ||
+      companyNameList.some((name) => String(name || '').trim().toLowerCase() === normalizedCompanyFilter);
 
-    return matchesSearch && matchesStatus && matchesPriority && matchesPayment && matchesDateRange(order.created_at);
-  }), [orders, normalizedSearchTerm, filters.orders, dateRange.startDate, dateRange.endDate, isOrdersTabActive]);
+    return matchesSearch && matchesStatus && matchesPriority && matchesPayment && matchesCompany && matchesDateRange(order.created_at);
+  }), [orders, normalizedSearchTerm, filters.orders, dateRange.startDate, dateRange.endDate, isOrdersTabActive, getResolvedCompanyNamesForOrder]);
 
   const filteredReplacementOrdersForDashboard = useMemo(() => orders.filter((order) => {
     if (!isReplacementOrdersTabActive) return false;
@@ -4648,15 +5913,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         order.notes || '',
       ].some((value) => String(value || '').toLowerCase().includes(search)) ||
       getOrderProductSearchBlob(order).includes(search) ||
-      getOrderSerialSearchBlob(order).includes(search);
+      getOrderSerialSearchBlob(order).includes(search) ||
+      orderMatchesNormalizedSerialSearch(order, search);
 
     const matchesStatus = !filters.orders.status || order.status === filters.orders.status;
     const matchesPriority = !filters.orders.priority || order.priority === filters.orders.priority;
     const matchesPayment = !filters.orders.payment_status || order.payment_status === filters.orders.payment_status;
+    const normalizedCompanyFilter = String(filters.orders.company_name || '').trim().toLowerCase();
+    const companyNameList = getResolvedCompanyNamesForOrder(order);
+    const matchesCompany =
+      !normalizedCompanyFilter ||
+      companyNameList.some((name) => String(name || '').trim().toLowerCase() === normalizedCompanyFilter);
     const hasReplacement = Boolean(order.replacement_product_id);
 
-    return hasReplacement && matchesSearch && matchesStatus && matchesPriority && matchesPayment && matchesDateRange(order.created_at);
-  }), [orders, normalizedSearchTerm, filters.orders, dateRange.startDate, dateRange.endDate, isReplacementOrdersTabActive]);
+    return hasReplacement && matchesSearch && matchesStatus && matchesPriority && matchesPayment && matchesCompany && matchesDateRange(order.created_at);
+  }), [orders, normalizedSearchTerm, filters.orders, dateRange.startDate, dateRange.endDate, isReplacementOrdersTabActive, getResolvedCompanyNamesForOrder]);
 
   const filteredClientsForDashboard = useMemo(() => clients.filter((client) => {
     if (!isClientsTabActive) return false;
@@ -4898,8 +6169,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         case 'orders':
         case 'replacementorders':
         case 'pending':
-          await Promise.all([loadOrders(), loadStaffForDropdown(), loadClientsForDropdown(), loadProducts()]);
-          markTabsLoaded(['orders', 'replacementorders', 'pending', 'products', 'spareproducts', 'shopclaim', 'companyclaim']);
+          await Promise.all([loadOrders(), loadStaffForDropdown(), loadClientsForDropdown(), loadProducts(), loadCompanies()]);
+          markTabsLoaded(['orders', 'replacementorders', 'pending', 'products', 'spareproducts', 'shopclaim', 'companyclaim', 'companys']);
           break;
         case 'clients':
           await loadClients();
@@ -5490,6 +6761,63 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     return result;
   };
 
+  const normalizeHandoverTypeMap = (value: unknown): Record<string, string> => {
+    if (!value) return {};
+    let raw: unknown = value;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return {};
+      try {
+        raw = JSON.parse(trimmed);
+      } catch {
+        return {};
+      }
+    }
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const result: Record<string, string> = {};
+    Object.entries(raw as Record<string, unknown>).forEach(([productId, handoverType]) => {
+      const normalizedProductId = Number(productId);
+      const normalizedTypeRaw = String(handoverType ?? '').trim().toLowerCase();
+      const normalizedType =
+        normalizedTypeRaw === 'parcel_service' || normalizedTypeRaw === 'delivery' ? 'parcelservice' :
+        normalizedTypeRaw === 'in_hand' || normalizedTypeRaw === 'pickup' ? 'inhand' :
+        normalizedTypeRaw;
+      if (!Number.isInteger(normalizedProductId) || normalizedProductId <= 0) return;
+      if (!['inhand', 'courier', 'parcelservice'].includes(normalizedType)) return;
+      result[normalizedProductId.toString()] = normalizedType;
+    });
+    return result;
+  };
+
+  const normalizeAccessoryTypeMap = (value: unknown): Record<string, string> => {
+    if (!value) return {};
+    let raw: unknown = value;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return {};
+      try {
+        raw = JSON.parse(trimmed);
+      } catch {
+        return {};
+      }
+    }
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+    const allowed = new Set(['without_box', 'with_box']);
+    const result: Record<string, string> = {};
+    Object.entries(raw as Record<string, unknown>).forEach(([productId, accessoryType]) => {
+      const normalizedProductId = Number(productId);
+      const normalizedTypeRaw = String(accessoryType ?? '').trim().toLowerCase();
+      const normalizedType =
+        normalizedTypeRaw === 'withoutbox' ? 'without_box' :
+        normalizedTypeRaw === 'withbox' ? 'with_box' :
+        normalizedTypeRaw;
+      if (!Number.isInteger(normalizedProductId) || normalizedProductId <= 0) return;
+      if (!allowed.has(normalizedType)) return;
+      result[normalizedProductId.toString()] = normalizedType;
+    });
+    return result;
+  };
+
   const normalizeBackupHistory = useCallback((items: BackupHistoryItem[]): BackupHistoryItem[] => {
     const cutoffTime = Date.now() - BACKUP_HISTORY_RETENTION_MS;
     return items
@@ -5778,6 +7106,36 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
     return result;
   };
 
+  const normalizeProductQuantityMap = (value: unknown): Record<string, number> => {
+    if (!value) return {};
+
+    let raw: unknown = value;
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (!trimmed) return {};
+      try {
+        raw = JSON.parse(trimmed);
+        if (typeof raw === 'string') {
+          raw = JSON.parse(raw);
+        }
+      } catch {
+        const legacyMatch = trimmed.match(/^\{\s*"(\d+)"\s*\.\s*(\d+)\s*\}$/);
+        if (!legacyMatch) return {};
+        raw = { [legacyMatch[1]]: Number.parseInt(legacyMatch[2], 10) };
+      }
+    }
+
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+
+    const result: Record<string, number> = {};
+    Object.entries(raw as Record<string, unknown>).forEach(([productId, qty]) => {
+      const normalizedProductId = Number(productId);
+      if (!Number.isInteger(normalizedProductId) || normalizedProductId <= 0) return;
+      result[normalizedProductId.toString()] = Math.max(1, Number.parseInt(String(qty ?? '1'), 10) || 1);
+    });
+    return result;
+  };
+
   const normalizeProductFlowDatesMap = (
     value: unknown,
   ): Record<string, { pending?: string; rajtocom?: string; comtoraj?: string; deliveryed?: string }> => {
@@ -5917,6 +7275,38 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       return;
     }
 
+    if (name === 'product_quantity_map') {
+      setNewOrder(prev => ({
+        ...prev,
+        product_quantity_map: normalizeProductQuantityMap(value)
+      }));
+      return;
+    }
+
+    if (name === 'accessory_type_map') {
+      setNewOrder(prev => ({
+        ...prev,
+        accessory_type_map: normalizeAccessoryTypeMap(value)
+      }));
+      return;
+    }
+
+    if (name === 'result_text_map') {
+      setNewOrder(prev => ({
+        ...prev,
+        result_text_map: normalizeIssueDescriptionMap(value)
+      }));
+      return;
+    }
+
+    if (name === 'handover_type_map') {
+      setNewOrder(prev => ({
+        ...prev,
+        handover_type_map: normalizeHandoverTypeMap(value)
+      }));
+      return;
+    }
+
     if (name === 'repairing_status_map') {
       setNewOrder(prev => ({
         ...prev,
@@ -6018,6 +7408,38 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       return;
     }
 
+    if (name === 'product_quantity_map') {
+      setEditData((prev: any) => ({
+        ...prev,
+        product_quantity_map: normalizeProductQuantityMap(value)
+      }));
+      return;
+    }
+
+    if (name === 'accessory_type_map') {
+      setEditData((prev: any) => ({
+        ...prev,
+        accessory_type_map: normalizeAccessoryTypeMap(value)
+      }));
+      return;
+    }
+
+    if (name === 'result_text_map') {
+      setEditData((prev: any) => ({
+        ...prev,
+        result_text_map: normalizeIssueDescriptionMap(value)
+      }));
+      return;
+    }
+
+    if (name === 'handover_type_map') {
+      setEditData((prev: any) => ({
+        ...prev,
+        handover_type_map: normalizeHandoverTypeMap(value)
+      }));
+      return;
+    }
+
     if (name === 'repairing_status_map') {
       setEditData((prev: any) => ({
         ...prev,
@@ -6040,7 +7462,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
   const submitEditOrderForm = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    void handleSaveEdit();
+    const form = e.currentTarget;
+    const readFieldValue = (name: string) => {
+      const field = form.elements.namedItem(name) as HTMLInputElement | RadioNodeList | null;
+      return field && typeof field.value === 'string' ? field.value : '';
+    };
+    const syncedEditData = {
+      ...(editData || {}),
+      product_status_map: normalizeProductStatusMap(readFieldValue('product_status_map')),
+      repairing_status_map: normalizeRepairingStatusMap(readFieldValue('repairing_status_map')),
+      issue_description_map: normalizeIssueDescriptionMap(readFieldValue('issue_description_map')),
+      accessory_type_map: normalizeAccessoryTypeMap(readFieldValue('accessory_type_map')),
+      result_text_map: normalizeIssueDescriptionMap(readFieldValue('result_text_map')),
+      handover_type_map: normalizeHandoverTypeMap(readFieldValue('handover_type_map')),
+      product_quantity_map: normalizeProductQuantityMap(readFieldValue('product_quantity_map')),
+    };
+    setEditData(syncedEditData);
+    void handleSaveEdit(syncedEditData);
   };
 
   const handleNewClientChange = (
@@ -6056,6 +7494,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   const submitNewClientForm = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     void handleCreateClient();
+  };
+
+  const handleEditClientChange = (
+    e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+  ) => {
+    const { name, value } = e.target;
+    setEditData((prev: any) => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const submitEditClientForm = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    void handleSaveEdit();
   };
 
   const handleNewProductChange = (
@@ -6126,21 +7579,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
   // Navigation items
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: <FiHome />, color: 'blue' },
-    { id: 'users', label: 'Users & Staff', icon: <FiUsers />, color: 'purple' },
-    { id: 'orders', label: 'Orders', icon: <FiPackage />, color: 'green' },
-    { id: 'pending', label: 'Pending', icon: <FiClock />, color: 'orange' },
-    { id: 'replacementorders', label: 'Replacement Orders', icon: <FiPackage />, color: 'green' },
-    { id: 'clients', label: 'Clients', icon: <FiUsers />, color: 'teal' },
     { id: 'products', label: 'Products', icon: <FiShoppingBag />, color: 'orange' },
-    { id: 'spareproducts', label: 'Replacement Products', icon: <FiPackage />, color: 'orange' },
-    { id: 'companys', label: 'Companys', icon: <FiUsers />, color: 'teal' },
+    { id: 'orders', label: 'Orders', icon: <FiPackage />, color: 'green' },
     { id: 'suntocompany', label: 'RajTo Company', icon: <FiShoppingBag />, color: 'indigo' },
     { id: 'companytosun', label: 'Company To Raj', icon: <FiShoppingBag />, color: 'teal' },
-    { id: 'deliveries', label: 'Deliveries', icon: <FiTruck />, color: 'red' },
+    { id: 'deliveries', label: 'Delivery', icon: <FiTruck />, color: 'red' },
+    { id: 'pending', label: 'Pending', icon: <FiClock />, color: 'orange' },
+    { id: 'replacementorders', label: 'Replacement Order', icon: <FiPackage />, color: 'green' },
+    { id: 'clients', label: 'Clients', icon: <FiUsers />, color: 'teal' },
+    { id: 'companys', label: 'Company', icon: <FiUsers />, color: 'teal' },
+    { id: 'spareproducts', label: 'Replacement Product', icon: <FiPackage />, color: 'orange' },
     { id: 'revenue', label: 'Revenue', icon: <FiDollarSign />, color: 'emerald' },
+    { id: 'brandwiseoverallreport', label: 'Overall Report', icon: <FiBarChart2 />, color: 'blue' },
     { id: 'analytics', label: 'Analytics', icon: <FiBarChart2 />, color: 'indigo' },
-    { id: 'brandwiseoverallreport', label: 'Brandwise Overall Report', icon: <FiBarChart2 />, color: 'blue' },
     { id: 'backup', label: 'Backup', icon: <FiHardDrive />, color: 'emerald' },
+    { id: 'users', label: 'Users & Staffs', icon: <FiUsers />, color: 'purple' },
   ];
 
   const isLimitedRole = false;
@@ -6223,7 +7676,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       description: 'All time orders',
       onClick: () => {
         setActiveTab('orders');
-        setFilters(prev => ({...prev, orders: {status: '', priority: '', payment_status: ''}}));
+        setFilters(prev => ({...prev, orders: {status: '', priority: '', payment_status: '', company_name: '', product_flow_status: ''}}));
         setSearchTerm('');
       }
     },
@@ -6246,7 +7699,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       description: 'Awaiting processing',
       onClick: () => {
         setActiveTab('orders');
-        setFilters(prev => ({...prev, orders: {status: 'pending', priority: '', payment_status: ''}}));
+        setFilters(prev => ({...prev, orders: {status: 'pending', priority: '', payment_status: '', company_name: '', product_flow_status: ''}}));
         setSearchTerm('');
       }
     },
@@ -6673,13 +8126,33 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               loading={loading.orders}
               searchTerm={searchTerm}
               searchHandledByParent
+              companyFilterValue={filters.orders.company_name || ''}
+              productFlowStatusFilterValue={filters.orders.product_flow_status || ''}
+              companyFilterOptions={orderCompanyFilterOptions}
               dateRange={dateRange}
               onSearchChange={handleSearchChange}
+              onCompanyFilterChange={(value) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  orders: {
+                    ...prev.orders,
+                    company_name: value,
+                  },
+                }))
+              }
+              onProductFlowStatusFilterChange={(value) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  orders: {
+                    ...prev.orders,
+                    product_flow_status: value,
+                  },
+                }))
+              }
               onDateRangeChange={handleDateRangeChange}
               onPresetClick={setDateRangePreset}
               onViewOrder={(order) => {
-                setSelectedOrderDetails(order as any);
-                setShowOrderDetailsModal(true);
+                void handleOrderRowClick(order as any);
               }}
               onEditOrder={(order) => {
                 void openEditOrderForm(order);
@@ -6698,9 +8171,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
 
           {activeTab === 'pending' && (
             <PendingTab
-              orders={orders as any}
-              products={products as any}
-              loading={loading.pending}
+              loading={loading.pending || loading.orders || loading.companys || loading.products}
+              orders={orders}
+              companies={companys}
+              products={products}
             />
           )}
 
@@ -6717,8 +8191,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               onDateRangeChange={handleDateRangeChange}
               onPresetClick={setDateRangePreset}
               onViewOrder={(order) => {
-                setSelectedOrderDetails(order as any);
-                setShowOrderDetailsModal(true);
+                void handleOrderRowClick(order as any);
               }}
               onEditOrder={(order) => {
                 void openEditOrderForm(order);
@@ -6838,17 +8311,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           {activeTab === 'suntocompany' && (
             <SunToCompanyTab
               sunToCompanyClaims={sunToCompanyClaims as any}
+              products={products as any}
               orders={orders as any}
               filteredSunToCompanyClaims={filteredSunToCompanyForDashboard as any}
               loading={loading.suntocompany}
               searchTerm={searchTerm}
+              companyFilterValue={filters.orders.company_name || ''}
+              companyFilterOptions={orderCompanyFilterOptions}
               dateRange={dateRange}
               onSearchChange={handleSearchChange}
+              onCompanyFilterChange={(value) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  orders: {
+                    ...prev.orders,
+                    company_name: value,
+                  },
+                }))
+              }
               onDateRangeChange={handleDateRangeChange}
               onPresetClick={setDateRangePreset}
               onViewOrder={(order) => {
-                setSelectedOrderDetails(order as any);
-                setShowOrderDetailsModal(true);
+                void handleOrderRowClick(order as any);
               }}
               onEditOrder={(order) => {
                 void openEditOrderForm(order);
@@ -6872,13 +8356,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               filteredCompanyToSunClaims={filteredCompanyToSunForDashboard as any}
               loading={loading.companytosun}
               searchTerm={searchTerm}
+              companyFilterValue={filters.orders.company_name || ''}
+              companyFilterOptions={orderCompanyFilterOptions}
+              productFlowStatusFilterValue={filters.orders.product_flow_status || ''}
               dateRange={dateRange}
               onSearchChange={handleSearchChange}
+              onCompanyFilterChange={(value) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  orders: {
+                    ...prev.orders,
+                    company_name: value,
+                  },
+                }))
+              }
               onDateRangeChange={handleDateRangeChange}
               onPresetClick={setDateRangePreset}
               onViewOrder={(order) => {
-                setSelectedOrderDetails(order as any);
-                setShowOrderDetailsModal(true);
+                void handleOrderRowClick(order as any);
               }}
               onEditOrder={(order) => {
                 void openEditOrderForm(order);
@@ -6902,15 +8397,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
               filteredDeliveries={filteredDeliveriesForDashboard as any}
               loading={loading.deliveries}
               searchTerm={searchTerm}
+              companyFilterValue={filters.orders.company_name || ''}
+              companyFilterOptions={orderCompanyFilterOptions}
               dateRange={dateRange}
               onSearchChange={handleSearchChange}
+              onCompanyFilterChange={(value) =>
+                setFilters((prev) => ({
+                  ...prev,
+                  orders: {
+                    ...prev.orders,
+                    company_name: value,
+                  },
+                }))
+              }
               onDateRangeChange={handleDateRangeChange}
               onPresetClick={setDateRangePreset}
               onPrintDeliveryReceipt={(delivery) => openReceiptOptionsForDelivery(delivery as any)}
               onDeleteDelivery={handleDeleteDelivery}
               onViewOrders={() => setActiveTab('orders')}
               onClearFilters={clearAllFilters}
-              enableLiveFetch={false}
+              enableLiveFetch
             />
           )}
           
@@ -7157,7 +8663,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
             product_id: editData?.product_id || '',
             replacement_product_id: editData?.replacement_product_id || '',
             product_ids: editData?.product_ids || [],
+            product_quantity_map: editData?.product_quantity_map || {},
             product_status_map: editData?.product_status_map || {},
+            issue_description_map: editData?.issue_description_map || {},
+            accessory_type_map: editData?.accessory_type_map || {},
+            result_text_map: editData?.result_text_map || {},
+            handover_type: editData?.handover_type || 'inhand',
+            handover_type_map: editData?.handover_type_map || {},
             repairing_status_map: editData?.repairing_status_map || {},
             replacement_product_ids: editData?.replacement_product_ids || [],
             staff_id: editData?.staff_id || '',
@@ -7191,6 +8703,31 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           }}
           onChange={handleNewClientChange}
           onSubmit={submitNewClientForm}
+        />
+      )}
+
+      {/* Edit Client Modal */}
+      {showEditModal && editType === 'client' && editData && (
+        <ClientFormModal
+          show={showEditModal && editType === 'client'}
+          editMode={true}
+          isSubmitting={false}
+          clientForm={{
+            full_name: editData.full_name || '',
+            email: editData.email || '',
+            phone: editData.phone || '',
+            address: editData.address || '',
+            city: editData.city || '',
+            state: editData.state || '',
+            zip_code: editData.zip_code || '',
+            notes: editData.notes || '',
+          }}
+          onClose={() => {
+            setShowEditModal(false);
+            setEditData(null);
+          }}
+          onChange={handleEditClientChange}
+          onSubmit={submitEditClientForm}
         />
       )}
       
@@ -7245,7 +8782,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
       )}
       {/* Edit Modal */}
       <Modal
-        isOpen={showEditModal && editType !== 'user' && editType !== 'order' && editType !== 'product'}
+        isOpen={showEditModal && editType !== 'user' && editType !== 'order' && editType !== 'product' && editType !== 'client'}
         onClose={() => setShowEditModal(false)}
         title={`Edit ${editType.charAt(0).toUpperCase() + editType.slice(1)}`}
         size="lg"
@@ -7789,6 +9326,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           />
         </div>
       )}
+
+      {showOrderDetailsModal && (
+        <OrderDetailsModal
+          isOpen={showOrderDetailsModal}
+          onClose={() => {
+            setShowOrderDetailsModal(false);
+            setSelectedOrderDetails(null);
+          }}
+          order={selectedOrderDetails}
+          products={products}
+          onEdit={() => {
+            void handleOrderDetailsEdit();
+          }}
+          onGenerateReceipt={handleOrderDetailsReceipt}
+          onDelete={handleOrderDetailsDelete}
+        />
+      )}
       
       {/* Receipt Confirmation Modal */}
       <Modal
@@ -7853,20 +9407,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
           }}
         />
       )}
-      {/* Order Details Modal */}
-      <OrderDetailsModal
-        isOpen={showOrderDetailsModal}
-        onClose={() => {
-          setShowOrderDetailsModal(false);
-          setSelectedOrderDetails(null);
-        }}
-        order={selectedOrderDetails}
-        products={products as any}
-        onEdit={handleOrderDetailsEdit}
-        onGenerateReceipt={handleOrderDetailsReceipt}
-        onDelete={handleOrderDetailsDelete}
-      />
-
       <ConfirmDeleteModal
         open={Boolean(deleteProductTarget)}
         title={deleteProductTarget ? `Delete ${deleteProductTarget.product_name}` : 'Delete Product'}
@@ -7939,6 +9479,30 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout }) => {
         onConfirm={confirmDeleteOrder}
         onCancel={() => {
           if (!deleteOrderPending) setDeleteOrderTarget(null);
+        }}
+      />
+
+      <ConfirmDeleteModal
+        open={Boolean(deleteDeliveryTarget)}
+        title={deleteDeliveryTarget ? `Delete ${deleteDeliveryTarget.delivery_code}` : 'Delete Delivery'}
+        description="Are you sure you want to delete this delivery?"
+        details={
+          deleteDeliveryTarget
+            ? [
+                { label: 'Delivery Code', value: deleteDeliveryTarget.delivery_code || '-' },
+                { label: 'Order Code', value: deleteDeliveryTarget.order_code || '-' },
+                { label: 'Client', value: deleteDeliveryTarget.client_name || '-' },
+                { label: 'Product', value: deleteDeliveryTarget.product_name || '-' },
+                { label: 'Scheduled Date', value: formatShortDate(deleteDeliveryTarget.scheduled_date || deleteDeliveryTarget.created_at) },
+              ]
+            : []
+        }
+        confirmLabel="Delete Delivery"
+        cancelLabel="Keep Delivery"
+        isProcessing={deleteDeliveryPending}
+        onConfirm={confirmDeleteDelivery}
+        onCancel={() => {
+          if (!deleteDeliveryPending) setDeleteDeliveryTarget(null);
         }}
       />
     </div>

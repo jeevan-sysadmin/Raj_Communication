@@ -8,7 +8,21 @@ export default defineConfig(({ mode }) => {
   const normalizedBasePath = rawBasePath === '/'
     ? '/'
     : `/${rawBasePath.replace(/^\/+|\/+$/g, '')}/`
-  const proxyTarget = String(env.VITE_DEV_PROXY_TARGET || 'http://localhost/raj_communication').trim().replace(/\/+$/, '')
+  const proxyTarget = String(env.VITE_DEV_PROXY_TARGET || '').trim().replace(/\/+$/, '')
+  const proxy = proxyTarget
+    ? {
+        '/api': {
+          target: `${proxyTarget}/api`,
+          changeOrigin: true,
+          rewrite: (proxyPath: string) => proxyPath.replace(/^\/api/, '')
+        },
+        '/api_sync': {
+          target: `${proxyTarget}/api_sync`,
+          changeOrigin: true,
+          rewrite: (proxyPath: string) => proxyPath.replace(/^\/api_sync/, '')
+        }
+      }
+    : undefined
 
   return {
     plugins: [
@@ -26,18 +40,7 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       host: true,
       cors: true,
-      proxy: {
-        '/api': {
-          target: `${proxyTarget}/api`,
-          changeOrigin: true,
-          rewrite: (proxyPath) => proxyPath.replace(/^\/api/, '')
-        },
-        '/api_sync': {
-          target: `${proxyTarget}/api_sync`,
-          changeOrigin: true,
-          rewrite: (proxyPath) => proxyPath.replace(/^\/api_sync/, '')
-        }
-      }
+      proxy
     },
 
     build: {

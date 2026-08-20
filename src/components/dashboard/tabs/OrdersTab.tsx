@@ -5,6 +5,7 @@ import {
   FiChevronRight,
   FiEdit,
   FiEye,
+  FiFileText,
   FiPackage,
   FiPlus,
   FiPrinter,
@@ -17,6 +18,7 @@ import DateRangeSelector from "../DateRangeSelector";
 import { exportStyledPdfReport } from "../pdfExport";
 import type { DateRange, Order, Product } from "../types";
 import { formatCurrency, formatDisplayDate, parseAppDate } from "../utils";
+import { buildApiUrl } from "../../../config/runtime";
 
 interface OrdersTabProps {
   orders: Order[];
@@ -24,8 +26,13 @@ interface OrdersTabProps {
   products?: Product[];
   loading: boolean;
   searchTerm: string;
+  companyFilterValue?: string;
+  productFlowStatusFilterValue?: string;
+  companyFilterOptions?: string[];
   dateRange: DateRange;
   onSearchChange: (value: string) => void;
+  onCompanyFilterChange?: (value: string) => void;
+  onProductFlowStatusFilterChange?: (value: string) => void;
   onDateRangeChange: (start: string, end: string) => void;
   onPresetClick: (preset: "today" | "yesterday" | "thisWeek" | "thisMonth" | "lastMonth" | "thisYear") => void;
   onViewOrder: (order: Order) => void;
@@ -43,6 +50,21 @@ interface OrdersTabProps {
   emptyDescription?: string;
   createLabel?: string;
   exportFilePrefix?: string;
+  companyReportVariant?: "rma-form" | "rma-delivery-challan";
+  lockedProductFlowStatusValue?: string;
+  hideProductFlowStatusFilter?: boolean;
+}
+
+interface CompanyReportDetails {
+  id?: number;
+  company_code?: string;
+  company_name: string;
+  product?: string;
+  contact_person?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  notes?: string;
 }
 
 const ITEMS_PER_PAGE = 20;
@@ -63,6 +85,28 @@ const parseJsonArray = (value: string): unknown[] | null => {
   } catch {
     return null;
   }
+};
+
+const parsePositionedList = (value: unknown): string[] => {
+  if (Array.isArray(value)) {
+    return value.map((entry) => String(entry ?? "").trim());
+  }
+
+  if (typeof value === "number") {
+    return [String(value)];
+  }
+
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    const parsedArray = parseJsonArray(trimmed);
+    if (parsedArray) {
+      return parsedArray.map((entry) => String(entry ?? "").trim());
+    }
+    return (trimmed.includes("||") ? trimmed.split("||") : trimmed.split(",")).map((entry) => entry.trim());
+  }
+
+  return [];
 };
 
 const normalizeNames = (value: unknown) => {
@@ -114,16 +158,102 @@ const mergeIds = (...values: unknown[]) =>
     ),
   );
 
+const normalizeProductQuantityMap = (value: unknown): Record<string, number> => {
+  if (!value) return {};
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+      if (typeof parsed === "string") {
+        parsed = JSON.parse(parsed);
+      }
+    } catch {
+      const trimmed = value.trim();
+      const legacyMatch = trimmed.match(/^\{\s*"(\d+)"\s*\.\s*(\d+)\s*\}$/);
+      if (!legacyMatch) return {};
+      parsed = { [legacyMatch[1]]: Number.parseInt(legacyMatch[2], 10) };
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  return Object.fromEntries(
+    Object.entries(parsed as Record<string, unknown>)
+      .map(([productId, qty]) => [String(productId).trim(), Math.max(1, Number.parseInt(String(qty ?? "1"), 10) || 1)])
+      .filter(([productId]) => Boolean(productId)),
+  );
+};
+
 const withIdFallback = (names: string[], ids: number[], prefix: string) =>
   names.length > 0 ? names : ids.map((id) => `${prefix} #${id}`);
 
 interface ProductEntry {
+  productId?: number;
   label: string;
   serialNumber: string;
+  model?: string;
   quantity: number;
 }
 
-const parseSerialList = (value: unknown) => normalizeNames(value);
+const buildPrimaryProductNameMap = (order: Order): Map<number, string> => {
+  const orderedIds = mergeIds(order.product_ids, order.product_id);
+  const orderedNames = normalizeNames(order.product_names);
+  const mappedNames = new Map<number, string>();
+
+  orderedIds.forEach((productId, index) => {
+    const productName = String(orderedNames[index] || "").trim();
+    if (productId > 0 && productName) {
+      mappedNames.set(productId, productName);
+    }
+  });
+
+  const companyProductMap = normalizeCompanyProductMap(order.company_product_map || order.companies_products);
+  const companyProductNameMap = normalizeCompanyProductNameMap(
+    (order as Order & { company_product_name_map?: unknown }).company_product_name_map,
+  );
+
+  Object.entries(companyProductMap).forEach(([companyId, productIds]) => {
+    const companyNames = companyProductNameMap[companyId]?.productNames || [];
+    productIds.forEach((productId, index) => {
+      const productName = String(companyNames[index] || "").trim();
+      if (productId > 0 && productName && !mappedNames.has(productId)) {
+        mappedNames.set(productId, productName);
+      }
+    });
+  });
+
+  if (mappedNames.size === 0 && orderedIds.length === 1) {
+    const fallbackName = String(order.product_name || "").trim();
+    if (fallbackName) {
+      mappedNames.set(orderedIds[0], fallbackName);
+    }
+  }
+
+  return mappedNames;
+};
+
+const buildReplacementProductNameMap = (order: Order): Map<number, string> => {
+  const replacementIds = mergeIds(order.replacement_product_ids, order.replacement_product_id);
+  const replacementNames = normalizeNames(order.replacement_product_names);
+  const mappedNames = new Map<number, string>();
+
+  replacementIds.forEach((productId, index) => {
+    const productName = String(replacementNames[index] || "").trim();
+    if (productId > 0 && productName) {
+      mappedNames.set(productId, productName);
+    }
+  });
+
+  if (mappedNames.size === 0 && replacementIds.length === 1) {
+    const fallbackName = String(order.replacement_product_name || "").trim();
+    if (fallbackName) {
+      mappedNames.set(replacementIds[0], fallbackName);
+    }
+  }
+
+  return mappedNames;
+};
+
+const parseSerialList = (value: unknown) => parsePositionedList(value);
+const parseModelList = (value: unknown) => parsePositionedList(value);
 
 const buildOrderProductEntries = (
   order: Order,
@@ -137,9 +267,16 @@ const buildOrderProductEntries = (
     replacement_product_serial_no?: string;
   };
 
+  const fallbackIdsFromMaps = isReplacement
+    ? []
+    : mergeIds(
+        Object.keys(normalizeProductFlowStatusMap((order as Order & { product_status_map?: unknown }).product_status_map)),
+        Object.keys(normalizeRepairingStatusMap((order as Order & { repairing_status_map?: unknown }).repairing_status_map)),
+        Object.values(normalizeCompanyProductMap(order.company_product_map || order.companies_products)).flat(),
+      );
   const ids = isReplacement
     ? mergeIds(order.replacement_product_ids, order.replacement_product_id)
-    : mergeIds(order.product_ids, order.product_id);
+    : mergeIds(order.product_ids, order.product_id, fallbackIdsFromMaps);
   const namesFromList = isReplacement ? normalizeNames(order.replacement_product_names) : normalizeNames(order.product_names);
   const fallbackNames = isReplacement ? normalizeNames(order.replacement_product_name) : normalizeNames(order.product_name);
   const names = namesFromList.length > 0 ? namesFromList : fallbackNames;
@@ -150,8 +287,11 @@ const buildOrderProductEntries = (
       ]
     : [];
   const serialsFromList = isReplacement
-    ? Array.from(new Set(replacementSerials.map((value) => String(value || "").trim()).filter(Boolean)))
+    ? replacementSerials
     : parseSerialList(order.product_serial_numbers);
+  const modelsFromList = isReplacement
+    ? parseModelList((order as Order & { replacement_product_models?: unknown }).replacement_product_models)
+    : parseModelList((order as Order & { product_models?: unknown }).product_models);
   const fallbackSerial = isReplacement
     ? String(
         order.replacement_serial_number ||
@@ -161,20 +301,37 @@ const buildOrderProductEntries = (
           "",
       )
     : String(order.serial_number || "");
+  const quantityMap = normalizeProductQuantityMap((order as Order & { product_quantity_map?: unknown }).product_quantity_map);
+  const savedNameById = isReplacement ? buildReplacementProductNameMap(order) : buildPrimaryProductNameMap(order);
 
   const idEntries = ids.map((id, index) => {
     const matched = products.find((product) => product.id === id);
-    const label = names[index] || matched?.product_name || `${isReplacement ? "Replacement Product" : "Product"} #${id}`;
+    const label =
+      matched?.product_name ||
+      String(savedNameById.get(id) || "").trim() ||
+      names[index] ||
+      (ids.length === 1
+        ? String((isReplacement ? order.replacement_product_name : order.product_name) || "").trim()
+        : "") ||
+      `${isReplacement ? "Replacement Product" : "Product"} ${index + 1}`;
     const serialNumber = serialsFromList[index] || matched?.serial_number || (index === 0 ? fallbackSerial : "") || "";
-    return { label, serialNumber, quantity: Number(matched?.stock_quantity ?? 0) };
+    return {
+      productId: id,
+      label,
+      serialNumber,
+      model: String(modelsFromList[index] || matched?.model || "").trim(),
+      quantity: quantityMap[String(id)] ?? 1,
+    };
   });
 
   if (idEntries.length > 0) return idEntries;
 
   return withIdFallback(names, ids, isReplacement ? "Replacement Product" : "Product").map((label, index) => ({
+    productId: ids[index],
     label,
     serialNumber: serialsFromList[index] || (index === 0 ? fallbackSerial : "") || "",
-    quantity: 0,
+    model: String(modelsFromList[index] || "").trim(),
+    quantity: quantityMap[String(ids[index])] ?? 1,
   }));
 };
 
@@ -241,6 +398,9 @@ const isAllProductsDelivered = (order: Order): boolean => {
   return statuses.every((status) => deliveredStatuses.has(status));
 };
 
+const getOrderDeliveryStatusLabel = (order: Order): "Deliveryed" | "Pending" =>
+  isAllProductsDelivered(order) ? "Deliveryed" : "Pending";
+
 const normalizeCompanyProductMap = (value: unknown): Record<string, number[]> => {
   let raw: unknown = value;
 
@@ -265,6 +425,47 @@ const normalizeCompanyProductMap = (value: unknown): Record<string, number[]> =>
     map[id.toString()] = normalizeIds(productIds);
   });
   return map;
+};
+
+interface CompanyProductNameMapEntry {
+  company_name?: string;
+  product_names?: string[] | string;
+}
+
+const normalizePositionedProductNames = (value: unknown): string[] =>
+  parsePositionedList(value).filter((entry) => {
+    const normalized = String(entry ?? "").trim().toLowerCase();
+    return Boolean(normalized) && normalized !== "null" && normalized !== "undefined";
+  });
+
+const normalizeCompanyProductNameMap = (value: unknown): Record<string, { companyName: string; productNames: string[] }> => {
+  let raw: unknown = value;
+
+  if (typeof raw === "string") {
+    const trimmed = raw.trim();
+    if (!trimmed) return {};
+    try {
+      raw = JSON.parse(trimmed);
+    } catch {
+      return {};
+    }
+  }
+
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+
+  return Object.entries(raw as Record<string, unknown>).reduce<Record<string, { companyName: string; productNames: string[] }>>(
+    (acc, [companyId, entry]) => {
+      const normalizedCompanyId = String(companyId || "").trim();
+      if (!normalizedCompanyId || !entry || typeof entry !== "object" || Array.isArray(entry)) return acc;
+      const typedEntry = entry as CompanyProductNameMapEntry;
+      const companyName = String(typedEntry.company_name || "").trim();
+      const productNames = normalizePositionedProductNames(typedEntry.product_names);
+      if (!companyName && productNames.length === 0) return acc;
+      acc[normalizedCompanyId] = { companyName, productNames };
+      return acc;
+    },
+    {},
+  );
 };
 
 const normalizeRepairingStatusMap = (value: unknown): Record<string, string> => {
@@ -328,12 +529,53 @@ const normalizeIssueDescriptionMap = (value: unknown): Record<string, string> =>
   return normalized;
 };
 
-const getRepairingStatusTone = (status: string) => {
+const normalizeProductFlowStatusMap = (value: unknown): Record<string, string> => {
+  if (!value) return {};
+  let parsed: unknown = value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return {};
+    try {
+      parsed = JSON.parse(trimmed);
+      if (typeof parsed === "string") parsed = JSON.parse(parsed);
+    } catch {
+      return {};
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  const normalized: Record<string, string> = {};
+  const normalizeFlowStatusValue = (status: unknown): string => {
+    const raw = String(status || "")
+      .trim()
+      .toLowerCase()
+      .replaceAll("_", "")
+      .replaceAll("-", "")
+      .replaceAll(" ", "");
+
+    if (raw === "rajtocom") return "rajtocom";
+    if (raw === "comtoraj") return "comtoraj";
+    if (raw === "deliveryed" || raw === "delivered") return "deliveryed";
+    if (raw === "pending") return "pending";
+    return "";
+  };
+  Object.entries(parsed as Record<string, unknown>).forEach(([productId, status]) => {
+    const key = String(productId || "").trim();
+    if (!key) return;
+    const normalizedStatus = normalizeFlowStatusValue(status);
+    if (normalizedStatus) normalized[key] = normalizedStatus;
+  });
+  return normalized;
+};
+
+const getRepairingStatusTone = (status: string, flowStatus?: string) => {
   const normalized = status.trim().toLowerCase().replaceAll("_", " ");
   if (normalized === "ready") {
     return { bg: "#dcfce7", color: "#166534", border: "#86efac", label: "Ready" };
   }
   if (normalized === "not ready") {
+    if (String(flowStatus || "").trim().toLowerCase() === "comtoraj") {
+      return { bg: "#fef3c7", color: "#92400e", border: "#fcd34d", label: "Not Ready" };
+    }
     return { bg: "#fee2e2", color: "#991b1b", border: "#fca5a5", label: "Not Ready" };
   }
   if (normalized === "replacement") {
@@ -342,18 +584,41 @@ const getRepairingStatusTone = (status: string) => {
   return { bg: "#e2e8f0", color: "#334155", border: "#cbd5e1", label: normalized || "N/A" };
 };
 
-const getRepairingStatusSummary = (order: Order, products: Product[]) => {
+const getRepairingStatusSummary = (
+  order: Order,
+  products: Product[],
+  options?: { visibleProductIds?: number[]; targetFlowStatus?: string },
+) => {
   const map = normalizeRepairingStatusMap((order as Order & { repairing_status_map?: unknown }).repairing_status_map);
+  const flowMap = normalizeProductFlowStatusMap((order as Order & { product_status_map?: unknown }).product_status_map);
   const productIds = mergeIds(order.product_ids, order.product_id);
+  const orderEntries = getOrderProductEntries(order, products);
+  const orderProductNameById = new Map<number, string>();
+  productIds.forEach((productId, index) => {
+    const label = orderEntries[index]?.label || "";
+    if (productId > 0 && label) {
+      orderProductNameById.set(productId, label);
+    }
+  });
   const mapIds = Object.keys(map).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0);
-  const sourceIds = mapIds.length > 0 ? mapIds : productIds;
+  const sourceIds =
+    mapIds.length > 0
+      ? mapIds
+      : productIds;
   if (sourceIds.length === 0 || Object.keys(map).length === 0) return <span className="staff-name">{"{}"}</span>;
   const entries = sourceIds
     .map((id) => {
       const value = map[String(id)];
       if (!value) return null as null | { id: number; productName: string; tone: ReturnType<typeof getRepairingStatusTone> };
-      const productName = products.find((product) => product.id === id)?.product_name || `Product #${id}`;
-      return { id, productName, tone: getRepairingStatusTone(value) };
+      const productName =
+        orderProductNameById.get(id) ||
+        products.find((product) => product.id === id)?.product_name ||
+        `Product #${id}`;
+      const effectiveFlowStatus =
+        String(options?.targetFlowStatus || "").trim().toLowerCase() === "comtoraj"
+          ? "comtoraj"
+          : flowMap[String(id)];
+      return { id, productName, tone: getRepairingStatusTone(value, effectiveFlowStatus) };
     })
     .filter(Boolean) as Array<{ id: number; productName: string; tone: ReturnType<typeof getRepairingStatusTone> }>;
   if (entries.length === 0) return <span className="staff-name">{"{}"}</span>;
@@ -388,8 +653,61 @@ const getCompanyNames = (order: Order): string[] => {
   const companyIds = mergeIds(order.company_ids, order.company_id);
   const fromArray = normalizeNames(order.company_names);
   const fromText = normalizeNames((order as Order & { company_names_text?: string }).company_names_text || order.company_name);
-  const names = fromArray.length > 0 ? fromArray : fromText;
+  const mapRaw = (order as Order & {
+    company_product_name_map?: Record<string, { company_name?: string; product_names?: string[] | string }> | string;
+  }).company_product_name_map;
+  let mapValue: Record<string, { company_name?: string; product_names?: string[] | string }> | null = null;
+
+  if (typeof mapRaw === "string") {
+    try {
+      const parsed = JSON.parse(mapRaw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        mapValue = parsed as Record<string, { company_name?: string; product_names?: string[] | string }>;
+      }
+    } catch {
+      mapValue = null;
+    }
+  } else if (mapRaw && typeof mapRaw === "object" && !Array.isArray(mapRaw)) {
+    mapValue = mapRaw;
+  }
+
+  const mapNames = Object.values(mapValue || {})
+    .map((entry) => String(entry?.company_name || "").trim())
+    .filter(Boolean);
+  const names = Array.from(new Set([...(fromArray.length > 0 ? fromArray : fromText), ...mapNames]));
   return names.length > 0 ? names : companyIds.map((id) => `Company #${id}`);
+};
+
+const getCompanyLabelById = (order: Order, companyId: number, fallbackIndex = 0): string => {
+  const mapRaw = (order as Order & {
+    company_product_name_map?: Record<string, { company_name?: string; product_names?: string[] | string }> | string;
+  }).company_product_name_map;
+  let mapValue: Record<string, { company_name?: string; product_names?: string[] | string }> | null = null;
+
+  if (typeof mapRaw === "string") {
+    try {
+      const parsed = JSON.parse(mapRaw);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        mapValue = parsed as Record<string, { company_name?: string; product_names?: string[] | string }>;
+      }
+    } catch {
+      mapValue = null;
+    }
+  } else if (mapRaw && typeof mapRaw === "object" && !Array.isArray(mapRaw)) {
+    mapValue = mapRaw;
+  }
+
+  const mappedName = String(mapValue?.[String(companyId)]?.company_name || "").trim();
+  if (mappedName) return mappedName;
+
+  const companyIds = mergeIds(order.company_ids, order.company_id);
+  const companyNames = getCompanyNames(order);
+  const matchedIndex = companyIds.findIndex((id) => id === companyId);
+  if (matchedIndex >= 0 && companyNames[matchedIndex]) {
+    return companyNames[matchedIndex];
+  }
+
+  return companyNames[fallbackIndex] || `Company #${companyId}`;
 };
 
 const getCompanyProductLines = (order: Order, products: Product[]): string[] => {
@@ -400,10 +718,9 @@ const getCompanyProductLines = (order: Order, products: Product[]): string[] => 
       ...Object.keys(companyProductMap).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0),
     ]),
   );
-  const companyNames = getCompanyNames(order);
 
   return companyIds.map((companyId, index) => {
-    const companyLabel = companyNames[index] || `Company #${companyId}`;
+    const companyLabel = getCompanyLabelById(order, companyId, index);
     const productNames = (companyProductMap[companyId.toString()] || [])
       .map((productId) => products.find((product) => product.id === productId)?.product_name || `Product #${productId}`);
     const numberedProducts = productNames.length > 0
@@ -427,6 +744,360 @@ const getPerProductIssueLines = (order: Order, products: Product[]): string[] =>
     .filter((line) => line.length > 0);
 };
 
+const normalizeText = (value: string) =>
+  value
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+    .trim();
+
+const normalizeSerialSearchValue = (value: unknown) =>
+  String(value || "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toLowerCase();
+
+const normalizeAccessoryTypeMap = (value: unknown): Record<string, string> => {
+  if (!value) return {};
+  let parsed = value;
+  if (typeof value === "string") {
+    try {
+      parsed = JSON.parse(value);
+      if (typeof parsed === "string") parsed = JSON.parse(parsed);
+    } catch {
+      return {};
+    }
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+  return Object.entries(parsed as Record<string, unknown>).reduce<Record<string, string>>((acc, [productId, type]) => {
+    const key = String(productId || "").trim();
+    const normalized = String(type || "").trim().toLowerCase();
+    if (!key) return acc;
+    if (normalized === "without_box" || normalized === "withoutbox") acc[key] = "Without Box";
+    if (normalized === "with_box" || normalized === "withbox") acc[key] = "With Box";
+    return acc;
+  }, {});
+};
+
+const getCompanySpecificProductEntries = (order: Order, products: Product[], selectedCompanyName: string): ProductEntry[] => {
+  const normalizedTargetCompany = String(selectedCompanyName || "").trim().toLowerCase();
+  if (!normalizedTargetCompany) return [];
+
+  const companyProductMap = normalizeCompanyProductMap(order.company_product_map || order.companies_products);
+  const companyProductNameMap = normalizeCompanyProductNameMap(
+    (order as Order & { company_product_name_map?: unknown }).company_product_name_map,
+  );
+  const companyIds = Array.from(
+    new Set([
+      ...mergeIds(order.company_ids, order.company_id),
+      ...Object.keys(companyProductMap).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0),
+      ...Object.keys(companyProductNameMap).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0),
+    ]),
+  );
+  const orderedProductIds = mergeIds(order.product_ids, order.product_id);
+  const orderedProductNames = normalizeNames(order.product_names);
+  const orderedProductSerials = parseSerialList(order.product_serial_numbers);
+  const orderedProductModels = parseModelList((order as Order & { product_models?: unknown }).product_models);
+  const quantityMap = normalizeProductQuantityMap((order as Order & { product_quantity_map?: unknown }).product_quantity_map);
+  const primaryEntries = getOrderProductEntries(order, products).filter((entry) => entry.label !== "Not added");
+  const matchedCompanyId =
+    companyIds.find((companyId, index) =>
+      String(getCompanyLabelById(order, companyId, index) || "").trim().toLowerCase() === normalizedTargetCompany,
+    ) ??
+    Object.keys(companyProductNameMap).find((companyId) =>
+      companyProductNameMap[companyId]?.companyName.trim().toLowerCase() === normalizedTargetCompany,
+    );
+  const matchedCompanyKey = String(matchedCompanyId || "").trim();
+  const mappedProductIds =
+    matchedCompanyKey && companyProductMap[matchedCompanyKey] ? companyProductMap[matchedCompanyKey] : [];
+  const mappedProductNames =
+    matchedCompanyKey && companyProductNameMap[matchedCompanyKey]
+      ? companyProductNameMap[matchedCompanyKey].productNames
+      : [];
+
+  if (mappedProductIds.length > 0) {
+    const matchedEntries: ProductEntry[] = [];
+
+    mappedProductIds.forEach((productId, index) => {
+      const orderProductIndex = orderedProductIds.findIndex((candidateId) => candidateId === productId);
+      const fallbackMappedName = String(mappedProductNames[index] || "").trim();
+      const orderedProductName = orderProductIndex >= 0 ? String(orderedProductNames[orderProductIndex] || "").trim() : "";
+      const orderedProductSerial = orderProductIndex >= 0 ? String(orderedProductSerials[orderProductIndex] || "").trim() : "";
+      const orderedProductModel = orderProductIndex >= 0 ? String(orderedProductModels[orderProductIndex] || "").trim() : "";
+      const matchedEntry =
+        (orderProductIndex >= 0 ? primaryEntries[orderProductIndex] : undefined) ||
+        primaryEntries.find((entry) => entry.productId === productId);
+      const matchedProduct = products.find((product) => product.id === productId);
+      const resolvedLabel =
+        fallbackMappedName ||
+        orderedProductName ||
+        matchedEntry?.label ||
+        matchedProduct?.product_name ||
+        "";
+      const entry: ProductEntry = {
+        productId: matchedEntry?.productId || matchedProduct?.id || productId,
+        label: resolvedLabel || `Product ${index + 1}`,
+        serialNumber: orderedProductSerial || matchedEntry?.serialNumber || matchedProduct?.serial_number || "",
+        model: orderedProductModel || matchedEntry?.model || matchedProduct?.model || "",
+        quantity:
+          quantityMap[String(productId)] ??
+          quantityMap[String(matchedEntry?.productId || matchedProduct?.id || productId)] ??
+          matchedEntry?.quantity ??
+          1,
+      };
+
+      matchedEntries.push(entry);
+    });
+
+    return matchedEntries.filter((entry) => String(entry.label || "").trim().length > 0);
+  }
+
+  if (mappedProductNames.length > 0) {
+    const matchedEntries: ProductEntry[] = [];
+    const seenKeys = new Set<string>();
+
+    mappedProductNames.forEach((productName, index) => {
+      const normalizedName = String(productName || "").trim().toLowerCase();
+      if (!normalizedName || seenKeys.has(normalizedName)) return;
+
+      const fallbackMappedId = Number(mappedProductIds[index] || 0) || undefined;
+      const orderProductIndex =
+        fallbackMappedId && fallbackMappedId > 0
+          ? orderedProductIds.findIndex((candidateId) => candidateId === fallbackMappedId)
+          : -1;
+      const matchedEntry = primaryEntries.find((entry) => String(entry.label || "").trim().toLowerCase() === normalizedName);
+      const matchedProduct =
+        (fallbackMappedId
+          ? products.find((product) => product.id === fallbackMappedId)
+          : undefined) ||
+        products.find((product) => String(product.product_name || "").trim().toLowerCase() === normalizedName);
+      if (matchedEntry) {
+        matchedEntries.push(matchedEntry);
+        if (matchedEntry.productId) seenKeys.add(`id:${matchedEntry.productId}`);
+        seenKeys.add(normalizedName);
+        return;
+      }
+
+      matchedEntries.push({
+        productId: matchedProduct?.id || fallbackMappedId,
+        label: matchedProduct?.product_name || productName,
+        serialNumber:
+          (orderProductIndex >= 0 ? String(orderedProductSerials[orderProductIndex] || "").trim() : "") ||
+          matchedProduct?.serial_number ||
+          "",
+        model:
+          (orderProductIndex >= 0 ? String(orderedProductModels[orderProductIndex] || "").trim() : "") ||
+          (orderProductIndex >= 0 ? String(primaryEntries[orderProductIndex]?.model || "").trim() : "") ||
+          matchedProduct?.model ||
+          "",
+        quantity:
+          quantityMap[String(fallbackMappedId || matchedProduct?.id || "")] ??
+          quantityMap[String(matchedProduct?.id || fallbackMappedId || "")] ??
+          (orderProductIndex >= 0 ? primaryEntries[orderProductIndex]?.quantity : undefined) ??
+          1,
+      });
+      if (matchedProduct?.id || fallbackMappedId) seenKeys.add(`id:${matchedProduct?.id || fallbackMappedId}`);
+      seenKeys.add(normalizedName);
+    });
+
+    return matchedEntries;
+  }
+
+  const orderCompanyMatches = companyIds.some(
+    (companyId, index) =>
+      String(getCompanyLabelById(order, companyId, index) || "").trim().toLowerCase() === normalizedTargetCompany,
+  );
+
+  if (orderCompanyMatches) {
+    return primaryEntries;
+  }
+
+  if (
+    companyIds.length === 1 &&
+    String(getCompanyLabelById(order, companyIds[0], 0) || "").trim().toLowerCase() === normalizedTargetCompany
+  ) {
+    return primaryEntries;
+  }
+
+  return [];
+};
+
+const getStrictCompanySpecificProductEntries = (
+  order: Order,
+  products: Product[],
+  selectedCompanyName: string,
+): ProductEntry[] => {
+  const normalizedTargetCompany = String(selectedCompanyName || "").trim();
+  if (!normalizedTargetCompany) return [];
+
+  const companyProductMap = normalizeCompanyProductMap(order.company_product_map || order.companies_products);
+  const companyProductNameMap = normalizeCompanyProductNameMap(
+    (order as Order & { company_product_name_map?: unknown }).company_product_name_map,
+  );
+  const companyIds = Array.from(
+    new Set([
+      ...mergeIds(order.company_ids, order.company_id),
+      ...Object.keys(companyProductMap).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0),
+      ...Object.keys(companyProductNameMap).map((id) => Number(id)).filter((id) => Number.isInteger(id) && id > 0),
+    ]),
+  );
+  const normalizedTarget = normalizedTargetCompany.toLowerCase();
+  const matchedCompanyId =
+    companyIds.find((companyId, index) =>
+      String(getCompanyLabelById(order, companyId, index) || "").trim().toLowerCase() === normalizedTarget,
+    ) ??
+    Object.keys(companyProductNameMap).find((companyId) =>
+      companyProductNameMap[companyId]?.companyName.trim().toLowerCase() === normalizedTarget,
+    );
+  const matchedCompanyKey = String(matchedCompanyId || "").trim();
+  const mappedProductIds =
+    matchedCompanyKey && companyProductMap[matchedCompanyKey] ? companyProductMap[matchedCompanyKey] : [];
+  const mappedProductNames =
+    matchedCompanyKey && companyProductNameMap[matchedCompanyKey]
+      ? companyProductNameMap[matchedCompanyKey].productNames
+      : [];
+
+  if (mappedProductIds.length > 0) {
+    const allowedIds = new Set(mappedProductIds.map((productId) => Number(productId)).filter((productId) => Number.isInteger(productId) && productId > 0));
+    return getCompanySpecificProductEntries(order, products, normalizedTargetCompany).filter((entry) =>
+      allowedIds.has(Number(entry.productId || 0)),
+    );
+  }
+
+  if (mappedProductNames.length > 0) {
+    const allowedNames = new Set(
+      mappedProductNames
+        .map((name) => String(name || "").trim().toLowerCase())
+        .filter(Boolean),
+    );
+    return getCompanySpecificProductEntries(order, products, normalizedTargetCompany).filter((entry) =>
+      allowedNames.has(String(entry.label || "").trim().toLowerCase()),
+    );
+  }
+
+  return [];
+};
+
+const getDisplayProductEntries = (
+  order: Order,
+  products: Product[],
+  selectedCompanyName: string,
+) => {
+  const allOrderEntries = getOrderProductEntries(order, products).filter((entry) => entry.label !== "Not added");
+  if (!selectedCompanyName) {
+    return allOrderEntries;
+  }
+
+  return getStrictCompanySpecificProductEntries(order, products, selectedCompanyName);
+};
+
+const getFilteredDisplayProductEntries = (
+  order: Order,
+  products: Product[],
+  selectedCompanyName: string,
+  targetFlowStatus: string,
+) => {
+  const normalizedCompanyName = String(selectedCompanyName || "").trim();
+  const normalizedFlowStatus = String(targetFlowStatus || "").trim().toLowerCase();
+
+  const baseEntries = normalizedCompanyName
+    ? (
+        normalizedFlowStatus
+          ? getStrictCompanySpecificProductEntries(order, products, normalizedCompanyName)
+          : getDisplayProductEntries(order, products, normalizedCompanyName)
+      )
+    : getOrderProductEntries(order, products).filter((entry) => entry.label !== "Not added");
+
+  return filterProductEntriesByFlowStatus(order, baseEntries, normalizedFlowStatus);
+};
+
+const getVisibleProductSummaryCount = (
+  order: Order,
+  products: Product[],
+  selectedCompanyName: string,
+  targetFlowStatus: string,
+) =>
+  getFilteredDisplayProductEntries(order, products, selectedCompanyName, targetFlowStatus).reduce((sum, entry) => {
+    const quantity = Math.max(1, Number(entry.quantity || 1) || 1);
+    return sum + (quantity > 1 ? quantity : 1);
+  }, 0);
+
+const getStrictCompanyDisplayProductEntries = (
+  order: Order,
+  products: Product[],
+  selectedCompanyName: string,
+  targetFlowStatus: string,
+) => {
+  const normalizedCompanyName = String(selectedCompanyName || "").trim();
+  const normalizedFlowStatus = String(targetFlowStatus || "").trim().toLowerCase();
+
+  if (!normalizedCompanyName) {
+    return filterProductEntriesByFlowStatus(
+      order,
+      getOrderProductEntries(order, products).filter((entry) => entry.label !== "Not added"),
+      normalizedFlowStatus,
+    );
+  }
+
+  const companyEntries = getStrictCompanySpecificProductEntries(order, products, normalizedCompanyName);
+  if (companyEntries.length > 0) {
+    return filterProductEntriesByFlowStatus(order, companyEntries, normalizedFlowStatus);
+  }
+
+  return [];
+};
+
+const filterProductEntriesByFlowStatus = (
+  order: Order,
+  entries: ProductEntry[],
+  targetStatus: string,
+): ProductEntry[] => {
+  const normalizedTargetStatus = String(targetStatus || "").trim().toLowerCase();
+  if (!normalizedTargetStatus) return entries;
+
+  const productFlowStatusMap = normalizeProductFlowStatusMap(
+    (order as Order & { product_status_map?: unknown }).product_status_map,
+  );
+  const flowStatuses = Object.values(productFlowStatusMap);
+
+  if (flowStatuses.length === 0) {
+    const fallbackStatus = String(order.status || "").trim().toLowerCase();
+    const normalizedFallbackStatus = fallbackStatus === "delivered" ? "deliveryed" : fallbackStatus;
+    return normalizedFallbackStatus === normalizedTargetStatus ? entries : [];
+  }
+
+  return entries.filter((entry) => {
+    if (!entry.productId) return false;
+    return productFlowStatusMap[String(entry.productId)] === normalizedTargetStatus;
+  });
+};
+
+const splitDeliveredProductEntries = (
+  order: Order,
+  entries: ProductEntry[],
+): { activeEntries: ProductEntry[]; deliveredEntries: ProductEntry[] } => {
+  const productFlowStatusMap = normalizeProductFlowStatusMap(
+    (order as Order & { product_status_map?: unknown }).product_status_map,
+  );
+
+  if (Object.keys(productFlowStatusMap).length === 0) {
+    const orderIsDelivered = String(order.status || "").trim().toLowerCase() === "delivered";
+    return {
+      activeEntries: entries,
+      deliveredEntries: orderIsDelivered ? entries : [],
+    };
+  }
+
+  const activeEntries: ProductEntry[] = [...entries];
+  const deliveredEntries: ProductEntry[] = [];
+
+  entries.forEach((entry) => {
+    if (entry.productId && productFlowStatusMap[String(entry.productId)] === "deliveryed") {
+      deliveredEntries.push(entry);
+    }
+  });
+
+  return { activeEntries, deliveredEntries };
+};
+
 const renderOrderProductChips = (
   entries: ProductEntry[],
   emptyLabel: string,
@@ -446,11 +1117,15 @@ const renderOrderProductChips = (
     >
       <div className="order-product-chips">
         {visibleEntries.map((entry, index) => (
-          <span key={`${entry.label}-${index}`} className="product-chip">
-            <span className="product-chip-title">{index + 1}. {entry.label}</span>
-            <small className="product-chip-serial">Qty: {entry.quantity}</small>
-            <small className="product-chip-serial">SN: {entry.serialNumber || "N/A"}</small>
-          </span>
+            <span key={`${entry.label}-${index}`} className="product-chip">
+              <span className="product-chip-title">{index + 1}. {entry.label}</span>
+              {entry.model ? <small className="product-chip-serial">Model: {entry.model}</small> : null}
+              <small className="product-chip-serial">Qty: {entry.quantity}</small>
+              <small className="product-chip-serial">SN: {entry.serialNumber || "N/A"}</small>
+              {columnType === "replacement" ? null : emptyLabel === "No deliveryed product" ? (
+              <small className="product-chip-serial product-chip-serial-delivered">Status : Deliveryed</small>
+              ) : null}
+            </span>
         ))}
         {hiddenCount > 0 && <span className="product-chip more">+{hiddenCount} more</span>}
       </div>
@@ -461,6 +1136,41 @@ const renderOrderProductChips = (
   );
 };
 
+const fetchCompanyReportDetails = async (companyName: string): Promise<CompanyReportDetails | null> => {
+  const normalizedName = String(companyName || "").trim().toLowerCase();
+  if (!normalizedName) return null;
+
+  try {
+    const response = await fetch(buildApiUrl("companys.php"), {
+      method: "GET",
+      headers: { Accept: "application/json" },
+    });
+    if (!response.ok) return null;
+
+    const payload = await response.json();
+    const rows = Array.isArray(payload?.companys) ? payload.companys : [];
+    const matched = rows.find(
+      (row: Record<string, unknown>) =>
+        String(row?.company_name || "").trim().toLowerCase() === normalizedName,
+    );
+    if (!matched) return null;
+
+    return {
+      id: Number(matched.id || 0) || undefined,
+      company_code: String(matched.company_code || "").trim(),
+      company_name: String(matched.company_name || "").trim(),
+      product: String(matched.product || "").trim(),
+      contact_person: String(matched.contact_person || "").trim(),
+      phone: String(matched.phone || "").trim(),
+      email: String(matched.email || "").trim(),
+      address: String(matched.address || "").trim(),
+      notes: String(matched.notes || "").trim(),
+    };
+  } catch {
+    return null;
+  }
+};
+
 const OrdersTab = (props: OrdersTabProps) => {
   const {
     orders,
@@ -468,8 +1178,13 @@ const OrdersTab = (props: OrdersTabProps) => {
     products = [],
     loading,
     searchTerm,
+    companyFilterValue = "",
+    productFlowStatusFilterValue = "",
+    companyFilterOptions,
     dateRange,
     onSearchChange,
+    onCompanyFilterChange,
+    onProductFlowStatusFilterChange,
     onDateRangeChange,
     onPresetClick,
     onViewOrder,
@@ -487,17 +1202,46 @@ const OrdersTab = (props: OrdersTabProps) => {
     emptyDescription = "Try adjusting your filters or create a new order",
     createLabel = "Create New Order",
     exportFilePrefix = "service_orders_full_export",
+    companyReportVariant,
+    lockedProductFlowStatusValue = "",
+    hideProductFlowStatusFilter = false,
   } = props;
   void getStatusColor;
   void getPriorityColor;
 
   const [currentPage, setCurrentPage] = useState(1);
   const [selectedOrderIds, setSelectedOrderIds] = useState<number[]>([]);
+  const normalizedSelectedCompanyName = String(companyFilterValue || "").trim();
+  const effectiveProductFlowStatusFilterValue = String(
+    lockedProductFlowStatusValue || productFlowStatusFilterValue || "",
+  )
+    .trim()
+    .toLowerCase();
+  const normalizedTargetFlowStatus = effectiveProductFlowStatusFilterValue;
+  const effectiveCompanyReportVariant: "rma-form" | "rma-delivery-challan" =
+    companyReportVariant ??
+    (effectiveProductFlowStatusFilterValue === "comtoraj" ? "rma-delivery-challan" : "rma-form");
+  const availableCompanyFilterOptions = useMemo(
+    () =>
+      (companyFilterOptions && companyFilterOptions.length > 0
+        ? companyFilterOptions
+        : Array.from(
+            new Set(
+              orders
+                .flatMap((order) => getCompanyNames(order))
+                .map((name) => String(name || "").trim())
+                .filter(Boolean),
+            ),
+          )
+      ).sort((left, right) => left.localeCompare(right)),
+    [companyFilterOptions, orders],
+  );
 
   const searchableOrders = useMemo(() => {
     if (searchHandledByParent) return filteredOrders;
 
     const search = String(searchTerm || "").trim().toLowerCase();
+    const normalizedSerialSearch = normalizeSerialSearchValue(searchTerm);
     if (!search) return filteredOrders;
 
     const matchesSearch = (order: Order) => {
@@ -515,6 +1259,17 @@ const OrdersTab = (props: OrdersTabProps) => {
         .map((value) => String(value || "").trim().toLowerCase())
         .filter(Boolean)
         .join(" ");
+      const normalizedSerialBlob = [
+        ...(Array.isArray(order.product_serial_numbers) ? order.product_serial_numbers : []),
+        ...(Array.isArray(order.replacement_product_serial_numbers) ? order.replacement_product_serial_numbers : []),
+        order.serial_number || "",
+        order.replacement_serial_number || "",
+        ...productEntries.map((entry) => entry.serialNumber || ""),
+        ...replacementEntries.map((entry) => entry.serialNumber || ""),
+      ]
+        .map((value) => normalizeSerialSearchValue(value))
+        .filter(Boolean)
+        .join(" ");
 
       const basicBlob = [
         order.order_code,
@@ -522,11 +1277,17 @@ const OrdersTab = (props: OrdersTabProps) => {
         order.client_phone,
         order.issue_description,
         order.staff_name,
+        ...productEntries.map((entry) => entry.label || ""),
+        ...replacementEntries.map((entry) => entry.label || ""),
       ]
         .map((value) => String(value || "").toLowerCase())
         .join(" ");
 
-      return basicBlob.includes(search) || serialBlob.includes(search);
+      return (
+        basicBlob.includes(search) ||
+        serialBlob.includes(search) ||
+        (normalizedSerialSearch ? normalizedSerialBlob.includes(normalizedSerialSearch) : false)
+      );
     };
 
     const filteredMatches = filteredOrders.filter(matchesSearch);
@@ -536,11 +1297,55 @@ const OrdersTab = (props: OrdersTabProps) => {
     return orders.filter(matchesSearch);
   }, [filteredOrders, orders, products, searchHandledByParent, searchTerm]);
 
-  const totalPages = Math.max(1, Math.ceil(searchableOrders.length / ITEMS_PER_PAGE));
+  const flowFilteredOrders = useMemo(() => {
+    const targetStatus = effectiveProductFlowStatusFilterValue;
+    const selectedCompanyName = String(companyFilterValue || "").trim();
+
+    return searchableOrders.filter((order) => {
+      const visibleEntries = getFilteredDisplayProductEntries(
+        order,
+        products,
+        selectedCompanyName,
+        targetStatus,
+      );
+
+      if (selectedCompanyName || targetStatus) {
+        return visibleEntries.length > 0;
+      }
+
+      return true;
+    });
+  }, [companyFilterValue, effectiveProductFlowStatusFilterValue, products, searchableOrders]);
+
+  const totalPages = Math.max(1, Math.ceil(flowFilteredOrders.length / ITEMS_PER_PAGE));
   const pageStartIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const paginatedOrders = searchableOrders.slice(pageStartIndex, pageStartIndex + ITEMS_PER_PAGE);
-  const selectedOrders = searchableOrders.filter((order) => selectedOrderIds.includes(order.id));
-  const bulkOrders = selectedOrders.length > 0 ? selectedOrders : searchableOrders;
+  const paginatedOrders = flowFilteredOrders.slice(pageStartIndex, pageStartIndex + ITEMS_PER_PAGE);
+  const selectedOrders = flowFilteredOrders.filter((order) => selectedOrderIds.includes(order.id));
+  const bulkOrders = selectedOrders.length > 0 ? selectedOrders : flowFilteredOrders;
+  const filteredProductCount = useMemo(
+    () =>
+      flowFilteredOrders.reduce((sum, order) => {
+        return sum + getVisibleProductSummaryCount(
+          order,
+          products,
+          companyFilterValue,
+          normalizedTargetFlowStatus,
+        );
+      }, 0),
+    [companyFilterValue, flowFilteredOrders, normalizedTargetFlowStatus, products],
+  );
+  const selectedFilteredProductCount = useMemo(
+    () =>
+      selectedOrders.reduce((sum, order) => {
+        return sum + getVisibleProductSummaryCount(
+          order,
+          products,
+          companyFilterValue,
+          normalizedTargetFlowStatus,
+        );
+      }, 0),
+    [companyFilterValue, normalizedTargetFlowStatus, products, selectedOrders],
+  );
   const allPageSelected =
     paginatedOrders.length > 0 && paginatedOrders.every((order) => selectedOrderIds.includes(order.id));
 
@@ -555,8 +1360,8 @@ const OrdersTab = (props: OrdersTabProps) => {
   }, [currentPage, totalPages]);
 
   useEffect(() => {
-    setSelectedOrderIds((prev) => prev.filter((id) => searchableOrders.some((order) => order.id === id)));
-  }, [searchableOrders]);
+    setSelectedOrderIds((prev) => prev.filter((id) => flowFilteredOrders.some((order) => order.id === id)));
+  }, [flowFilteredOrders]);
 
   const toggleOrderSelection = (orderId: number) => {
     setSelectedOrderIds((prev) =>
@@ -574,7 +1379,7 @@ const OrdersTab = (props: OrdersTabProps) => {
   };
 
   const selectAllFilteredOrders = () => {
-    setSelectedOrderIds(searchableOrders.map((order) => order.id));
+    setSelectedOrderIds(flowFilteredOrders.map((order) => order.id));
   };
 
   const clearSelection = () => {
@@ -695,7 +1500,12 @@ const OrdersTab = (props: OrdersTabProps) => {
     ];
 
     const rows = csvOrders.map((order) => {
-      const productEntries = getOrderProductEntries(order, products);
+      const productEntries = getFilteredDisplayProductEntries(
+        order,
+        products,
+        normalizedSelectedCompanyName,
+        normalizedTargetFlowStatus,
+      );
       const replacementEntries = getOrderReplacementEntries(order, products);
       const companyLines = getCompanyProductLines(order, products);
       const companyNames = getCompanyNames(order);
@@ -829,7 +1639,7 @@ const OrdersTab = (props: OrdersTabProps) => {
       scopeLabel:
         selectedOrders.length > 0
           ? `${selectedOrders.length} selected orders`
-          : `${searchableOrders.length} filtered orders`,
+          : `${flowFilteredOrders.length} filtered orders`,
       accentColor: "#2563eb",
       orientation: "landscape",
       metrics: [
@@ -883,6 +1693,312 @@ const OrdersTab = (props: OrdersTabProps) => {
     });
   };
 
+  const exportCompanyProductReport = async () => {
+    const selectedCompanyName = normalizedSelectedCompanyName;
+    const reportOrders = selectedOrders.length > 0 ? selectedOrders : flowFilteredOrders;
+    if (!selectedCompanyName || reportOrders.length === 0) return;
+
+    const companyDetails = await fetchCompanyReportDetails(selectedCompanyName);
+    const includeRajToComDate = effectiveProductFlowStatusFilterValue === "rajtocom";
+    const parseFlowDatesMap = (
+      value: unknown,
+    ): Record<string, { pending?: string; rajtocom?: string; comtoraj?: string; deliveryed?: string }> => {
+      if (!value) return {};
+      let parsed: unknown = value;
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (!trimmed) return {};
+        try {
+          parsed = JSON.parse(trimmed);
+          if (typeof parsed === "string") parsed = JSON.parse(parsed);
+        } catch {
+          return {};
+        }
+      }
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+
+      const normalized: Record<string, { pending?: string; rajtocom?: string; comtoraj?: string; deliveryed?: string }> = {};
+      Object.entries(parsed as Record<string, unknown>).forEach(([productId, stages]) => {
+        if (!stages || typeof stages !== "object" || Array.isArray(stages)) return;
+        const row = stages as Record<string, unknown>;
+        normalized[String(productId)] = {
+          pending: row.pending ? String(row.pending) : "",
+          rajtocom: row.rajtocom ? String(row.rajtocom) : "",
+          comtoraj: row.comtoraj ? String(row.comtoraj) : "",
+          deliveryed: row.deliveryed ? String(row.deliveryed) : row.delivered ? String(row.delivered) : "",
+        };
+      });
+      return normalized;
+    };
+    const reportRows = reportOrders.flatMap((order) => {
+      const accessoryMap = normalizeAccessoryTypeMap((order as Order & { accessory_type_map?: unknown }).accessory_type_map);
+      const issueMap = normalizeIssueDescriptionMap((order as Order & { issue_description_map?: unknown }).issue_description_map);
+      const resultMap = normalizeIssueDescriptionMap((order as Order & { result_text_map?: unknown }).result_text_map);
+      const repairingMap = normalizeRepairingStatusMap((order as Order & { repairing_status_map?: unknown }).repairing_status_map);
+      const quantityMap = normalizeProductQuantityMap((order as Order & { product_quantity_map?: unknown }).product_quantity_map);
+      const flowDatesMap = parseFlowDatesMap((order as Order & { product_status_dates_map?: unknown }).product_status_dates_map);
+      const companyEntries = getStrictCompanyDisplayProductEntries(
+        order,
+        products,
+        selectedCompanyName,
+        normalizedTargetFlowStatus,
+      );
+      return companyEntries.map((entry) => {
+        const productId = Number(entry.productId || 0);
+        const accessoryValue =
+          String(accessoryMap[String(productId)] || "").trim() || "N/A";
+        const issueDescription =
+          String(issueMap[String(productId)] || "").trim() ||
+          String(order.issue_description || "").trim() ||
+          "N/A";
+
+        return {
+          orderCode: order.order_code,
+          clientName: order.client_name || "",
+          productName: entry.label || "N/A",
+          quantity: Math.max(1, Number(quantityMap[String(productId)] || entry.quantity || 1) || 1),
+          rajToComDate: String(flowDatesMap[String(productId)]?.rajtocom || "").trim(),
+          model: String(entry.model || order.product_model || "N/A").replace(/\s+/g, " ").trim(),
+          serialNumber: String(entry.serialNumber || "N/A").replace(/\s+/g, " ").trim(),
+          warrantyStatus: normalizeText(order.warranty_status || "N/A"),
+          accessory: normalizeText(accessoryValue),
+          issueDescription: normalizeText(issueDescription),
+          result: String(resultMap[String(productId)] || "").trim(),
+          repairingStatus: normalizeText(repairingMap[String(productId)] || ""),
+        };
+      });
+    }).filter((row) => String(row.productName || "").trim().length > 0);
+
+    if (reportRows.length === 0) return;
+
+    const totalReportedProducts = reportRows.reduce(
+      (sum, row) => sum + Math.max(1, Number(row.quantity || 1) || 1),
+      0,
+    );
+
+    const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+      import("jspdf"),
+      import("jspdf-autotable"),
+    ]);
+
+    const referenceNumber = `RC_${new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 14)}_${totalReportedProducts}`;
+    const generatedDate = new Date().toLocaleDateString("en-IN");
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 8;
+    const contentWidth = pageWidth - margin * 2;
+    const infoGap = 8;
+    const infoBoxWidth = (contentWidth - infoGap) / 2;
+
+    const fromLines = [
+      "From:",
+      "RAJ COMMUNICATION",
+      "Address:",
+      "91, THILAK NAGAR, NEAR HOTEL AARYAAS,",
+      "TIRUNELVELI JUNCTION",
+      "Phone: 9342524160, 9842187112",
+      "Email: rajelectronicstnvl@gmail.com",
+      "GST No: 33AVBPS2364R2Z1",
+    ].filter(Boolean);
+
+    const toLines = [
+      "To:",
+      companyDetails?.company_name || selectedCompanyName,
+      companyDetails?.address ? `Address: ${companyDetails.address}` : "Address: N/A",
+      companyDetails?.phone ? `Mobile: ${companyDetails.phone}` : "Mobile: N/A",
+      companyDetails?.email ? `Email: ${companyDetails.email}` : "Email: N/A",
+    ];
+    const buildWrappedLines = (lines: string[], maxWidth: number) =>
+      lines.flatMap((line) => doc.splitTextToSize(String(line || ""), maxWidth));
+    const drawInfoBlock = (x: number, y: number, width: number, lines: string[]) => {
+      const padding = 5;
+      const textWidth = width - padding * 2;
+      const wrappedLines = buildWrappedLines(lines, textWidth);
+      const lineHeight = 5;
+      const minHeight = 38;
+      const height = Math.max(minHeight, wrappedLines.length * lineHeight + padding * 2);
+      doc.roundedRect(x, y, width, height, 3, 3, "S");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9.5);
+      doc.text(wrappedLines, x + padding, y + 7);
+      return height;
+    };
+    doc.setDrawColor(0, 0, 0);
+    doc.roundedRect(margin, 10, pageWidth - margin * 2, 28, 4, 4, "S");
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(22);
+    doc.setTextColor(0, 0, 0);
+    doc.text(effectiveCompanyReportVariant === "rma-delivery-challan" ? "RMA DELIVERY CHALLAN" : "RMA FORM", pageWidth / 2, 22, { align: "center" });
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Reference No: ${referenceNumber}`, margin + 4, 31);
+    doc.text(`Date: ${generatedDate}`, pageWidth - margin - 4, 31, { align: "right" });
+    doc.text(`Total Products: ${totalReportedProducts}`, pageWidth / 2, 31, { align: "center" });
+
+    doc.setDrawColor(0, 0, 0);
+    const infoStartY = 44;
+    const fromHeight = drawInfoBlock(margin, infoStartY, infoBoxWidth, fromLines);
+    const toHeight = drawInfoBlock(margin + infoBoxWidth + infoGap, infoStartY, infoBoxWidth, toLines);
+    const infoSectionBottomY = infoStartY + Math.max(fromHeight, toHeight);
+
+    if (effectiveCompanyReportVariant === "rma-delivery-challan") {
+      autoTable(doc, {
+        startY: infoSectionBottomY + 6,
+        tableWidth: "auto",
+        head: [[
+          "S.No",
+          "Qty",
+          ...(includeRajToComDate ? ["Date"] : []),
+          "Model",
+          "Serial No",
+          "Accessory",
+          "Issue Description",
+          "Result",
+        ]],
+        body: reportRows.map((row, index) => [
+          index + 1,
+          row.quantity,
+          ...(includeRajToComDate ? [formatDisplayDate(row.rajToComDate || "")] : []),
+          row.model,
+          row.serialNumber,
+          row.accessory,
+          row.issueDescription,
+          row.result || row.repairingStatus || "N/A",
+        ]),
+        theme: "grid",
+        margin: { left: margin, right: margin, bottom: 12 },
+        styles: {
+          font: "helvetica",
+          fontSize: 8,
+          cellPadding: 2.5,
+          textColor: [0, 0, 0],
+          lineColor: [0, 0, 0],
+          lineWidth: 0.15,
+          valign: "middle",
+          overflow: "linebreak",
+        },
+        headStyles: {
+          fillColor: [255, 255, 255],
+          textColor: [0, 0, 0],
+          lineColor: [0, 0, 0],
+          lineWidth: 0.15,
+          fontStyle: "bold",
+        },
+        bodyStyles: {
+          fillColor: [255, 255, 255],
+        },
+        alternateRowStyles: {
+          fillColor: [255, 255, 255],
+        },
+        columnStyles: {
+          0: { cellWidth: 10, halign: "center" },
+          1: { cellWidth: 12, halign: "center" },
+          ...(includeRajToComDate
+            ? {
+                2: { cellWidth: 22, halign: "center" as const },
+                3: { cellWidth: 42, overflow: "linebreak" as const },
+                4: { cellWidth: 50, overflow: "linebreak" as const },
+                5: { cellWidth: 22, overflow: "linebreak" as const },
+                6: { cellWidth: 58, overflow: "linebreak" as const },
+                7: { cellWidth: 50, overflow: "linebreak" as const },
+              }
+            : {
+                2: { cellWidth: 44, overflow: "linebreak" as const },
+                3: { cellWidth: 72, overflow: "linebreak" as const },
+                4: { cellWidth: 24, overflow: "linebreak" as const },
+                5: { cellWidth: 66, overflow: "linebreak" as const },
+                6: { cellWidth: 52, overflow: "linebreak" as const },
+              }),
+        },
+      });
+    } else {
+      autoTable(doc, {
+        startY: infoSectionBottomY + 6,
+        tableWidth: "auto",
+        head: [[
+          "S.No",
+          "Qty",
+          ...(includeRajToComDate ? ["Date"] : []),
+          "Model",
+          "Serial No",
+          "Accessory",
+          "Issue Description",
+        ]],
+        body: reportRows.map((row, index) => [
+          index + 1,
+          row.quantity,
+          ...(includeRajToComDate ? [formatDisplayDate(row.rajToComDate || "")] : []),
+          row.model,
+          row.serialNumber,
+          row.accessory,
+          row.issueDescription,
+        ]),
+        theme: "grid",
+        margin: { left: margin, right: margin, bottom: 12 },
+        styles: {
+          font: "helvetica",
+          fontSize: 8,
+          cellPadding: 2.5,
+          textColor: [0, 0, 0],
+          lineColor: [0, 0, 0],
+          lineWidth: 0.15,
+          valign: "middle",
+          overflow: "linebreak",
+        },
+        headStyles: {
+          fillColor: [255, 255, 255],
+          textColor: [0, 0, 0],
+          lineColor: [0, 0, 0],
+          lineWidth: 0.15,
+          fontStyle: "bold",
+        },
+        bodyStyles: {
+          fillColor: [255, 255, 255],
+        },
+        alternateRowStyles: {
+          fillColor: [255, 255, 255],
+        },
+        columnStyles: {
+          0: { cellWidth: 10, halign: "center" },
+          1: { cellWidth: 12, halign: "center" },
+          ...(includeRajToComDate
+            ? {
+                2: { cellWidth: 22, halign: "center" as const },
+                3: { cellWidth: 42, overflow: "linebreak" as const },
+                4: { cellWidth: 58, overflow: "linebreak" as const },
+                5: { cellWidth: 22, overflow: "linebreak" as const },
+                6: { cellWidth: 84, overflow: "linebreak" as const },
+              }
+            : {
+                2: { cellWidth: 46, overflow: "linebreak" as const },
+                3: { cellWidth: 72, overflow: "linebreak" as const },
+                4: { cellWidth: 24, overflow: "linebreak" as const },
+                5: { cellWidth: 96, overflow: "linebreak" as const },
+              }),
+        },
+      });
+    }
+
+    const finalY = (doc as typeof doc & { lastAutoTable?: { finalY?: number } }).lastAutoTable?.finalY || 90;
+    const signatureY = Math.min(finalY + 18, pageHeight - 24);
+
+    doc.setDrawColor(0, 0, 0);
+    doc.line(margin + 12, signatureY, margin + 82, signatureY);
+    doc.line(pageWidth - margin - 82, signatureY, pageWidth - margin - 12, signatureY);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.setTextColor(0, 0, 0);
+    doc.text("Authorized By", margin + 47, signatureY + 6, { align: "center" });
+    doc.text("Receiver Signature", pageWidth - margin - 47, signatureY + 6, { align: "center" });
+
+    const reportPrefix = effectiveCompanyReportVariant === "rma-delivery-challan" ? "rma_delivery_challan" : "rma_form";
+    doc.save(`${reportPrefix}_${selectedCompanyName.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}_${new Date().toISOString().split("T")[0]}.pdf`);
+  };
+
   const printOrders = () => {
     if (bulkOrders.length === 0) return;
     const printScopeOrders = bulkOrders;
@@ -892,7 +2008,12 @@ const OrdersTab = (props: OrdersTabProps) => {
 
     const rows = printScopeOrders
       .map((order) => {
-        const productEntries = getOrderProductEntries(order, products);
+        const productEntries = getFilteredDisplayProductEntries(
+          order,
+          products,
+          normalizedSelectedCompanyName,
+          normalizedTargetFlowStatus,
+        );
         const companyLines = getCompanyProductLines(order, products);
         const companySummary = companyLines.length > 0 ? companyLines.join("\n") : getCompanyNames(order).join("\n");
         const companyHtml = companySummary
@@ -958,7 +2079,7 @@ const OrdersTab = (props: OrdersTabProps) => {
             <p>${escapeHtml(
               selectedOrders.length > 0
                 ? `${selectedOrders.length} selected orders`
-                : `${searchableOrders.length} filtered orders`,
+                : `${flowFilteredOrders.length} filtered orders`,
             )}</p>
             <p>Printed on ${escapeHtml(new Date().toLocaleString("en-IN"))}</p>
           </div>
@@ -991,7 +2112,7 @@ const OrdersTab = (props: OrdersTabProps) => {
         <div className="section-title">
           <h2>{title}</h2>
           <p>
-            Showing {searchableOrders.length} of {orders.length} orders
+            Showing {flowFilteredOrders.length} of {orders.length} orders
           </p>
           {dateRange.startDate && dateRange.endDate && (
             <p className="date-range-info">
@@ -1015,11 +2136,40 @@ const OrdersTab = (props: OrdersTabProps) => {
 
       <div className="section-filters-row orders-toolbar-row">
         <DateRangeSelector dateRange={dateRange} onDateRangeChange={onDateRangeChange} onPresetClick={onPresetClick} />
+        <select
+          className="filter-select"
+          style={{ minWidth: "220px", height: "48px" }}
+          value={companyFilterValue}
+          onChange={(e) => onCompanyFilterChange?.(e.target.value)}
+          aria-label="Filter orders by company"
+        >
+          <option value="">All Companies</option>
+          {availableCompanyFilterOptions.map((companyName) => (
+            <option key={companyName} value={companyName}>
+              {companyName}
+            </option>
+          ))}
+        </select>
+        {!hideProductFlowStatusFilter && (
+          <select
+            className="filter-select"
+            style={{ minWidth: "220px", height: "48px" }}
+            value={effectiveProductFlowStatusFilterValue}
+            onChange={(e) => onProductFlowStatusFilterChange?.(e.target.value)}
+            aria-label="Filter orders by product flow status"
+          >
+            <option value="">All Product Flow Status</option>
+            <option value="pending">Pending</option>
+            <option value="rajtocom">RajToCom</option>
+            <option value="comtoraj">ComToRaj</option>
+            <option value="deliveryed">Deliveryed</option>
+          </select>
+        )}
         <div className="search-filter">
           <FiSearch className="search-filter-icon" />
           <input
             type="text"
-            placeholder="Search orders by client, product, order code..."
+            placeholder="Search orders by client, product, serial number, order code..."
             className="search-filter-input"
             style={{ height: "48px", fontSize: "15px", paddingLeft: "44px" }}
             value={searchTerm}
@@ -1030,23 +2180,51 @@ const OrdersTab = (props: OrdersTabProps) => {
           <FiX />
           <span>Clear Filters</span>
         </button>
+        <button
+          type="button"
+          className="btn secondary orders-clear-btn"
+          onClick={() => void exportCompanyProductReport()}
+          disabled={!companyFilterValue || flowFilteredOrders.length === 0}
+          title={
+            !companyFilterValue
+              ? "Select a company first"
+              : flowFilteredOrders.length === 0
+                ? "No service orders found for this filter"
+                : selectedOrders.length > 0
+                  ? "Generate company product report for selected service orders only"
+                  : "Generate company product report for all filtered service orders and products"
+          }
+        >
+          <FiFileText />
+          <span>Company Report</span>
+        </button>
       </div>
 
       <BulkActionPanel
         itemLabelSingular="order"
         itemLabelPlural="orders"
-        selectedCount={selectedOrders.length}
-        filteredCount={searchableOrders.length}
+        summaryLabelSingular={companyFilterValue ? "product" : "order"}
+        summaryLabelPlural={companyFilterValue ? "products" : "orders"}
+        selectedCount={companyFilterValue ? selectedFilteredProductCount : selectedOrders.length}
+        filteredCount={companyFilterValue ? filteredProductCount : flowFilteredOrders.length}
+        extraMetricLabel={companyFilterValue ? "orders" : "products"}
+        extraMetricValue={companyFilterValue ? flowFilteredOrders.length : filteredProductCount}
         totalPages={totalPages}
         itemsPerPage={ITEMS_PER_PAGE}
-        helperText="Export and print use selected rows first. If nothing is selected, all filtered orders are used."
+        itemsPerPageLabel={companyFilterValue ? "orders/page" : "per page"}
+        totalPagesLabel={companyFilterValue ? "order pages" : "pages"}
+        helperText={
+          companyFilterValue
+            ? "The top count shows filtered products. Pagination is still based on filtered service orders."
+            : "Export and print use selected rows first. If nothing is selected, all filtered orders are used."
+        }
         receiptHint="Use the receipt button in any order row to preview and download the receipt PDF."
         onSelectAll={selectAllFilteredOrders}
         onClearSelection={clearSelection}
         onExportCSV={exportOrdersToCSV}
         onExportPDF={exportOrdersToPDF}
         onPrint={printOrders}
-        disableSelectAll={searchableOrders.length === 0}
+        disableSelectAll={flowFilteredOrders.length === 0}
         disableClearSelection={selectedOrderIds.length === 0}
         disableActions={bulkOrders.length === 0}
       />
@@ -1057,13 +2235,13 @@ const OrdersTab = (props: OrdersTabProps) => {
             <div className="loading-spinner"></div>
             <p>Loading orders...</p>
           </div>
-        ) : searchableOrders.length > 0 ? (
+        ) : flowFilteredOrders.length > 0 ? (
           <>
             <div className="desktop-table-view">
-              <table className="orders-table">
+              <table className="orders-table orders-list-format-table">
                 <thead>
                   <tr>
-                    <th>
+                    <th className="orders-list-select-col">
                       <input
                         type="checkbox"
                         className="row-checkbox"
@@ -1072,24 +2250,31 @@ const OrdersTab = (props: OrdersTabProps) => {
                         aria-label="Select all orders on this page"
                       />
                     </th>
-                    <th>Order ID</th>
-                    <th>Product</th>
-                    <th>Replacement</th>
-                    <th>Client</th>
-                    <th>Warranty</th>
-                    <th>Payment Status</th>
-                    <th>Repairing Status</th>
-                    <th>Pending Days</th>
-                    <th>Actions</th>
+                    <th className="orders-list-name-col">Name</th>
+                    <th className="orders-list-product-col">Product Detail</th>
+                    <th className="orders-list-delivered-col">Deliveryed</th>
+                    <th className="orders-list-repair-col">Repairing Status</th>
+                    <th className="orders-list-status-col">Status</th>
+                    <th className="orders-list-payment-col">Payment</th>
+                    <th className="orders-list-replacement-col">Replacement</th>
+                    <th className="orders-list-pending-col">Pending Days</th>
+                    <th className="orders-list-action-col">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {paginatedOrders.map((order, index) => {
                     const isSelected = selectedOrderIds.includes(order.id);
-                    const productEntries = getOrderProductEntries(order, products);
+                    const productEntries = getFilteredDisplayProductEntries(
+                      order,
+                      products,
+                      normalizedSelectedCompanyName,
+                      normalizedTargetFlowStatus,
+                    );
                     const replacementEntries = getOrderReplacementEntries(order, products);
+                    const { activeEntries, deliveredEntries } = splitDeliveredProductEntries(order, productEntries);
                     const pendingDays = getPendingDays(order);
                     const deliveredByProducts = isAllProductsDelivered(order);
+                    const deliveryStatusLabel = getOrderDeliveryStatusLabel(order);
 
                     return (
                       <motion.tr
@@ -1101,7 +2286,7 @@ const OrdersTab = (props: OrdersTabProps) => {
                         whileHover={{ backgroundColor: "#f8fafc", cursor: "pointer" }}
                         onClick={() => onViewOrder(order)}
                       >
-                        <td onClick={(e) => e.stopPropagation()}>
+                        <td className="orders-list-select-col" onClick={(e) => e.stopPropagation()}>
                           <input
                             type="checkbox"
                             className="row-checkbox"
@@ -1110,31 +2295,7 @@ const OrdersTab = (props: OrdersTabProps) => {
                             aria-label={`Select ${order.order_code}`}
                           />
                         </td>
-                        <td>
-                          <div className="order-id-cell">
-                            <span className="order-id">{order.order_code}</span>
-                            <span className="order-date">{formatDisplayDate(order.created_at)}</span>
-                          </div>
-                        </td>
-                        <td>
-                          <div className="product-cell order-products-cell">
-                            <div className="order-products-meta">
-                              <FiPackage className="product-icon" />
-                              <span className="order-products-label">Products</span>
-                            </div>
-                            {renderOrderProductChips(productEntries, "Not added", "product")}
-                          </div>
-                        </td>
-                        <td>
-                          <div className="product-cell order-products-cell">
-                            <div className="order-products-meta">
-                              <FiPackage className="product-icon" />
-                              <span className="order-products-label">Replacement</span>
-                            </div>
-                            {renderOrderProductChips(replacementEntries, "No replacement", "replacement")}
-                          </div>
-                        </td>
-                        <td>
+                        <td className="orders-list-name-col">
                           <div className="client-cell">
                             <div className="client-avatar-placeholder">{order.client_name?.charAt(0) || "C"}</div>
                             <div className="client-info">
@@ -1143,29 +2304,62 @@ const OrdersTab = (props: OrdersTabProps) => {
                             </div>
                           </div>
                         </td>
-                        <td>
+                        <td className="orders-list-product-col">
+                          <div className="product-cell order-products-cell">
+                            {renderOrderProductChips(activeEntries, "Not added", "product")}
+                          </div>
+                        </td>
+                        <td className="orders-list-delivered-col">
+                          <div className="product-cell order-products-cell">
+                            {renderOrderProductChips(deliveredEntries, "No deliveryed product", "product")}
+                          </div>
+                        </td>
+                        <td className="orders-list-repair-col">
+                          {getRepairingStatusSummary(order, products, {
+                            targetFlowStatus: normalizedTargetFlowStatus,
+                          })}
+                        </td>
+                        <td className="orders-list-status-col">
                           <span
-                            className="warranty-badge"
-                            style={{
-                              backgroundColor: `${getWarrantyColor(order.warranty_status)}20`,
-                              color: getWarrantyColor(order.warranty_status),
-                            }}
+                            className="product-chip-serial-delivered"
+                            style={
+                              deliveryStatusLabel === "Pending"
+                                ? {
+                                    background: "#fef3c7",
+                                    borderColor: "#fcd34d",
+                                    color: "#d97706",
+                                  }
+                                : undefined
+                            }
                           >
-                            {order.warranty_status?.replace("_", " ") || "N/A"}
+                            Status : {deliveryStatusLabel}
                           </span>
                         </td>
-                        <td>
-                          <span className={`payment-status ${order.payment_status}`}>{formatPaymentStatusLabel(order.payment_status)}</span>
+                        <td className="orders-list-payment-col">
+                          <div className="orders-list-payment-cell">
+                            <span className={`payment-status ${order.payment_status}`}>{formatPaymentStatusLabel(order.payment_status)}</span>
+                            <span
+                              className="warranty-badge"
+                              style={{
+                                backgroundColor: `${getWarrantyColor(order.warranty_status)}20`,
+                                color: getWarrantyColor(order.warranty_status),
+                              }}
+                            >
+                              {order.warranty_status?.replace("_", " ") || "N/A"}
+                            </span>
+                          </div>
                         </td>
-                        <td>
-                          {getRepairingStatusSummary(order, products)}
+                        <td className="orders-list-replacement-col">
+                          <div className="product-cell order-products-cell">
+                            {renderOrderProductChips(replacementEntries, "No replacement", "replacement")}
+                          </div>
                         </td>
-                        <td>
+                        <td className="orders-list-pending-col">
                           <span className="staff-name">
                             {deliveredByProducts ? "Delivered" : pendingDays}
                           </span>
                         </td>
-                        <td>
+                        <td className="orders-list-action-col">
                           <div className="action-buttons">
                             <motion.button
                               className="action-btn view"
@@ -1226,10 +2420,17 @@ const OrdersTab = (props: OrdersTabProps) => {
             <div className="mobile-record-list">
               {paginatedOrders.map((order, index) => {
                 const isSelected = selectedOrderIds.includes(order.id);
-                const productEntries = getOrderProductEntries(order, products);
+                const productEntries = getFilteredDisplayProductEntries(
+                  order,
+                  products,
+                  normalizedSelectedCompanyName,
+                  normalizedTargetFlowStatus,
+                );
                 const replacementEntries = getOrderReplacementEntries(order, products);
+                const { activeEntries, deliveredEntries } = splitDeliveredProductEntries(order, productEntries);
                 const pendingDays = getPendingDays(order);
                 const deliveredByProducts = isAllProductsDelivered(order);
+                const deliveryStatusLabel = getOrderDeliveryStatusLabel(order);
 
                 return (
                   <motion.div
@@ -1269,7 +2470,12 @@ const OrdersTab = (props: OrdersTabProps) => {
 
                     <div className="mobile-record-field full">
                       <span className="mobile-record-label">Products</span>
-                      {renderOrderProductChips(productEntries, "Not added", "product")}
+                      {renderOrderProductChips(activeEntries, "Not added", "product")}
+                    </div>
+
+                    <div className="mobile-record-field full">
+                      <span className="mobile-record-label">Deliveryed</span>
+                      {renderOrderProductChips(deliveredEntries, "No deliveryed product", "product")}
                     </div>
 
                     <div className="mobile-record-field full">
@@ -1296,7 +2502,26 @@ const OrdersTab = (props: OrdersTabProps) => {
                       </div>
                       <div className="mobile-record-field full">
                         <span className="mobile-record-label">Repairing Status</span>
-                        {getRepairingStatusSummary(order, products)}
+                        {getRepairingStatusSummary(order, products, {
+                          targetFlowStatus: normalizedTargetFlowStatus,
+                        })}
+                      </div>
+                      <div className="mobile-record-field">
+                        <span className="mobile-record-label">Status</span>
+                        <span
+                          className="product-chip-serial-delivered"
+                          style={
+                            deliveryStatusLabel === "Pending"
+                              ? {
+                                  background: "#fef3c7",
+                                  borderColor: "#fcd34d",
+                                  color: "#d97706",
+                                }
+                              : undefined
+                          }
+                        >
+                          Status : {deliveryStatusLabel}
+                        </span>
                       </div>
                       <div className="mobile-record-field">
                         <span className="mobile-record-label">Pending</span>
@@ -1336,11 +2561,11 @@ const OrdersTab = (props: OrdersTabProps) => {
         )}
       </div>
 
-      {searchableOrders.length > 0 && (
+      {flowFilteredOrders.length > 0 && (
         <div className="orders-pagination">
           <div className="orders-pagination-info">
-            Showing {pageStartIndex + 1} to {Math.min(pageStartIndex + ITEMS_PER_PAGE, searchableOrders.length)} of{" "}
-            {searchableOrders.length} orders
+            Showing {pageStartIndex + 1} to {Math.min(pageStartIndex + ITEMS_PER_PAGE, flowFilteredOrders.length)} of{" "}
+            {flowFilteredOrders.length} orders
           </div>
           <div className="orders-pagination-controls">
             <button
@@ -1372,4 +2597,3 @@ const OrdersTab = (props: OrdersTabProps) => {
 };
 
 export default OrdersTab;
-

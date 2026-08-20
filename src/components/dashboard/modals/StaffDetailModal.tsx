@@ -108,6 +108,20 @@ const formatMonth = (value?: string) => {
   });
 };
 
+const sortSalaryRecords = (rows: SalaryRecord[]) =>
+  [...rows].sort((a, b) => {
+    const dateDiff = new Date(b.salary_date).getTime() - new Date(a.salary_date).getTime();
+    if (dateDiff !== 0) return dateDiff;
+    return b.id - a.id;
+  });
+
+const sortExpenseRecords = (rows: ExpenseRecord[]) =>
+  [...rows].sort((a, b) => {
+    const dateDiff = new Date(b.expense_date).getTime() - new Date(a.expense_date).getTime();
+    if (dateDiff !== 0) return dateDiff;
+    return b.id - a.id;
+  });
+
 const escapeHtml = (value: string | number | undefined | null) =>
   String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -682,6 +696,11 @@ const StaffDetailModal = ({ show, staff, staffOrders, onClose, onEdit, onViewOrd
       const result = await response.json();
       if (!response.ok || !result.success) throw new Error(result.message || "Failed to save salary");
 
+      const createdSalary = result?.data as SalaryRecord | undefined;
+      if (createdSalary?.id) {
+        setSalaries((prev) => sortSalaryRecords([createdSalary, ...prev]));
+      }
+
       setShowSalaryForm(false);
       setSalaryForm({
         service_type: "general",
@@ -695,7 +714,7 @@ const StaffDetailModal = ({ show, staff, staffOrders, onClose, onEdit, onViewOrd
         notes: "",
       });
       setNotice("Salary saved successfully.");
-      await loadFinance();
+      void loadFinance();
     } catch (saveError: any) {
       setError(saveError.message || "Failed to save salary");
     } finally {
@@ -729,6 +748,11 @@ const StaffDetailModal = ({ show, staff, staffOrders, onClose, onEdit, onViewOrd
       const result = await response.json();
       if (!response.ok || !result.success) throw new Error(result.message || "Failed to save expense");
 
+      const createdExpense = result?.data as ExpenseRecord | undefined;
+      if (createdExpense?.id) {
+        setExpenses((prev) => sortExpenseRecords([createdExpense, ...prev]));
+      }
+
       setShowExpenseForm(false);
       setExpenseForm({
         service_type: "general",
@@ -741,7 +765,7 @@ const StaffDetailModal = ({ show, staff, staffOrders, onClose, onEdit, onViewOrd
         notes: "",
       });
       setNotice("Expense saved successfully.");
-      await loadFinance();
+      void loadFinance();
     } catch (saveError: any) {
       setError(saveError.message || "Failed to save expense");
     } finally {

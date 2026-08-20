@@ -44,6 +44,38 @@ const ClientFormModal = ({
     clientForm.zip_code,
     clientForm.notes,
   ].filter((value) => value.trim().length > 0).length;
+  const completionPercent = Math.round((completionCount / 8) * 100);
+  const hasCoreDetails = clientForm.full_name.trim().length > 0 && clientForm.phone.trim().length > 0;
+  const pageTitle = editMode ? "Edit Client" : "Create New Client";
+  const pageDescription = editMode
+    ? "Refresh customer details and keep records accurate."
+    : "Capture contact details once and reuse them across orders, receipts, and follow-ups.";
+  const headerModeTag = editMode ? "Editing profile" : "New profile";
+  const previewName = clientForm.full_name.trim() || "New Client";
+  const previewPhone = clientForm.phone.trim() || "Phone number will appear here";
+  const requiredPanelDescription = editMode
+    ? "Update the key details your team needs for receipts, status updates, and support."
+    : "Add the essential details first so you can save the client quickly.";
+  const completenessHelp = editMode
+    ? "Required first: full name and phone. The rest keeps receipts, delivery, and support records accurate."
+    : "Required first: full name and phone. The rest helps with delivery, receipts, and future support.";
+  const tips = editMode
+    ? [
+        "Keep the preferred receipt name updated.",
+        "Use the best active phone number for repair updates.",
+        "Refresh notes when address or delivery instructions change.",
+      ]
+    : [
+        "Use the customer's preferred name for receipts.",
+        "Add a phone number you can reach during repair updates.",
+        "Address and notes help with delivery and repeat visits.",
+      ];
+  const sectionFooterHint = editMode
+    ? "Update these first if the client's identity or main contact number has changed."
+    : "These two fields are enough to save the client immediately.";
+  const actionNote = editMode
+    ? "Update the main details first, then add optional info if anything changed."
+    : "Only full name and phone number are required to create a client.";
 
   return (
     <motion.div
@@ -72,12 +104,15 @@ const ClientFormModal = ({
               </div>
             </div>
             <div className="modal-title-enhanced">
-              <h2>{editMode ? "Edit Client" : "Create New Client"}</h2>
-              <p>
-                {editMode
-                  ? "Refresh customer details and keep records accurate."
-                  : "Capture contact details once and reuse them across orders, receipts, and follow-ups."}
-              </p>
+              <h2>{pageTitle}</h2>
+              <p>{pageDescription}</p>
+              <div className="client-modal-header-tags">
+                <span className="client-modal-header-tag primary">{headerModeTag}</span>
+                <span className="client-modal-header-tag">{completionPercent}% complete</span>
+                <span className={`client-modal-header-tag ${hasCoreDetails ? "success" : "warning"}`}>
+                  {hasCoreDetails ? "Ready to save" : "Needs required fields"}
+                </span>
+              </div>
             </div>
           </div>
           <motion.button
@@ -98,35 +133,47 @@ const ClientFormModal = ({
           <div className="client-form-shell">
             <aside className="client-form-aside">
               <div className="client-identity-card">
-                <div className="client-identity-avatar">{initials}</div>
-                <div className="client-identity-copy">
-                  <span className="client-identity-badge">Live Preview</span>
-                  <h3>{clientForm.full_name.trim() || "New Client"}</h3>
-                  <p>{clientForm.phone.trim() || "Phone number will appear here"}</p>
+                <div className="client-identity-top">
+                  <div className="client-identity-avatar">{initials}</div>
+                  <div className="client-identity-copy">
+                    <span className="client-identity-badge">Live Preview</span>
+                    <h3>{previewName}</h3>
+                    <p>{previewPhone}</p>
+                  </div>
                 </div>
                 <div className="client-identity-meta">
                   <span>{clientForm.email.trim() || "No email added"}</span>
                   <span>{location || "Location not added yet"}</span>
+                </div>
+                <div className="client-identity-stats">
+                  <div>
+                    <strong>{completionCount}/8</strong>
+                    <span>Fields filled</span>
+                  </div>
+                  <div>
+                    <strong>{clientForm.notes.trim() ? "Yes" : "No"}</strong>
+                    <span>Notes added</span>
+                  </div>
                 </div>
               </div>
 
               <div className="client-progress-card">
                 <div className="client-progress-header">
                   <strong>Profile completeness</strong>
-                  <span>{completionCount}/8</span>
+                  <span>{completionPercent}%</span>
                 </div>
                 <div className="client-progress-track">
-                  <div className="client-progress-fill" style={{ width: `${(completionCount / 8) * 100}%` }} />
+                  <div className="client-progress-fill" style={{ width: `${completionPercent}%` }} />
                 </div>
-                <p>Required first: full name and phone. Everything else helps with delivery, receipts, and future support.</p>
+                <p>{completenessHelp}</p>
               </div>
 
               <div className="client-tip-card">
                 <strong>Quick tips</strong>
                 <ul className="client-tip-list">
-                  <li>Use the customer&apos;s preferred name for receipts.</li>
-                  <li>Add a phone number you can reach during repair updates.</li>
-                  <li>Address and notes help with delivery and repeat visits.</li>
+                  {tips.map((tip) => (
+                    <li key={tip}>{tip}</li>
+                  ))}
                 </ul>
               </div>
             </aside>
@@ -136,7 +183,7 @@ const ClientFormModal = ({
                 <div className="client-form-panel-header">
                   <div>
                     <h3>Required Details</h3>
-                    <p>The minimum information needed to create the client profile.</p>
+                    <p>{requiredPanelDescription}</p>
                   </div>
                   <span className="client-form-badge required">2 required</span>
                 </div>
@@ -185,6 +232,10 @@ const ClientFormModal = ({
                       This is the main number for repair updates, approval calls, and delivery contact.
                     </small>
                   </div>
+                </div>
+
+                <div className="client-section-footer-hint">
+                  {sectionFooterHint}
                 </div>
               </section>
 
@@ -308,7 +359,7 @@ const ClientFormModal = ({
           </div>
 
           <div className="form-actions-enhanced client-form-actions">
-            <div className="client-form-actions-note">Only full name and phone number are required to create a client.</div>
+            <div className="client-form-actions-note">{actionNote}</div>
             <div className="client-form-actions-buttons">
               <motion.button
                 type="button"

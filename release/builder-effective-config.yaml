@@ -1,0 +1,12 @@
+directories:
+  output: release
+  buildResources: build
+appId: com.suncomputer.app
+productName: SunComputer
+files:
+  - filter:
+      - dist/**/*
+      - electron.cjs
+win:
+  target: nsis
+electronVersion: 42.0.1

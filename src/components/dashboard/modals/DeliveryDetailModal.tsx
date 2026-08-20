@@ -2,8 +2,7 @@ import { motion } from "framer-motion";
 import {
   FiCheckSquare,
   FiCalendar,
-  FiCheckCircle,
-  FiClock,
+  FiEdit2,
   FiFileText,
   FiMapPin,
   FiPackage,
@@ -14,11 +13,12 @@ import {
   FiX,
 } from "react-icons/fi";
 import type { Delivery } from "../types";
-import { formatDisplayDate } from "../utils";
+import { formatDisplayDateTime } from "../utils";
 
 interface DeliveryDetailModalProps {
   delivery: Delivery;
   onClose: () => void;
+  onEdit: (delivery: Delivery) => void;
   onPrint: (delivery: Delivery) => void;
   onDelete: (delivery: Delivery) => void;
 }
@@ -57,15 +57,162 @@ const parseNameList = (value: unknown): string[] => {
   return [];
 };
 
-const DeliveryDetailModal = ({ delivery, onClose, onPrint, onDelete }: DeliveryDetailModalProps) => {
+const parseIdList = (value: unknown): number[] => {
+  if (Array.isArray(value)) return value.map((entry) => Number(entry)).filter((id) => Number.isInteger(id) && id > 0);
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) {
+        return parsed.map((entry) => Number(entry)).filter((id) => Number.isInteger(id) && id > 0);
+      }
+    } catch {
+      const normalized = trimmed.replace(/^\[/, "").replace(/\]$/, "");
+      return normalized.split(",").map((entry) => Number(entry.trim())).filter((id) => Number.isInteger(id) && id > 0);
+    }
+  }
+  return [];
+};
+
+const parseObjectMap = (value: unknown): Record<string, string> => {
+  if (!value) return {};
+  if (typeof value === "object" && !Array.isArray(value)) {
+    return Object.entries(value as Record<string, unknown>).reduce<Record<string, string>>((acc, [key, entry]) => {
+      const normalized = String(entry ?? "").trim();
+      if (normalized) acc[key] = normalized;
+      return acc;
+    }, {});
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return {};
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return Object.entries(parsed as Record<string, unknown>).reduce<Record<string, string>>((acc, [key, entry]) => {
+          const normalized = String(entry ?? "").trim();
+          if (normalized) acc[key] = normalized;
+          return acc;
+        }, {});
+      }
+    } catch {
+      return {};
+    }
+  }
+  return {};
+};
+
+const findListValueByName = (names: string[], values: string[], targetName: string): string => {
+  const target = String(targetName || "").trim().toLowerCase();
+  if (!target || names.length === 0 || values.length === 0) return "";
+  const index = names.findIndex((name) => String(name || "").trim().toLowerCase() === target);
+  if (index < 0) return "";
+  return values[index] || "";
+};
+
+const findListIndexByName = (names: string[], targetName: string): number => {
+  const target = String(targetName || "").trim().toLowerCase();
+  if (!target || names.length === 0) return -1;
+  return names.findIndex((name) => String(name || "").trim().toLowerCase() === target);
+};
+
+const formatRawFieldValue = (value: unknown): string => {
+  if (value === null || value === undefined || value === "") return "N/A";
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return "N/A";
+    try {
+      const parsed = JSON.parse(trimmed);
+      return JSON.stringify(parsed, null, 2);
+    } catch {
+      return trimmed;
+    }
+  }
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value) || typeof value === "object") return JSON.stringify(value, null, 2);
+  return String(value);
+};
+
+const fieldLabel = (key: string) =>
+  key
+    .replaceAll("_", " ")
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+
+const DeliveryDetailModal = ({ delivery, onClose, onEdit, onPrint, onDelete }: DeliveryDetailModalProps) => {
   const deliveryAny = delivery as Delivery & {
     product_serial_number?: string;
     serial_number?: string;
+    order_product_ids?: number[] | string[] | string;
+    delivery_item_product_ids?: number[] | string[] | string;
     product_serial_numbers?: string[] | string;
     product_names?: string[] | string;
+    product_models?: string[] | string;
+    delivery_item_product_names?: string[] | string;
+    delivery_item_models?: string[] | string;
+    delivery_item_serial_numbers?: string[] | string;
     replacement_product_names?: string[] | string;
     replacement_product_serial_numbers?: string[] | string;
   };
+  const deliveryTableFieldOrder = [
+    "id",
+    "order_id",
+    "serial_number",
+    "delivery_type_map",
+    "delivery_code",
+    "delivery_type",
+    "address",
+    "contact_person",
+    "contact_phone",
+    "scheduled_date",
+    "scheduled_time",
+    "delivered_date",
+    "delivery_person",
+    "status",
+    "notes",
+    "created_at",
+    "updated_at",
+    "product_id",
+    "product_ids",
+    "serial_numbers",
+    "order_code",
+    "client_id",
+    "companies_products",
+    "company_id",
+    "company_ids",
+    "company_product_map",
+    "product_status_map",
+    "repairing_status_map",
+    "issue_description_map",
+    "accessory_type_map",
+    "result_text_map",
+    "replacement_product_id",
+    "replacement_product_ids",
+    "staff_id",
+    "service_type",
+    "issue_description",
+    "diagnosis_notes",
+    "repair_notes",
+    "warranty_status",
+    "estimated_cost",
+    "final_cost",
+    "deposit_amount",
+    "payment_status",
+    "estimated_delivery_date",
+    "actual_delivery_date",
+    "handover_type",
+    "handover_type_map",
+    "priority",
+    "rating",
+    "product_status_dates_map",
+  ] as const;
+  const deliveryTableFields = deliveryTableFieldOrder
+    .filter((key) => key in deliveryAny)
+    .map((key) => ({
+      key,
+      label: fieldLabel(key),
+      value: formatRawFieldValue((deliveryAny as unknown as Record<string, unknown>)[key]),
+    }));
   const productSerial = (() => {
     const direct = String(deliveryAny.product_serial_number || "").trim();
     if (direct) return direct;
@@ -92,26 +239,167 @@ const DeliveryDetailModal = ({ delivery, onClose, onPrint, onDelete }: DeliveryD
     }
     return "";
   })();
-  const productModel = String((delivery as Delivery & { product_model?: string }).product_model || "").trim();
   const productName = String(delivery.product_name || "").trim() || "N/A";
+  const orderProductIds = parseIdList(deliveryAny.order_product_ids);
+  const deliveredProductIds = (() => {
+    const itemIds = parseIdList(deliveryAny.delivery_item_product_ids);
+    if (itemIds.length > 0) return itemIds;
+    return parseIdList(delivery.product_ids);
+  })();
   const productNames = parseNameList(deliveryAny.product_names);
+  const productModels = parseNameList(deliveryAny.product_models);
   const productSerials = parseNameList(deliveryAny.product_serial_numbers);
+  const deliveredNames = (() => {
+    const itemNames = parseNameList(deliveryAny.delivery_item_product_names);
+    if (itemNames.length > 0) return itemNames;
+    return parseNameList(delivery.delivered_product_names);
+  })();
+  const deliveredModels = (() => {
+    const itemModels = parseNameList(deliveryAny.delivery_item_models);
+    if (itemModels.length > 0) return itemModels;
+    return parseNameList(delivery.delivered_product_models);
+  })();
+  const deliveredSerials = (() => {
+    const itemSerials = parseNameList(deliveryAny.delivery_item_serial_numbers);
+    if (itemSerials.length > 0) return itemSerials;
+    return parseNameList(delivery.delivered_product_serial_numbers);
+  })();
+  const deliveryTypeMap = parseObjectMap(delivery.delivery_type_map);
   const replacementNames = parseNameList(deliveryAny.replacement_product_names);
   const replacementSerials = parseNameList(deliveryAny.replacement_product_serial_numbers);
-  const productListLines = (productNames.length > 0 ? productNames : [productName]).map(
-    (name, index) => `${index + 1}. ${name} - Serial: ${productSerials[index] || (index === 0 ? productSerial || "N/A" : "N/A")}`,
-  );
+  const orderProductsById = new Map<number, { name: string; serial: string; model: string }>();
+  orderProductIds.forEach((id, index) => {
+    if (id <= 0) return;
+    orderProductsById.set(id, {
+      name: productNames[index] || `Product ${index + 1}`,
+      serial: productSerials[index] || "",
+      model: productModels[index] || "N/A",
+    });
+  });
+  const resolveOrderProductDetail = (
+    id: number,
+    name: string,
+    field: "serial" | "model",
+  ) => {
+    const byId = id > 0 ? orderProductsById.get(id) : undefined;
+    const directValue = byId?.[field];
+    if (directValue && directValue !== "N/A") return directValue;
+
+    const fallbackByName =
+      field === "serial"
+        ? findListValueByName(productNames, productSerials, name)
+        : findListValueByName(productNames, productModels, name);
+    if (fallbackByName && fallbackByName !== "N/A") return fallbackByName;
+
+    return "";
+  };
+  const resolveDeliveredFieldByIndex = (index: number, name: string, field: "serial" | "model") => {
+    const directList = field === "serial" ? deliveredSerials : deliveredModels;
+    const orderList = field === "serial" ? productSerials : productModels;
+    const directValue = String(directList[index] || "").trim();
+    if (directValue && directValue !== "N/A") return directValue;
+
+    const orderValue = String(orderList[index] || "").trim();
+    if (orderValue && orderValue !== "N/A") return orderValue;
+
+    const matchedIndex = findListIndexByName(productNames, name);
+    if (matchedIndex >= 0) {
+      const matchedValue = String(orderList[matchedIndex] || "").trim();
+      if (matchedValue && matchedValue !== "N/A") return matchedValue;
+    }
+
+    const fallbackByName =
+      field === "serial"
+        ? findListValueByName(productNames, productSerials, name)
+        : findListValueByName(productNames, productModels, name);
+    if (fallbackByName && fallbackByName !== "N/A") return fallbackByName;
+
+    if (field === "serial") {
+      return index === 0 ? productSerial || "N/A" : "N/A";
+    }
+
+    return String(delivery.product_model || "").trim() || "N/A";
+  };
+  const deliveredProducts = (() => {
+    if (deliveredProductIds.length > 0) {
+      return deliveredProductIds.map((id, index) => {
+        const orderMatch = orderProductsById.get(id);
+        const resolvedName = deliveredNames[index] || orderMatch?.name || (index === 0 ? productName : `Product #${id}`);
+        const resolvedSerial =
+          deliveredSerials[index] ||
+          orderMatch?.serial ||
+          resolveOrderProductDetail(id, resolvedName, "serial") ||
+          (index === 0 ? productSerial : "") ||
+          "N/A";
+        const resolvedModel =
+          deliveredModels[index] ||
+          orderMatch?.model ||
+          resolveOrderProductDetail(id, resolvedName, "model") ||
+          String(delivery.product_model || "").trim() ||
+          "N/A";
+        return {
+          id,
+          name: resolvedName,
+          serial: resolvedSerial,
+          model: resolvedModel,
+          deliveryType: humanize(deliveryTypeMap[String(id)] || delivery.delivery_type),
+        };
+      });
+    }
+
+    const maxLength = Math.max(deliveredNames.length, deliveredSerials.length, deliveredModels.length, delivery.product_name ? 1 : 0);
+    return Array.from({ length: maxLength }, (_, index) => ({
+      id: 0,
+      name: deliveredNames[index] || (index === 0 ? productName : `Product ${index + 1}`),
+      serial: resolveDeliveredFieldByIndex(index, deliveredNames[index] || productNames[index] || productName, "serial"),
+      model: resolveDeliveredFieldByIndex(index, deliveredNames[index] || productNames[index] || productName, "model"),
+      deliveryType: humanize(delivery.delivery_type),
+    })).filter((entry) => entry.name !== "N/A" || entry.serial !== "N/A");
+  })();
+  const remainingProducts = (() => {
+    const deliveredIdSet = new Set(deliveredProductIds);
+    const deliveredNameCount = new Map<string, number>();
+    deliveredProducts.forEach((entry) => {
+      const key = String(entry.name || "").trim().toLowerCase();
+      if (!key) return;
+      deliveredNameCount.set(key, (deliveredNameCount.get(key) || 0) + 1);
+    });
+
+    const entries = (productNames.length > 0 ? productNames : [productName]).map((name, index) => ({
+      id: orderProductIds[index] || 0,
+      name: name || `Product ${index + 1}`,
+      serial:
+        productSerials[index] ||
+        resolveOrderProductDetail(orderProductIds[index] || 0, name, "serial") ||
+        (index === 0 ? productSerial || "N/A" : "N/A"),
+      model:
+        productModels[index] ||
+        resolveOrderProductDetail(orderProductIds[index] || 0, name, "model") ||
+        "N/A",
+    }));
+
+    return entries.filter((entry) => {
+      if (entry.id > 0 && deliveredIdSet.has(entry.id)) return false;
+      const key = String(entry.name || "").trim().toLowerCase();
+      if (!key) return true;
+      const count = deliveredNameCount.get(key) || 0;
+      if (count <= 0) return true;
+      deliveredNameCount.set(key, count - 1);
+      return false;
+    });
+  })();
   const replacementListLines =
     replacementNames.length > 0
       ? replacementNames.map((name, index) => `${index + 1}. ${name} - Serial: ${replacementSerials[index] || "N/A"}`)
       : [];
+  const productModelSummary = productModels.length > 0 ? productModels.join(", ") : "";
   const deliveryCode = delivery.delivery_code || `DEL${String(delivery.id).padStart(3, "0")}`;
   const orderCode = delivery.order_code || `ORD${String(delivery.order_id).padStart(3, "0")}`;
-  const scheduledDate = delivery.scheduled_date_formatted || formatDisplayDate(delivery.scheduled_date);
+  const scheduledDate = delivery.scheduled_date_formatted || formatDisplayDateTime(delivery.scheduled_date);
   const deliveredDate =
     delivery.delivered_date_formatted ||
     (delivery.delivered_date && delivery.delivered_date !== "0000-00-00 00:00:00"
-      ? formatDisplayDate(delivery.delivered_date)
+      ? formatDisplayDateTime(delivery.delivered_date)
       : "Not Delivered");
   const status = normalizeStatus(delivery);
   const statusColor =
@@ -133,7 +421,7 @@ const DeliveryDetailModal = ({ delivery, onClose, onPrint, onDelete }: DeliveryD
     >
       <motion.div
         className="modal-content order-detail-modal delivery-detail-modal"
-        style={{ maxHeight: "90vh", overflowY: "auto" }}
+        style={{ maxHeight: "90vh" }}
         initial={{ opacity: 0, scale: 0.94, y: 36 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 24 }}
@@ -154,6 +442,9 @@ const DeliveryDetailModal = ({ delivery, onClose, onPrint, onDelete }: DeliveryD
             <span className="order-inline-badge" style={{ backgroundColor: `${statusColor}18`, color: statusColor }}>
               {humanize(status)}
             </span>
+            <motion.button className="btn outline delivery-detail-top-action" onClick={() => onEdit(delivery)} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}>
+              <FiEdit2 /> Edit
+            </motion.button>
             <motion.button className="close-btn" onClick={onClose} whileHover={{ rotate: 90 }} whileTap={{ scale: 0.9 }}>
               <FiX />
             </motion.button>
@@ -190,6 +481,7 @@ const DeliveryDetailModal = ({ delivery, onClose, onPrint, onDelete }: DeliveryD
                 <span className="order-detail-hero-label">Product</span>
                 <strong>{productName}</strong>
                 <p>{productSerial ? `Serial: ${productSerial}` : "Serial: N/A"}</p>
+                <p>{String(delivery.product_model || "").trim() ? `Model: ${String(delivery.product_model || "").trim()}` : "Model: N/A"}</p>
               </div>
             </div>
             <div className="order-detail-hero-card">
@@ -207,41 +499,65 @@ const DeliveryDetailModal = ({ delivery, onClose, onPrint, onDelete }: DeliveryD
           <div className="order-detail-grid">
             <div className="detail-section">
               <h3>
-                <FiCheckCircle /> Status Overview
-              </h3>
-              <div className="detail-item"><span className="detail-label">Current Status</span><span className="detail-value">{humanize(status)}</span></div>
-              <div className="detail-item"><span className="detail-label">Delivery Type</span><span className="detail-value">{humanize(delivery.delivery_type)}</span></div>
-              <div className="detail-item"><span className="detail-label">Delivered Date</span><span className="detail-value">{deliveredDate}</span></div>
-            </div>
-
-            <div className="detail-section">
-              <h3>
-                <FiClock /> Timeline
-              </h3>
-              <div className="detail-item"><span className="detail-label">Scheduled Date</span><span className="detail-value">{scheduledDate}</span></div>
-              <div className="detail-item"><span className="detail-label">Scheduled Time</span><span className="detail-value">{delivery.scheduled_time_formatted || formatValue(delivery.scheduled_time)}</span></div>
-              <div className="detail-item"><span className="detail-label">Created</span><span className="detail-value">{formatDisplayDate(delivery.created_at)}</span></div>
-            </div>
-
-            <div className="detail-section">
-              <h3>
                 <FiCheckSquare /> Contact & Address
               </h3>
               <div className="detail-item"><span className="detail-label">Contact Person</span><span className="detail-value">{delivery.contact_person || "N/A"}</span></div>
               <div className="detail-item"><span className="detail-label">Contact Phone</span><span className="detail-value">{delivery.contact_phone || delivery.client_phone || "N/A"}</span></div>
               <div className="detail-item"><span className="detail-label">Delivery Person</span><span className="detail-value">{delivery.delivery_person || "N/A"}</span></div>
+              <div className="detail-item"><span className="detail-label">Created</span><span className="detail-value">{formatDisplayDateTime(delivery.created_at)}</span></div>
             </div>
 
-            <div className="detail-section">
+            <div className="detail-section full-width detail-section-emphasis">
               <h3>
-                <FiTruck /> Reference
+                <FiPackage /> Delivered Products
               </h3>
-              <div className="detail-item"><span className="detail-label">Delivery ID</span><span className="detail-value">#{delivery.id}</span></div>
-              <div className="detail-item"><span className="detail-label">Delivery Code</span><span className="detail-value">{deliveryCode}</span></div>
-              <div className="detail-item"><span className="detail-label">Order Code</span><span className="detail-value">{orderCode}</span></div>
-              <div className="detail-item"><span className="detail-label">Products</span><span className="detail-value" style={{ whiteSpace: "pre-line" }}>{productListLines.join("\n")}</span></div>
-              <div className="detail-item"><span className="detail-label">Replacement</span><span className="detail-value" style={{ whiteSpace: "pre-line" }}>{replacementListLines.length > 0 ? replacementListLines.join("\n") : "N/A"}</span></div>
-              <div className="detail-item"><span className="detail-label">Product Model</span><span className="detail-value">{productModel || "N/A"}</span></div>
+              <div className="order-detail-product-value">
+                <span className="order-detail-product-count">
+                  {deliveredProducts.length} delivered item{deliveredProducts.length === 1 ? "" : "s"}
+                </span>
+                <div className="order-detail-product-list">
+                  {deliveredProducts.map((entry, index) => (
+                    <div className="order-detail-product-list-item" key={`delivered-${entry.id || index}`}>
+                      <span className="order-detail-product-index">{index + 1}</span>
+                      <div className="order-detail-product-text">
+                        <span className="order-detail-product-name">{entry.name}</span>
+                        <span className="order-detail-product-serial">Serial No: {entry.serial || "N/A"}</span>
+                        <span className="order-detail-product-serial">Model No: {entry.model || "N/A"}</span>
+                        <span className="order-detail-product-serial">Delivery Type: {entry.deliveryType}</span>
+                        <span className="order-detail-product-serial">Current Status: {humanize(status)}</span>
+                        <span className="order-detail-product-serial">Delivered Date: {deliveredDate}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="detail-section full-width">
+              <h3>
+                <FiPackage /> Remaining Products
+              </h3>
+              <div className="order-detail-product-value">
+                <span className="order-detail-product-count">
+                  {remainingProducts.length} remaining item{remainingProducts.length === 1 ? "" : "s"}
+                </span>
+                {remainingProducts.length > 0 ? (
+                  <div className="order-detail-product-list">
+                    {remainingProducts.map((entry, index) => (
+                      <div className="order-detail-product-list-item" key={`remaining-${entry.id || index}`}>
+                        <span className="order-detail-product-index">{index + 1}</span>
+                        <div className="order-detail-product-text">
+                          <span className="order-detail-product-name">{entry.name}</span>
+                          <span className="order-detail-product-serial">Serial No: {entry.serial || "N/A"}</span>
+                          <span className="order-detail-product-serial">Model No: {entry.model || "N/A"}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <span className="order-detail-product-empty">No remaining products.</span>
+                )}
+              </div>
             </div>
 
             <div className="detail-section full-width detail-section-notes">
@@ -252,6 +568,17 @@ const DeliveryDetailModal = ({ delivery, onClose, onPrint, onDelete }: DeliveryD
                 <span className="detail-copy-label">Destination</span>
                 <p>{delivery.address || delivery.client_address || "Address not available"}</p>
               </div>
+            </div>
+
+            <div className="detail-section full-width">
+              <h3>
+                <FiTruck /> Reference
+              </h3>
+              <div className="detail-item"><span className="detail-label">Delivery ID</span><span className="detail-value">#{delivery.id}</span></div>
+              <div className="detail-item"><span className="detail-label">Delivery Code</span><span className="detail-value">{deliveryCode}</span></div>
+              <div className="detail-item"><span className="detail-label">Order Code</span><span className="detail-value">{orderCode}</span></div>
+              <div className="detail-item"><span className="detail-label">Replacement</span><span className="detail-value" style={{ whiteSpace: "pre-line" }}>{replacementListLines.length > 0 ? replacementListLines.join("\n") : "N/A"}</span></div>
+              <div className="detail-item"><span className="detail-label">Product Model</span><span className="detail-value">{productModelSummary || "N/A"}</span></div>
             </div>
 
             {delivery.notes && (
@@ -265,11 +592,33 @@ const DeliveryDetailModal = ({ delivery, onClose, onPrint, onDelete }: DeliveryD
                 </div>
               </div>
             )}
+
+            <div className="detail-section full-width detail-section-notes">
+              <h3>
+                <FiFileText /> Deliveries Table Data
+              </h3>
+              <p className="detail-section-intro">
+                Full delivery record from the <code>deliveries</code> table.
+              </p>
+              <div className="delivery-raw-fields-grid">
+                {deliveryTableFields.map((field) => (
+                  <div className="delivery-raw-field-card" key={field.key}>
+                    <span className="detail-label">{field.label}</span>
+                    <pre className="delivery-raw-field-value">
+                      {field.value}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="order-detail-actions">
             <motion.button className="btn outline" onClick={onClose} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}>
               Close
+            </motion.button>
+            <motion.button className="btn secondary" onClick={() => onEdit(delivery)} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}>
+              <FiEdit2 /> Edit
             </motion.button>
             <motion.button className="btn danger" onClick={() => onDelete(delivery)} whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.96 }}>
               <FiTrash2 /> Delete Delivery
